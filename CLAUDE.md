@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 8A (backend foundation) complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend. Phase 8A added configurable DB pool, structured JSON logging, request correlation IDs, and enhanced health endpoint.
+**Phase 8 (hardening + deployment) complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend. Phase 8 added: structured JSON logging, enhanced health endpoint, Docker hardening (non-root users, tini, resource limits, .dockerignore), SSL/TLS with certbot, security headers, graceful shutdown, Alembic initial migration, backup/restore scripts, Flower monitoring, and CI/CD pipeline.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -33,15 +33,21 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
 - SQLAlchemy models for all 13 tables
-- Docker Compose, nginx, Dockerfiles
+- Docker Compose with resource limits, health checks, non-root users, tini init
+- Nginx reverse proxy with SSL/TLS (Let's Encrypt), HSTS, CSP, security headers
+- Certbot auto-renewal service
 - Structured JSON logging with request ID correlation (FastAPI + Celery)
 - Enhanced health endpoint: DB + Redis connectivity checks, `?detail=true` mode
 - Configurable DB pool (pool_size, max_overflow via env vars)
 - Celery task reliability: `task_acks_late`, `task_reject_on_worker_lost`
+- Celery graceful shutdown with systemd TimeoutStopSec
+- Alembic initial migration (13 tables)
+- Database backup/restore scripts with retention
+- Flower (Celery monitoring) on :5555 (SSH tunnel access)
+- GitHub Actions CI: lint, test, Docker build
 - Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring (62 tests)
 
 ### What's next
-- Phase 8: Hardening + deployment
 - Phase 9: Data retention + optimization
 
 ## Architecture
@@ -57,7 +63,7 @@ Two Oracle Cloud free-tier ARM VMs:
 backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
     api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, admin (+ health)
-    core/          Security (JWT/bcrypt), exceptions
+    core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions
     models/        SQLAlchemy ORM models (13 tables)
     schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, common)
     services/      Business logic layer (placeholder)
@@ -76,8 +82,8 @@ frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces
   src/utils/       Shared utilities (formatTimeAgo, humanizeSource)
-nginx/             Reverse proxy config
-scripts/           seed_sp500, seed_historical_data, setup scripts, health checks
+nginx/             Reverse proxy config (SSL/TLS template with envsubst)
+scripts/           seed_sp500, seed_historical_data, backup, restore, setup scripts
 deploy/            Systemd units and env templates for VMs
 docs/              Architecture, deployment, API reference, data sources
 ```
@@ -88,15 +94,25 @@ docs/              Architecture, deployment, API reference, data sources
 ```bash
 make up                    # Start all Docker services
 make down                  # Stop all services
+make build                 # Build all Docker images
 make logs                  # Tail all service logs
+make logs-backend          # Tail backend logs only
 make migrate               # Run alembic migrations (via Docker)
 make seed                  # Seed S&P 500 stocks
 make seed-history          # Seed full historical market data (max available)
 make seed-all              # Seed stocks + historical data in one go
 make test                  # Run backend pytest suite
 make lint                  # Run ruff check + format
+make health                # Check health endpoint with details
 make dev-backend           # Run FastAPI with hot reload (local)
 make dev-frontend          # Run Vite dev server (local)
+```
+
+### Operations
+```bash
+make backup                # Run database backup with retention
+make restore FILE=<path>   # Restore database from backup
+make certbot DOMAIN=<dom>  # Obtain SSL cert via Let's Encrypt
 ```
 
 ### Backend CLI
@@ -194,7 +210,11 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
 | `scripts/seed_sp500.py` | Seed Energy + Financials tickers |
 | `scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
-| `docker-compose.yml` | All Docker VM services |
+| `backend/alembic/versions/001_initial_schema.py` | Initial migration: all 13 tables |
+| `scripts/backup.sh` | Database backup with configurable retention |
+| `scripts/restore.sh` | Database restore from backup |
+| `.github/workflows/ci.yml` | CI pipeline: lint, test, Docker build |
+| `docker-compose.yml` | All Docker VM services (hardened with resource limits, health checks, Flower) |
 | `frontend/src/App.tsx` | React Router with protected routes + AppLayout |
 | `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist |
 

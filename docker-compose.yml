@@ -131,6 +131,23 @@ services:
           memory: 256M
           cpus: "0.25"
 
+  flower:
+    image: mher/flower:2.0
+    restart: unless-stopped
+    command: celery --broker=redis://:${REDIS_PASSWORD}@redis:6379/0 flower --basic-auth=${FLOWER_USER}:${FLOWER_PASSWORD}
+    ports:
+      - "${FLOWER_BIND_IP:-127.0.0.1}:5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
   certbot:
     image: certbot/certbot
     volumes:
