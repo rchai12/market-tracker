@@ -1,0 +1,18 @@
+[Unit]
+Description=Celery Beat for Stock Predictor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stock-predictor/backend
+Environment="PATH=/opt/stock-predictor/backend/.venv/bin"
+EnvironmentFile=/opt/stock-predictor/backend/.env
+ExecStart=/opt/stock-predictor/backend/.venv/bin/celery -A worker.celery_app beat \
+    --loglevel=info
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

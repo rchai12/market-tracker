@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.secrets.baseline
+*.pem
+*.key
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Models (large files)
+*.bin
+*.pt
+*.safetensors
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+.mypy_cache/
+.ruff_cache/
+
+# Alembic
+alembic/versions/__pycache__/

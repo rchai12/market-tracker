@@ -1,0 +1,71 @@
+[project]
+name = "stock-predictor"
+version = "0.1.0"
+description = "Sentiment-driven stock market prediction system"
+requires-python = ">=3.11"
+dependencies = [
+    # FastAPI
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    # Database
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    # Auth
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.17",
+    # Celery
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    # Scraping
+    "httpx>=0.28.0",
+    "beautifulsoup4>=4.12.0",
+    "feedparser>=6.0.0",
+    "praw>=7.8.0",
+    "lxml>=5.3.0",
+    # Market data
+    "yfinance>=0.2.48",
+    # Sentiment
+    "transformers>=4.47.0",
+    "torch>=2.5.0",
+    # Alerts
+    "aiosmtplib>=3.0.0",
+    # Utilities
+    "python-dateutil>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.9.0",
+    "pre-commit>=4.0.0",
+    "detect-secrets>=1.5.0",
+]
+worker = [
+    "transformers>=4.47.0",
+    "torch>=2.5.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+include = ["app*", "worker*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

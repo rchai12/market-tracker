@@ -1,0 +1,22 @@
+[Unit]
+Description=Celery Worker for Stock Predictor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stock-predictor/backend
+Environment="PATH=/opt/stock-predictor/backend/.venv/bin"
+EnvironmentFile=/opt/stock-predictor/backend/.env
+ExecStart=/opt/stock-predictor/backend/.venv/bin/celery -A worker.celery_app worker \
+    --loglevel=info \
+    --concurrency=2 \
+    --prefetch-multiplier=1 \
+    --max-tasks-per-child=50 \
+    -Q default,scraping,sentiment,signals
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
