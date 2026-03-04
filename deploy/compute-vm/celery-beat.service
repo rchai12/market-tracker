@@ -11,6 +11,8 @@ Environment="PATH=/opt/stock-predictor/backend/.venv/bin"
 EnvironmentFile=/opt/stock-predictor/backend/.env
 ExecStart=/opt/stock-predictor/backend/.venv/bin/celery -A worker.celery_app beat \
     --loglevel=info
+KillSignal=SIGTERM
+TimeoutStopSec=30
 Restart=always
 RestartSec=10
 

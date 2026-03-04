@@ -14,7 +14,12 @@ ExecStart=/opt/stock-predictor/backend/.venv/bin/celery -A worker.celery_app wor
     --concurrency=2 \
     --prefetch-multiplier=1 \
     --max-tasks-per-child=50 \
+    --without-heartbeat \
+    --without-mingle \
+    --without-gossip \
     -Q default,scraping,sentiment,signals
+KillSignal=SIGTERM
+TimeoutStopSec=300
 Restart=always
 RestartSec=10
 
