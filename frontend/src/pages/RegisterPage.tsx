@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
-import apiClient from "../api/client";
+import { register } from "../api/auth";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,22 +18,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const formData = new URLSearchParams();
-      formData.append("username", email);
-      formData.append("password", password);
-
-      const response = await apiClient.post("/auth/login", formData, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
-
-      setAuth(
-        response.data.access_token,
-        response.data.refresh_token,
-        response.data.user
-      );
+      const response = await register({ email, username, password });
+      setAuth(response.access_token, response.refresh_token, response.user);
       navigate("/");
-    } catch {
-      setError("Invalid credentials");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Registration failed";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -46,7 +38,7 @@ export default function LoginPage() {
             Stock Predictor
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Sign in to your account
+            Create your account
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -63,6 +55,14 @@ export default function LoginPage() {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <input
               type="password"
               required
               value={password}
@@ -76,12 +76,12 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? "Creating account..." : "Create account"}
           </button>
           <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-            Don't have an account?{" "}
-            <Link to="/register" className="text-blue-600 hover:text-blue-500">
-              Create one
+            Already have an account?{" "}
+            <Link to="/login" className="text-blue-600 hover:text-blue-500">
+              Sign in
             </Link>
           </p>
         </form>
