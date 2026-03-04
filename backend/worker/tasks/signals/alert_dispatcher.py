@@ -21,6 +21,7 @@ from app.models.alert import AlertConfig, AlertLog
 from app.models.signal import Signal
 from app.models.user import User
 from worker.celery_app import celery_app
+from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,10 @@ STRENGTH_ORDER = {"weak": 0, "moderate": 1, "strong": 2}
 def dispatch_alerts(self, signal_id: int):
     """Dispatch alerts for a signal to all matching user configs."""
     try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_dispatch_alerts_async(signal_id))
-        return result
+        return run_async(_dispatch_alerts_async(signal_id))
     except Exception as exc:
         logger.error(f"Alert dispatch failed for signal {signal_id}: {exc}")
         raise self.retry(exc=exc)
-    finally:
-        loop.close()
 
 
 async def _dispatch_alerts_async(signal_id: int) -> dict:

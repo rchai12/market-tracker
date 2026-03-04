@@ -1,7 +1,5 @@
 """Articles API endpoints."""
 
-import math
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +9,8 @@ from app.dependencies import get_current_user, get_db
 from app.models.article import Article, ArticleStock
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.article import ArticleResponse, PaginatedArticles, PaginationMeta
+from app.schemas.article import ArticleResponse, PaginatedArticles
+from app.schemas.common import PaginationMeta, calc_total_pages
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -83,7 +82,7 @@ async def list_articles(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=max(1, math.ceil(total / per_page)),
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 

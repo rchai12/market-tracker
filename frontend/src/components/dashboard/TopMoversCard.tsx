@@ -1,16 +1,11 @@
 import { Link } from "react-router-dom";
 import type { Signal } from "../../types";
+import { DIRECTION_COLORS } from "../../constants/ui";
 
 interface TopMoversCardProps {
   signal: Signal;
   rank: number;
 }
-
-const DIRECTION_COLORS: Record<string, { bg: string; text: string }> = {
-  bullish: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" },
-  bearish: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" },
-  neutral: { bg: "bg-gray-100 dark:bg-gray-700", text: "text-gray-600 dark:text-gray-300" },
-};
 
 export default function TopMoversCard({ signal, rank }: TopMoversCardProps) {
   const dir = DIRECTION_COLORS[signal.direction] || DIRECTION_COLORS.neutral;

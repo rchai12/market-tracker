@@ -1,18 +1,16 @@
 """Signal API endpoints."""
 
-import math
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.exceptions import NotFoundError
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.signal import PaginatedSignals, PaginationMeta, SignalResponse
+from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.signal import PaginatedSignals, SignalResponse
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -50,7 +48,7 @@ async def get_signal_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Get signal history for a specific ticker."""
-    stock = await _get_stock(ticker, db)
+    stock = await get_stock_by_ticker(ticker, db)
 
     base_query = select(Signal).where(Signal.stock_id == stock.id)
 
@@ -73,7 +71,7 @@ async def get_signal_history(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=max(1, math.ceil(total / per_page)),
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 
@@ -121,7 +119,7 @@ async def list_signals(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=max(1, math.ceil(total / per_page)),
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 
@@ -144,13 +142,3 @@ def _to_response(signal: Signal) -> SignalResponse:
         window_start=signal.window_start,
         window_end=signal.window_end,
     )
-
-
-async def _get_stock(ticker: str, db: AsyncSession) -> Stock:
-    result = await db.execute(
-        select(Stock).where(func.upper(Stock.ticker) == ticker.upper())
-    )
-    stock = result.scalar_one_or_none()
-    if not stock:
-        raise NotFoundError(f"Stock {ticker} not found")
-    return stock

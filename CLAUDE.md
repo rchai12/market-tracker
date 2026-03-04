@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 7 complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built.
+**Phase 7 + refactor pass complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -55,21 +55,23 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, admin (+ health)
     core/          Security (JWT/bcrypt), exceptions
     models/        SQLAlchemy ORM models (13 tables)
-    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal)
+    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, common)
     services/      Business logic layer (placeholder)
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
     beat_schedule  Hourly cron schedule (:00 scrape, :05 market data, :15 sentiment catch-up, :30 signals)
     tasks/         Task modules: scraping/, sentiment/, signals/ (signal_generator + alert_dispatcher)
-    utils/         Rate limiter, text cleaner, ticker extractor
+    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper
   alembic/         Database migrations
   tests/           pytest test suite (62 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts)
-  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart), Sentiment (SentimentBadge), Signals (SignalCard), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard), Common (LoadingSkeleton)
+  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart), Sentiment (SentimentBadge), Signals (SignalCard), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, Login, Register, etc.)
   src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces
+  src/utils/       Shared utilities (formatTimeAgo, humanizeSource)
 nginx/             Reverse proxy config
 scripts/           seed_sp500, seed_historical_data, setup scripts, health checks
 deploy/            Systemd units and env templates for VMs
@@ -121,7 +123,9 @@ celery -A worker.celery_app beat --loglevel=info
 - Ruff for linting and formatting (line length 120)
 - Models use SQLAlchemy 2.0 `Mapped` / `mapped_column` syntax
 - Tests use pytest-asyncio with `auto` mode
-- Celery tasks bridge async/sync via `asyncio.new_event_loop()`
+- Celery tasks bridge async/sync via `run_async()` helper (`worker/utils/async_task.py`)
+- Shared `PaginationMeta` and `calc_total_pages()` in `schemas/common.py`
+- Shared `get_stock_by_ticker()` dependency in `dependencies.py`
 
 ### TypeScript (frontend/)
 - React 19 + TypeScript strict mode
@@ -160,7 +164,7 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/app/config.py` | Central config — all env vars loaded here via pydantic-settings |
 | `backend/app/database.py` | SQLAlchemy async engine, session factory, Base |
 | `backend/app/main.py` | FastAPI app factory, CORS, lifespan |
-| `backend/app/dependencies.py` | `get_db`, `get_current_user`, `get_current_admin` |
+| `backend/app/dependencies.py` | `get_db`, `get_current_user`, `get_current_admin`, `get_stock_by_ticker` |
 | `backend/app/core/security.py` | JWT create/verify, bcrypt password hashing |
 | `backend/app/api/router.py` | Aggregates all sub-routers under `/api` |
 | `backend/app/api/auth.py` | Register, login, refresh, me endpoints |

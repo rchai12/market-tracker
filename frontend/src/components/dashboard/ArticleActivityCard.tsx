@@ -1,19 +1,7 @@
+import { humanizeSource } from "../../utils/format";
+
 interface ArticleActivityCardProps {
   sources: { source: string; count: number }[];
-}
-
-const SOURCE_LABELS: Record<string, string> = {
-  yahoo_finance: "Yahoo Finance",
-  finviz: "Finviz",
-  reuters_rss: "Reuters",
-  sec_edgar: "SEC EDGAR",
-  marketwatch: "MarketWatch",
-  reddit: "Reddit",
-  fred: "FRED",
-};
-
-function humanizeSource(source: string): string {
-  return SOURCE_LABELS[source] ?? source.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function ArticleActivityCard({ sources }: ArticleActivityCardProps) {

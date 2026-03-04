@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.common import PaginationMeta
+
 
 class ArticleResponse(BaseModel):
     id: int
@@ -19,13 +21,6 @@ class ArticleResponse(BaseModel):
     tickers: list[str] = []
 
     model_config = {"from_attributes": True}
-
-
-class PaginationMeta(BaseModel):
-    page: int
-    per_page: int
-    total: int
-    total_pages: int
 
 
 class PaginatedArticles(BaseModel):

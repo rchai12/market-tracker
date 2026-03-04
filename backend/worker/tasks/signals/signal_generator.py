@@ -7,7 +7,6 @@ Computes composite signal scores for all active stocks by combining:
 - Volume anomaly (15%): trading volume vs 20-day avg, signed by price direction
 """
 
-import asyncio
 import logging
 import math
 from datetime import datetime, timedelta, timezone
@@ -21,6 +20,7 @@ from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
 from app.models.stock import Stock
 from worker.celery_app import celery_app
+from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,10 @@ MODERATE_THRESHOLD = 0.35
 def generate_all_signals(self):
     """Generate composite signals for all active stocks. Called at :30 by beat."""
     try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_generate_signals_async())
-        return result
+        return run_async(_generate_signals_async())
     except Exception as exc:
         logger.error(f"Signal generation failed: {exc}")
         raise self.retry(exc=exc)
-    finally:
-        loop.close()
 
 
 async def _generate_signals_async() -> dict:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listSignals } from "../api/signals";
 import SignalCard from "../components/signals/SignalCard";
+import LoadingSkeleton from "../components/common/LoadingSkeleton";
 
 export default function SignalsPage() {
   const [page, setPage] = useState(1);
@@ -60,7 +61,7 @@ export default function SignalsPage() {
 
       {/* Signal Grid */}
       {isLoading ? (
-        <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+        <LoadingSkeleton variant="card" count={6} />
       ) : data && data.data.length > 0 ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -73,6 +74,7 @@ export default function SignalsPage() {
           {data.meta.total_pages > 1 && (
             <div className="flex items-center justify-center gap-4">
               <button
+                type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50"
@@ -83,6 +85,7 @@ export default function SignalsPage() {
                 Page {data.meta.page} of {data.meta.total_pages}
               </span>
               <button
+                type="button"
                 onClick={() => setPage((p) => Math.min(data.meta.total_pages, p + 1))}
                 disabled={page >= data.meta.total_pages}
                 className="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50"

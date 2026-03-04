@@ -5,12 +5,8 @@ import { getDailyData } from "../api/marketData";
 import { getSignalHistory } from "../api/signals";
 import SparklineChart from "../components/charts/SparklineChart";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
-
-const DIRECTION_COLORS: Record<string, { bg: string; text: string }> = {
-  bullish: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" },
-  bearish: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" },
-  neutral: { bg: "bg-gray-100 dark:bg-gray-700", text: "text-gray-600 dark:text-gray-300" },
-};
+import ErrorRetry from "../components/common/ErrorRetry";
+import { DIRECTION_COLORS } from "../constants/ui";
 
 function WatchlistCard({ item }: { item: WatchlistItem }) {
   const { data: marketData } = useQuery({
@@ -76,15 +72,7 @@ export default function WatchlistPage() {
       {isLoading ? (
         <LoadingSkeleton variant="card" count={3} />
       ) : isError ? (
-        <div className="text-center py-8">
-          <p className="text-red-500 dark:text-red-400 text-sm mb-2">Failed to load watchlist</p>
-          <button
-            onClick={() => refetch()}
-            className="px-3 py-1.5 text-sm rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400"
-          >
-            Retry
-          </button>
-        </div>
+        <ErrorRetry message="Failed to load watchlist" onRetry={() => refetch()} />
       ) : items && items.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((item) => (

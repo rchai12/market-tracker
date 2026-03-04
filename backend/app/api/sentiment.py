@@ -1,6 +1,5 @@
 """Sentiment analysis API endpoints."""
 
-import math
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -8,16 +7,15 @@ from sqlalchemy import case, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import NotFoundError
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.article import Article, ArticleStock
 from app.models.sector import Sector
 from app.models.sentiment import SentimentScore
 from app.models.stock import Stock
 from app.models.user import User
+from app.schemas.common import PaginationMeta, calc_total_pages
 from app.schemas.sentiment import (
     PaginatedSentiment,
-    PaginationMeta,
     SentimentScoreResponse,
     SentimentSummary,
     SentimentTimePoint,
@@ -34,7 +32,7 @@ async def get_ticker_sentiment_timeline(
     db: AsyncSession = Depends(get_db),
 ):
     """Get daily sentiment time series for a ticker."""
-    stock = await _get_stock(ticker, db)
+    stock = await get_stock_by_ticker(ticker, db)
     since = date.today() - timedelta(days=days)
 
     query = (
@@ -76,7 +74,7 @@ async def get_ticker_sentiment_articles(
     db: AsyncSession = Depends(get_db),
 ):
     """Get sentiment-scored articles for a specific ticker."""
-    stock = await _get_stock(ticker, db)
+    stock = await get_stock_by_ticker(ticker, db)
 
     base_query = select(SentimentScore).where(SentimentScore.stock_id == stock.id)
 
@@ -119,7 +117,7 @@ async def get_ticker_sentiment_articles(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=max(1, math.ceil(total / per_page)),
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 
@@ -221,14 +219,6 @@ async def get_trending_sentiment(
         )
         for row in rows
     ]
-
-
-async def _get_stock(ticker: str, db: AsyncSession) -> Stock:
-    result = await db.execute(select(Stock).where(func.upper(Stock.ticker) == ticker.upper()))
-    stock = result.scalar_one_or_none()
-    if not stock:
-        raise NotFoundError(f"Stock {ticker} not found")
-    return stock
 
 
 def _dominant_label(pos: float, neg: float, neu: float) -> str:

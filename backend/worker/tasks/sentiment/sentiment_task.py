@@ -1,6 +1,5 @@
 """Celery task to process unprocessed articles through FinBERT."""
 
-import asyncio
 import logging
 
 from sqlalchemy import select, func
@@ -11,6 +10,7 @@ from app.models.article import Article, ArticleStock
 from app.models.sentiment import SentimentScore
 from worker.celery_app import celery_app
 from worker.tasks.sentiment.finbert_analyzer import FinBERTAnalyzer
+from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +22,10 @@ QUERY_BATCH_SIZE = 50
 def process_new_articles_sentiment(self):
     """Find unprocessed articles, run FinBERT, store sentiment scores."""
     try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_process_sentiment_async())
-        return result
+        return run_async(_process_sentiment_async())
     except Exception as exc:
         logger.error(f"Sentiment processing failed: {exc}")
         raise self.retry(exc=exc)
-    finally:
-        loop.close()
 
 
 async def _process_sentiment_async() -> dict:

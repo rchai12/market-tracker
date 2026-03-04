@@ -5,9 +5,10 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import NotFoundError, UnauthorizedError
 from app.core.security import decode_token
 from app.database import async_session
+from app.models.stock import Stock
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -42,6 +43,17 @@ async def get_current_user(
         raise UnauthorizedError()
 
     return user
+
+
+async def get_stock_by_ticker(ticker: str, db: AsyncSession) -> Stock:
+    """Look up a stock by ticker (case-insensitive). Raises NotFoundError if missing."""
+    from sqlalchemy import func
+
+    result = await db.execute(select(Stock).where(func.upper(Stock.ticker) == ticker.upper()))
+    stock = result.scalar_one_or_none()
+    if not stock:
+        raise NotFoundError(f"Stock {ticker} not found")
+    return stock
 
 
 async def get_current_admin(user: User = Depends(get_current_user)) -> User:

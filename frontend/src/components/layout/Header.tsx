@@ -19,9 +19,11 @@ export default function Header() {
 
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={toggle}
           className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
         >
           {isDark ? "Light" : "Dark"}
         </button>
@@ -31,8 +33,10 @@ export default function Header() {
         </span>
 
         <button
+          type="button"
           onClick={logout}
           className="text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+          aria-label="Log out"
         >
           Logout
         </button>

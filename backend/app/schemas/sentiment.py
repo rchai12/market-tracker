@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.common import PaginationMeta
+
 
 class SentimentScoreResponse(BaseModel):
     id: int
@@ -43,13 +45,6 @@ class SentimentTimePoint(BaseModel):
     avg_neutral: float
     article_count: int
     dominant_label: str
-
-
-class PaginationMeta(BaseModel):
-    page: int
-    per_page: int
-    total: int
-    total_pages: int
 
 
 class PaginatedSentiment(BaseModel):

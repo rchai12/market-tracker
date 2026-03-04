@@ -10,6 +10,7 @@ import VolumeChart from "../components/charts/VolumeChart";
 import SentimentChart from "../components/sentiment/SentimentChart";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
 import SignalCard from "../components/signals/SignalCard";
+import LoadingSkeleton from "../components/common/LoadingSkeleton";
 
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -57,7 +58,7 @@ export default function StockDetailPage() {
   });
 
   if (stockLoading) {
-    return <p className="text-gray-500 dark:text-gray-400">Loading...</p>;
+    return <LoadingSkeleton variant="card" count={3} />;
   }
 
   if (!stock) {
@@ -93,6 +94,7 @@ export default function StockDetailPage() {
           )}
         </div>
         <button
+          type="button"
           onClick={() => isInWatchlist ? removeMutation.mutate() : addMutation.mutate()}
           disabled={addMutation.isPending || removeMutation.isPending}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -111,7 +113,7 @@ export default function StockDetailPage() {
           Price
         </h2>
         {marketLoading ? (
-          <p className="text-gray-500 dark:text-gray-400 py-8 text-center">Loading chart...</p>
+          <LoadingSkeleton variant="chart" count={1} />
         ) : marketData && marketData.length > 0 ? (
           <PriceChart data={marketData} />
         ) : (

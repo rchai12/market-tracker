@@ -1,7 +1,5 @@
 """Alert configuration and history API endpoints."""
 
-import math
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,16 +11,16 @@ from app.models.alert import AlertConfig, AlertLog
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.signal import (
+from app.schemas.alert import (
     AlertConfigCreate,
     AlertConfigResponse,
     AlertConfigUpdate,
     AlertLogResponse,
     PaginatedAlertLogs,
-    PaginationMeta,
     TestAlertRequest,
     TestAlertResponse,
 )
+from app.schemas.common import PaginationMeta, calc_total_pages
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -224,7 +222,7 @@ async def get_alert_history(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=max(1, math.ceil(total / per_page)),
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 

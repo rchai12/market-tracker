@@ -1,5 +1,3 @@
-import math
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +8,8 @@ from app.dependencies import get_current_user, get_db
 from app.models.sector import Sector
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.stock import PaginatedStocks, PaginationMeta, StockDetailResponse, StockResponse
+from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.stock import PaginatedStocks, StockDetailResponse, StockResponse
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -56,7 +55,7 @@ async def list_stocks(
             page=page,
             per_page=per_page,
             total=total,
-            total_pages=math.ceil(total / per_page) if total > 0 else 0,
+            total_pages=calc_total_pages(total, per_page),
         ),
     )
 

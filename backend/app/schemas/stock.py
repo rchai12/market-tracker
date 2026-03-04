@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.common import PaginationMeta
+
 
 class SectorResponse(BaseModel):
     id: int
@@ -25,13 +27,6 @@ class StockDetailResponse(StockResponse):
     latest_sentiment: str | None = None
     latest_signal_direction: str | None = None
     latest_signal_strength: str | None = None
-
-
-class PaginationMeta(BaseModel):
-    page: int
-    per_page: int
-    total: int
-    total_pages: int
 
 
 class PaginatedStocks(BaseModel):

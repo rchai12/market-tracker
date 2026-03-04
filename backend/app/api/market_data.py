@@ -4,22 +4,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
-from app.models.stock import Stock
 from app.models.user import User
 from app.schemas.market_data import MarketDataDailyResponse, MarketDataIntradayResponse
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
-
-
-async def _get_stock_by_ticker(ticker: str, db: AsyncSession) -> Stock:
-    result = await db.execute(select(Stock).where(func.upper(Stock.ticker) == ticker.upper()))
-    stock = result.scalar_one_or_none()
-    if not stock:
-        raise NotFoundError(f"Stock {ticker} not found")
-    return stock
 
 
 @router.get("/{ticker}/daily", response_model=list[MarketDataDailyResponse])
@@ -31,7 +21,7 @@ async def get_daily_data(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stock = await _get_stock_by_ticker(ticker, db)
+    stock = await get_stock_by_ticker(ticker, db)
 
     query = select(MarketDataDaily).where(MarketDataDaily.stock_id == stock.id)
 
@@ -56,7 +46,7 @@ async def get_intraday_data(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stock = await _get_stock_by_ticker(ticker, db)
+    stock = await get_stock_by_ticker(ticker, db)
 
     query = (
         select(MarketDataIntraday)
