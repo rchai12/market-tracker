@@ -200,22 +200,58 @@ Query params: `?days=3&limit=10` (defaults)
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/signals` | Yes | Planned (Phase 6) | All signals (paginated, filterable) |
-| GET | `/signals/{ticker}` | Yes | Planned (Phase 6) | Signal history for ticker |
-| GET | `/signals/latest` | Yes | Planned (Phase 6) | Most recent signals (dashboard feed) |
+| GET | `/signals` | Yes | **Done** | All signals (paginated, filterable by direction/strength/ticker) |
+| GET | `/signals/latest` | Yes | **Done** | Most recent signals across all stocks (dashboard feed) |
+| GET | `/signals/{ticker}` | Yes | **Done** | Signal history for a specific ticker |
 
-Query params: `?direction=bullish&strength=strong&ticker=XOM&page=1`
+Query params for `/signals`: `?direction=bullish&strength=strong&ticker=XOM&page=1&per_page=20`
+
+Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
+
+### GET /signals/latest response
+```json
+[
+  {
+    "id": 1, "stock_id": 5, "ticker": "XOM", "company_name": "Exxon Mobil",
+    "direction": "bullish", "strength": "moderate",
+    "composite_score": 0.42, "sentiment_score": 0.35, "price_score": 0.15, "volume_score": 0.10,
+    "article_count": 8, "reasoning": "XOM: moderate bullish signal (score: 0.420)...",
+    "generated_at": "2025-06-15T10:30:00Z",
+    "window_start": "2025-06-15T09:30:00Z", "window_end": "2025-06-15T10:30:00Z"
+  }
+]
+```
 
 ## Alerts
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/alerts/configs` | Yes | Planned (Phase 6) | User's alert configurations |
-| POST | `/alerts/configs` | Yes | Planned (Phase 6) | Create alert config |
-| PUT | `/alerts/configs/{id}` | Yes | Planned (Phase 6) | Update alert config |
-| DELETE | `/alerts/configs/{id}` | Yes | Planned (Phase 6) | Delete alert config |
-| GET | `/alerts/history` | Yes | Planned (Phase 6) | Sent alert log |
-| POST | `/alerts/test` | Yes | Planned (Phase 6) | Send test alert |
+| GET | `/alerts/configs` | Yes | **Done** | User's alert configurations |
+| POST | `/alerts/configs` | Yes | **Done** | Create alert config (201) |
+| PUT | `/alerts/configs/{id}` | Yes | **Done** | Update alert config |
+| DELETE | `/alerts/configs/{id}` | Yes | **Done** | Delete alert config (204) |
+| GET | `/alerts/history` | Yes | **Done** | Sent alert log (paginated) |
+| POST | `/alerts/test` | Yes | **Done** | Send test alert to verify channel config |
+
+### POST /alerts/configs
+```json
+// Request
+{ "stock_id": null, "min_strength": "moderate", "direction_filter": ["bullish"], "channel": "discord" }
+
+// Response (201)
+{ "id": 1, "user_id": 1, "stock_id": null, "ticker": null,
+  "min_strength": "moderate", "direction_filter": ["bullish"],
+  "channel": "discord", "is_active": true, "created_at": "..." }
+```
+
+### POST /alerts/test
+```json
+// Request
+{ "channel": "discord" }
+
+// Response
+{ "success": true, "message": "discord: sent successfully" }
+```
 
 ## Watchlist
 

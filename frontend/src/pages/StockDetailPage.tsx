@@ -4,10 +4,12 @@ import { getStock } from "../api/stocks";
 import { getDailyData } from "../api/marketData";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../api/watchlist";
 import { getTickerSentimentTimeline } from "../api/sentiment";
+import { getSignalHistory } from "../api/signals";
 import PriceChart from "../components/charts/PriceChart";
 import VolumeChart from "../components/charts/VolumeChart";
 import SentimentChart from "../components/sentiment/SentimentChart";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
+import SignalCard from "../components/signals/SignalCard";
 
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -28,6 +30,12 @@ export default function StockDetailPage() {
   const { data: sentimentData } = useQuery({
     queryKey: ["sentiment-timeline", ticker],
     queryFn: () => getTickerSentimentTimeline(ticker!, 30),
+    enabled: !!ticker,
+  });
+
+  const { data: signalData } = useQuery({
+    queryKey: ["signals", ticker],
+    queryFn: () => getSignalHistory(ticker!, 1, 5),
     enabled: !!ticker,
   });
 
@@ -138,12 +146,20 @@ export default function StockDetailPage() {
           )}
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Signals
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Recent Signals
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Signal history will appear here (Phase 6).
-          </p>
+          {signalData && signalData.data.length > 0 ? (
+            <div className="space-y-3">
+              {signalData.data.map((signal) => (
+                <SignalCard key={signal.id} signal={signal} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
+              No signals yet. Signals will appear after the generation pipeline runs.
+            </p>
+          )}
         </div>
       </div>
     </div>

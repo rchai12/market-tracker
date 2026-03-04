@@ -187,6 +187,25 @@ FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on
 
 **Safety net:** A Celery Beat task at `:15` runs sentiment processing as a catch-up for any articles missed by the chained flow.
 
+## Signal Generation + Alert Dispatch
+
+At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from four components:
+
+| Component (weight) | Source | Calculation |
+|---------------------|--------|-------------|
+| Sentiment momentum (40%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
+| Sentiment volume (25%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
+| Price momentum (20%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
+| Volume anomaly (15%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
+
+**Thresholds:** |composite| > 0.6 = strong, > 0.35 = moderate, else weak. Direction: > 0.01 = bullish, < -0.01 = bearish.
+
+**Alert flow:** For moderate+ signals, `dispatch_alerts` is chained via `.delay()`. It matches against active `AlertConfig` records (by stock, strength, direction), then sends notifications:
+- **Discord**: Embedded message via webhook URL (per-user or global)
+- **Email**: HTML email via SMTP (smtplib, run in thread to avoid blocking)
+
+Each attempt is logged in `AlertLog` with success/error status.
+
 ## Network Security
 
 - Postgres (5432) and Redis (6379): internal VPC only, not exposed to internet
