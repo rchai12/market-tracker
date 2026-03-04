@@ -4,22 +4,27 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 2 complete.** Auth, stock listing, watchlist API, and frontend layout are built.
+**Phase 4 complete.** Auth, stocks, watchlist, market data pipeline, news scraping pipeline, and historical data seeding are built.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
 - Stock listing with sector filter, search, pagination
 - Watchlist CRUD
+- Market data pipeline: yfinance → Postgres (hourly via Celery, weekdays at :05)
+- Historical data seeding: full available history (~30+ years) via `make seed-history`
+- News scraping pipeline: 7 sources (Yahoo Finance, Finviz, Reuters RSS, SEC EDGAR, MarketWatch, Reddit, FRED)
+- Scraper orchestration: Celery chord fans out all scrapers hourly at :00
+- Articles API with pagination, source/ticker/status filtering
+- Admin API: trigger scrape and historical seed on demand
 - React frontend with AppLayout (sidebar + header), login/register, dark mode
-- Placeholder pages for all routes (dashboard, signals, sentiment, watchlist, alerts, settings)
+- TradingView Lightweight Charts: candlestick price chart + volume histogram
+- StockDetailPage with charts and watchlist toggle
+- Placeholder pages for signals, sentiment, alerts, settings, dashboard
 - SQLAlchemy models for all 13 tables
-- Celery app + beat schedule structure (tasks not yet implemented)
 - Docker Compose, nginx, Dockerfiles
-- Unit tests for JWT, password hashing, ticker extraction, text cleaning
+- Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers (32 tests)
 
 ### What's next
-- Phase 3: Market data pipeline (yfinance + Celery + TradingView charts)
-- Phase 4: News scraping pipeline (7 sources)
 - Phase 5: FinBERT sentiment analysis
 - Phase 6: Signal generation + alerts
 - Phase 7: Dashboard polish
@@ -38,26 +43,26 @@ Two Oracle Cloud free-tier ARM VMs:
 ```
 backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
-    api/           Route handlers: auth, stocks, watchlist (+ health)
+    api/           Route handlers: auth, stocks, watchlist, market_data, articles, admin (+ health)
     core/          Security (JWT/bcrypt), exceptions
     models/        SQLAlchemy ORM models (13 tables)
-    schemas/       Pydantic request/response schemas
+    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article)
     services/      Business logic layer (placeholder)
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
     beat_schedule  Hourly cron schedule
-    tasks/         Task modules: scraping/, sentiment/, signals/
+    tasks/         Task modules: scraping/ (7 scrapers + orchestrate + market_data), sentiment/, signals/
     utils/         Rate limiter, text cleaner, ticker extractor
   alembic/         Database migrations
-  tests/           pytest test suite
+  tests/           pytest test suite (32 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
-  src/api/         Axios API client (auth, stocks, watchlist)
-  src/components/  Layout (AppLayout, Sidebar, Header)
-  src/pages/       All route pages (Dashboard, Login, Register, etc.)
+  src/api/         Axios API client (auth, stocks, watchlist, marketData, articles)
+  src/components/  Layout (AppLayout, Sidebar, Header), Charts (PriceChart, VolumeChart)
+  src/pages/       All route pages (Dashboard, StockDetail, Login, Register, etc.)
   src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces
 nginx/             Reverse proxy config
-scripts/           Seed data, setup scripts, health checks
+scripts/           seed_sp500, seed_historical_data, setup scripts, health checks
 deploy/            Systemd units and env templates for VMs
 docs/              Architecture, deployment, API reference, data sources
 ```
@@ -71,6 +76,8 @@ make down                  # Stop all services
 make logs                  # Tail all service logs
 make migrate               # Run alembic migrations (via Docker)
 make seed                  # Seed S&P 500 stocks
+make seed-history          # Seed full historical market data (max available)
+make seed-all              # Seed stocks + historical data in one go
 make test                  # Run backend pytest suite
 make lint                  # Run ruff check + format
 make dev-backend           # Run FastAPI with hot reload (local)
@@ -84,6 +91,8 @@ uvicorn app.main:app --reload --port 8000          # Run API server
 alembic revision --autogenerate -m "description"    # Create migration
 alembic upgrade head                                 # Apply migrations
 python -m scripts.seed_sp500                         # Seed stock data
+python -m scripts.seed_historical_data               # Seed full price history
+python -m scripts.seed_historical_data --period 5y   # Seed 5 years only
 python -m pytest tests/ -v                           # Run tests
 ```
 
@@ -103,6 +112,7 @@ celery -A worker.celery_app beat --loglevel=info
 - Ruff for linting and formatting (line length 120)
 - Models use SQLAlchemy 2.0 `Mapped` / `mapped_column` syntax
 - Tests use pytest-asyncio with `auto` mode
+- Celery tasks bridge async/sync via `asyncio.new_event_loop()`
 
 ### TypeScript (frontend/)
 - React 19 + TypeScript strict mode
@@ -122,7 +132,8 @@ celery -A worker.celery_app beat --loglevel=info
 ### API Patterns
 - All routes under `/api/` prefix
 - JWT Bearer auth on protected endpoints via `get_current_user` dependency
-- Pagination: `PaginatedStocks` schema with `data` + `meta` (page, per_page, total, total_pages)
+- Admin-only endpoints via `get_current_admin` dependency
+- Pagination: `PaginatedStocks` / `PaginatedArticles` schema with `data` + `meta`
 - OAuth2 form login at `/api/auth/login` (username field = email)
 - 201 for creates, 204 for deletes, standard HTTP error codes
 
@@ -146,8 +157,16 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/app/api/auth.py` | Register, login, refresh, me endpoints |
 | `backend/app/api/stocks.py` | Stock list (paginated, filterable) and detail |
 | `backend/app/api/watchlist.py` | Watchlist CRUD |
+| `backend/app/api/market_data.py` | Daily + intraday OHLCV endpoints |
+| `backend/app/api/articles.py` | Article list (paginated, filterable by source/ticker) + sources |
+| `backend/app/api/admin.py` | Admin: trigger scrape, seed historical data |
 | `backend/worker/celery_app.py` | Celery instance, task routing, autodiscovery |
 | `backend/worker/beat_schedule.py` | Hourly cron schedule for all tasks |
+| `backend/worker/tasks/scraping/orchestrate.py` | Fan-out all 7 scrapers via Celery group |
+| `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker extraction |
+| `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
+| `scripts/seed_sp500.py` | Seed Energy + Financials tickers |
+| `scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
 | `docker-compose.yml` | All Docker VM services |
 | `frontend/src/App.tsx` | React Router with protected routes + AppLayout |
 | `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist |
@@ -166,13 +185,23 @@ celery -A worker.celery_app beat --loglevel=info
 | GET | `/api/watchlist` | Yes | Done |
 | POST | `/api/watchlist` | Yes | Done |
 | DELETE | `/api/watchlist/{ticker}` | Yes | Done |
+| GET | `/api/market-data/{ticker}/daily` | Yes | Done |
+| GET | `/api/market-data/{ticker}/intraday` | Yes | Done |
+| GET | `/api/articles` | Yes | Done |
+| GET | `/api/articles/sources` | Yes | Done |
+| POST | `/api/admin/seed-history` | Admin | Done |
+| POST | `/api/admin/scrape-now` | Admin | Done |
 
 ## Data Pipeline
 
 ```
-Celery Beat (hourly at :00) → fan-out scrapers → store articles → FinBERT sentiment
-Celery Beat (hourly at :05) → fetch market data via yfinance
-Celery Beat (hourly at :30) → generate composite signals → dispatch alerts
+Initialization:
+  make seed-all → seed tickers + backfill full historical OHLCV (max available, ~30+ years)
+
+Hourly:
+  Celery Beat (:00) → fan-out 7 scrapers → store articles + extract tickers → (Phase 5: FinBERT)
+  Celery Beat (:05, weekdays) → fetch market data via yfinance (5-day window)
+  Celery Beat (:30) → (Phase 6: generate signals → dispatch alerts)
 ```
 
 ## Signal Scoring

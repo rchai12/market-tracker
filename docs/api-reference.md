@@ -79,10 +79,44 @@ Query params for `/stocks`: `?sector=energy&search=exxon&page=1&per_page=20`
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/market-data/{ticker}/daily` | Yes | Planned (Phase 3) | Daily OHLCV |
-| GET | `/market-data/{ticker}/intraday` | Yes | Planned (Phase 3) | Intraday data |
+| GET | `/market-data/{ticker}/daily` | Yes | **Done** | Daily OHLCV |
+| GET | `/market-data/{ticker}/intraday` | Yes | **Done** | Intraday data |
 
 Query params: `?start_date=2025-01-01&end_date=2025-12-31&limit=365`
+
+## Articles
+
+| Method | Path | Auth | Status | Description |
+|--------|------|------|--------|-------------|
+| GET | `/articles` | Yes | **Done** | List articles (paginated, filterable) |
+| GET | `/articles/sources` | Yes | **Done** | List sources with article counts |
+
+Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=false&page=1&per_page=20`
+
+### GET /articles response
+```json
+{
+  "data": [
+    {
+      "id": 1, "source": "yahoo_finance", "source_url": "https://...",
+      "title": "XOM beats earnings", "summary": null, "author": null,
+      "published_at": "2025-01-15T10:00:00Z", "scraped_at": "2025-01-15T10:05:00Z",
+      "is_processed": false, "event_category": null,
+      "tickers": ["XOM", "CVX"]
+    }
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 150, "total_pages": 8 }
+}
+```
+
+### GET /articles/sources response
+```json
+[
+  { "source": "yahoo_finance", "count": 450 },
+  { "source": "reuters", "count": 230 },
+  { "source": "sec_edgar", "count": 180 }
+]
+```
 
 ## Sentiment
 
@@ -133,6 +167,20 @@ Query params: `?direction=bullish&strength=strong&ticker=XOM&page=1`
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/admin/scrape-logs` | Admin | Planned (Phase 4) | Scrape execution history |
-| POST | `/admin/scrape/trigger` | Admin | Planned (Phase 4) | Manually trigger scrape cycle |
+| POST | `/admin/seed-history` | Admin | **Done** | Trigger historical market data backfill (Celery task) |
+| POST | `/admin/scrape-now` | Admin | **Done** | Trigger immediate scrape orchestration (Celery task) |
+| GET | `/admin/scrape-logs` | Admin | Planned (Phase 8) | Scrape execution history |
 | GET | `/admin/system/health` | Admin | Planned (Phase 8) | Service health: DB, Redis, workers |
+
+### POST /admin/seed-history
+```
+// Query params: ?period=max (default), 10y, 5y, 2y, 1y
+// Response
+{ "task_id": "abc-123", "period": "max", "status": "queued" }
+```
+
+### POST /admin/scrape-now
+```
+// Response
+{ "task_id": "def-456", "status": "queued" }
+```

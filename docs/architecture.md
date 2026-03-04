@@ -159,6 +159,14 @@ composite = 0.40 * sentiment_momentum
 - Moderate: |composite| > 0.35
 - Weak: everything else
 
+## Historical Data Initialization
+
+On first setup, `scripts/seed_historical_data.py` backfills the full available price history for all active tickers via yfinance (`period="max"`). This provides ~30+ years of daily OHLCV data per ticker (~7,500 rows each, ~340K total rows, ~50MB in Postgres).
+
+This ensures the signal algorithm has deep historical baselines (20-day moving averages for price momentum and volume anomaly) from day one, rather than starting blind and needing weeks to accumulate enough data.
+
+The historical seed is idempotent (upserts via `ON CONFLICT DO UPDATE`) and skips tickers that already have 5,000+ rows.
+
 ## Network Security
 
 - Postgres (5432) and Redis (6379): internal VPC only, not exposed to internet

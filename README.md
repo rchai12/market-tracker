@@ -5,6 +5,7 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 ## Features
 
 - **News Scraping**: Hourly ingestion from 7 sources (Yahoo Finance, Finviz, Reuters, SEC EDGAR, MarketWatch, Reddit, FRED)
+- **Historical Data**: Full available price history (~30+ years) seeded on initialization via yfinance
 - **Sentiment Analysis**: FinBERT model scores every article as bullish/bearish/neutral
 - **Signal Generation**: Composite scoring algorithm combining sentiment momentum, article volume, price momentum, and volume anomalies
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
@@ -44,8 +45,8 @@ make up
 # Run database migrations
 make migrate
 
-# Seed S&P 500 stocks (Energy + Financials)
-make seed
+# Seed stocks AND backfill full price history (~30+ years per ticker)
+make seed-all
 
 # Verify
 curl http://localhost/api/health
@@ -74,7 +75,7 @@ make lint
 - **SQLAlchemy 2.0** — async ORM with PostgreSQL
 - **Celery + Redis** — distributed task queue
 - **FinBERT** — financial sentiment analysis model
-- **yfinance** — market data (OHLCV)
+- **yfinance** — market data (OHLCV, full history)
 - **Alembic** — database migrations
 
 ### Frontend
@@ -95,18 +96,20 @@ make lint
 
 ```
 backend/           FastAPI + Celery + SQLAlchemy
-  app/api/         Route handlers (auth, stocks, watchlist, ...)
-  app/models/      SQLAlchemy ORM models
+  app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, admin)
+  app/models/      SQLAlchemy ORM models (13 tables)
   app/schemas/     Pydantic schemas
   worker/tasks/    Celery tasks (scraping, sentiment, signals)
+    scraping/      7 scrapers + orchestrator + market data
+  worker/utils/    Rate limiter, text cleaner, ticker extractor
 frontend/          React + TypeScript
   src/pages/       Route pages
-  src/components/  UI components
+  src/components/  UI components (layout, charts)
   src/api/         API client modules
 nginx/             Reverse proxy config
-scripts/           Setup and seed scripts
+scripts/           Setup and seed scripts (tickers + historical data)
 deploy/            VM deployment configs
-docs/              Architecture, deployment, API reference
+docs/              Architecture, deployment, API reference, data sources
 ```
 
 ## Scope

@@ -41,7 +41,12 @@ python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 ```bash
 docker compose up -d
 docker compose exec backend alembic upgrade head
-docker compose exec backend python -m scripts.seed_sp500
+
+# Seed tickers + full historical market data (~30+ years)
+make seed-all
+# Or step by step:
+# make seed          # Seed 45 Energy + Financials tickers
+# make seed-history  # Backfill full OHLCV history (takes a few minutes)
 ```
 
 ### 4. Verify
