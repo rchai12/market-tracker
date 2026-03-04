@@ -9,6 +9,7 @@ import SentimentPage from "./pages/SentimentPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import AlertsPage from "./pages/AlertsPage";
 import SettingsPage from "./pages/SettingsPage";
+import StockDetailPage from "./pages/StockDetailPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((state) => state.token);
@@ -29,6 +30,7 @@ function App() {
         }
       >
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/stocks/:ticker" element={<StockDetailPage />} />
         <Route path="/signals" element={<SignalsPage />} />
         <Route path="/sentiment" element={<SentimentPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />

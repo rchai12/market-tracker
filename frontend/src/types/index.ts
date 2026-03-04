@@ -11,8 +11,12 @@ export interface Stock {
   ticker: string;
   company_name: string;
   sector_id: number | null;
+  sector_name: string | null;
   market_cap: number | null;
   is_active: boolean;
+  latest_sentiment: string | null;
+  latest_signal_direction: string | null;
+  latest_signal_strength: string | null;
 }
 
 export interface Article {
