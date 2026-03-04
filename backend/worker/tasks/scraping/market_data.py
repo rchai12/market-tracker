@@ -138,3 +138,21 @@ async def _fetch_all_market_data_async(period: str = "5d") -> dict:
 
     logger.info(f"Market data complete: {total_rows} rows stored, {errors} errors")
     return {"status": "complete", "rows": total_rows, "errors": errors}
+
+
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=300)
+def seed_historical_market_data(self, period: str = "2y"):
+    """One-time task to backfill historical OHLCV data.
+
+    Call manually: seed_historical_market_data.delay("2y")
+    Uses the same storage/upsert logic as the hourly task.
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(_fetch_all_market_data_async(period))
+        return result
+    except Exception as exc:
+        logger.error(f"Historical market data seed failed: {exc}")
+        raise self.retry(exc=exc)

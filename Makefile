@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed shell test lint
+.PHONY: up down logs migrate seed seed-history seed-all shell test lint
 
 up:
 	docker compose up -d
@@ -14,6 +14,13 @@ migrate:
 
 seed:
 	docker compose exec backend python -m scripts.seed_sp500
+
+seed-history:
+	docker compose exec backend python -m scripts.seed_historical_data
+
+seed-all:
+	docker compose exec backend python -m scripts.seed_sp500
+	docker compose exec backend python -m scripts.seed_historical_data
 
 shell:
 	docker compose exec backend bash
