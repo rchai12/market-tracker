@@ -2,6 +2,30 @@
 
 Sentiment-driven stock market prediction system. Scrapes financial news, runs FinBERT sentiment analysis, correlates with market data, generates composite trading signals, and surfaces everything through a React dashboard with Discord/email alerts.
 
+## Current Status
+
+**Phase 2 complete.** Auth, stock listing, watchlist API, and frontend layout are built.
+
+### What's implemented
+- FastAPI backend with JWT auth (register/login/refresh/me)
+- Stock listing with sector filter, search, pagination
+- Watchlist CRUD
+- React frontend with AppLayout (sidebar + header), login/register, dark mode
+- Placeholder pages for all routes (dashboard, signals, sentiment, watchlist, alerts, settings)
+- SQLAlchemy models for all 13 tables
+- Celery app + beat schedule structure (tasks not yet implemented)
+- Docker Compose, nginx, Dockerfiles
+- Unit tests for JWT, password hashing, ticker extraction, text cleaning
+
+### What's next
+- Phase 3: Market data pipeline (yfinance + Celery + TradingView charts)
+- Phase 4: News scraping pipeline (7 sources)
+- Phase 5: FinBERT sentiment analysis
+- Phase 6: Signal generation + alerts
+- Phase 7: Dashboard polish
+- Phase 8: Hardening + deployment
+- Phase 9: Data retention + optimization
+
 ## Architecture
 
 Two Oracle Cloud free-tier ARM VMs:
@@ -14,25 +38,28 @@ Two Oracle Cloud free-tier ARM VMs:
 ```
 backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
-    api/           Route handlers (routers)
-    core/          Security (JWT/bcrypt), exceptions, logging
-    models/        SQLAlchemy ORM models
+    api/           Route handlers: auth, stocks, watchlist (+ health)
+    core/          Security (JWT/bcrypt), exceptions
+    models/        SQLAlchemy ORM models (13 tables)
     schemas/       Pydantic request/response schemas
-    services/      Business logic layer
+    services/      Business logic layer (placeholder)
   worker/          Celery application
+    celery_app.py  Celery instance + Redis config
+    beat_schedule  Hourly cron schedule
     tasks/         Task modules: scraping/, sentiment/, signals/
     utils/         Rate limiter, text cleaner, ticker extractor
   alembic/         Database migrations
   tests/           pytest test suite
-frontend/          React + TypeScript (Vite, Tailwind, TradingView charts)
-  src/api/         Axios API client
-  src/components/  Reusable UI components
-  src/pages/       Route pages
-  src/store/       Zustand state stores
+frontend/          React 19 + TypeScript (Vite, Tailwind)
+  src/api/         Axios API client (auth, stocks, watchlist)
+  src/components/  Layout (AppLayout, Sidebar, Header)
+  src/pages/       All route pages (Dashboard, Login, Register, etc.)
+  src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces
 nginx/             Reverse proxy config
 scripts/           Seed data, setup scripts, health checks
 deploy/            Systemd units and env templates for VMs
+docs/              Architecture, deployment, API reference, data sources
 ```
 
 ## Commands
@@ -71,7 +98,7 @@ celery -A worker.celery_app beat --loglevel=info
 ### Python (backend/)
 - Python 3.11+, type hints everywhere
 - Async SQLAlchemy with `asyncpg` driver
-- Pydantic v2 for all schemas
+- Pydantic v2 for all schemas, `from_attributes = True` for ORM models
 - FastAPI dependency injection for DB sessions and auth
 - Ruff for linting and formatting (line length 120)
 - Models use SQLAlchemy 2.0 `Mapped` / `mapped_column` syntax
@@ -80,9 +107,9 @@ celery -A worker.celery_app beat --loglevel=info
 ### TypeScript (frontend/)
 - React 19 + TypeScript strict mode
 - Vite for build tooling
-- Zustand for client state (auth, theme)
+- Zustand for client state (auth with persist, theme with persist)
 - TanStack Query for server state (caching, pagination)
-- Tailwind CSS for styling
+- Tailwind CSS for styling with dark mode (`class` strategy)
 - TradingView Lightweight Charts for financial charts
 - Path alias: `@/` maps to `src/`
 
@@ -92,11 +119,12 @@ celery -A worker.celery_app beat --loglevel=info
 - Naming: snake_case tables and columns
 - Unique constraints for deduplication (article URLs, stock+date pairs)
 
-### API
+### API Patterns
 - All routes under `/api/` prefix
-- JWT Bearer auth on protected endpoints
-- Standard response envelope: `{ data, meta, error }`
-- Pagination via `?page=&per_page=` query params
+- JWT Bearer auth on protected endpoints via `get_current_user` dependency
+- Pagination: `PaginatedStocks` schema with `data` + `meta` (page, per_page, total, total_pages)
+- OAuth2 form login at `/api/auth/login` (username field = email)
+- 201 for creates, 204 for deletes, standard HTTP error codes
 
 ### Secrets
 - ALL secrets in `.env` files, loaded via `pydantic-settings`
@@ -109,14 +137,35 @@ celery -A worker.celery_app beat --loglevel=info
 
 | File | Purpose |
 |------|---------|
-| `backend/app/config.py` | Central config — all env vars loaded here |
-| `backend/app/database.py` | SQLAlchemy engine, session factory, Base |
+| `backend/app/config.py` | Central config — all env vars loaded here via pydantic-settings |
+| `backend/app/database.py` | SQLAlchemy async engine, session factory, Base |
 | `backend/app/main.py` | FastAPI app factory, CORS, lifespan |
 | `backend/app/dependencies.py` | `get_db`, `get_current_user`, `get_current_admin` |
-| `backend/app/core/security.py` | JWT create/verify, password hashing |
+| `backend/app/core/security.py` | JWT create/verify, bcrypt password hashing |
+| `backend/app/api/router.py` | Aggregates all sub-routers under `/api` |
+| `backend/app/api/auth.py` | Register, login, refresh, me endpoints |
+| `backend/app/api/stocks.py` | Stock list (paginated, filterable) and detail |
+| `backend/app/api/watchlist.py` | Watchlist CRUD |
 | `backend/worker/celery_app.py` | Celery instance, task routing, autodiscovery |
 | `backend/worker/beat_schedule.py` | Hourly cron schedule for all tasks |
 | `docker-compose.yml` | All Docker VM services |
+| `frontend/src/App.tsx` | React Router with protected routes + AppLayout |
+| `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist |
+
+## API Endpoints (implemented)
+
+| Method | Path | Auth | Status |
+|--------|------|------|--------|
+| GET | `/api/health` | No | Done |
+| POST | `/api/auth/register` | No | Done |
+| POST | `/api/auth/login` | No | Done |
+| POST | `/api/auth/refresh` | No | Done |
+| GET | `/api/auth/me` | Yes | Done |
+| GET | `/api/stocks` | Yes | Done |
+| GET | `/api/stocks/{ticker}` | Yes | Done |
+| GET | `/api/watchlist` | Yes | Done |
+| POST | `/api/watchlist` | Yes | Done |
+| DELETE | `/api/watchlist/{ticker}` | Yes | Done |
 
 ## Data Pipeline
 
