@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 6 complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, and alert dispatch are built.
+**Phase 7 complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -28,13 +28,15 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Sentiment UI: SentimentBadge, SentimentChart, SentimentPage (sector + trending), StockDetailPage integration
 - Signal UI: SignalCard, SignalsPage (filtered grid), AlertsPage (config CRUD + history)
 - StockDetailPage with price/volume charts, sentiment chart, signal history, watchlist toggle
-- Placeholder pages for settings, dashboard
+- Dashboard: signals feed (10 latest moderate+), sector sentiment heatmap, top movers (bullish/bearish), article activity chart
+- Settings page: profile display, dark mode toggle, notification info
+- Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
+- UI polish: loading skeletons, error retry buttons, consistent empty states
 - SQLAlchemy models for all 13 tables
 - Docker Compose, nginx, Dockerfiles
 - Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring (62 tests)
 
 ### What's next
-- Phase 7: Dashboard polish
 - Phase 8: Hardening + deployment
 - Phase 9: Data retention + optimization
 
@@ -64,7 +66,7 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   tests/           pytest test suite (62 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts)
-  src/components/  Layout, Charts, Sentiment (SentimentBadge, SentimentChart), Signals (SignalCard)
+  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart), Sentiment (SentimentBadge), Signals (SignalCard), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard), Common (LoadingSkeleton)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, Login, Register, etc.)
   src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces

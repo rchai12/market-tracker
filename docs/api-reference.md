@@ -265,8 +265,11 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/dashboard/overview` | Yes | Planned (Phase 7) | Sector heatmap, top signals, market summary |
-| GET | `/dashboard/top-movers` | Yes | Planned (Phase 7) | Top 5 bullish + bearish |
+| GET | `/dashboard/overview` | Yes | **Deferred** | Composed from existing endpoints on frontend |
+| GET | `/dashboard/top-movers` | Yes | **Deferred** | Composed from existing endpoints on frontend |
+
+> Dashboard data is composed on the frontend from `/signals/latest`, `/sentiment/summary/sectors`,
+> and `/articles/sources`. Dedicated backend endpoints deferred — frontend parallelizes queries via TanStack Query.
 
 ## Admin
 

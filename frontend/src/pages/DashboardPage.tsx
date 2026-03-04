@@ -1,33 +1,194 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getLatestSignals } from "../api/signals";
+import { getSectorSentiment } from "../api/sentiment";
+import { listSources } from "../api/articles";
+import SignalCard from "../components/signals/SignalCard";
+import SectorHeatmapCard from "../components/dashboard/SectorHeatmapCard";
+import TopMoversCard from "../components/dashboard/TopMoversCard";
+import ArticleActivityCard from "../components/dashboard/ArticleActivityCard";
+import LoadingSkeleton from "../components/common/LoadingSkeleton";
+
+function ErrorRetry({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="text-center py-4">
+      <p className="text-red-500 dark:text-red-400 text-sm mb-2">Failed to load data</p>
+      <button
+        onClick={onRetry}
+        className="px-3 py-1.5 text-sm rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
+  const {
+    data: signals,
+    isLoading: signalsLoading,
+    isError: signalsError,
+    refetch: refetchSignals,
+  } = useQuery({
+    queryKey: ["dashboard-signals"],
+    queryFn: () => getLatestSignals(20, "moderate"),
+  });
+
+  const {
+    data: sectors,
+    isLoading: sectorsLoading,
+    isError: sectorsError,
+    refetch: refetchSectors,
+  } = useQuery({
+    queryKey: ["dashboard-sectors"],
+    queryFn: () => getSectorSentiment(7),
+  });
+
+  const {
+    data: sources,
+    isLoading: sourcesLoading,
+    isError: sourcesError,
+    refetch: refetchSources,
+  } = useQuery({
+    queryKey: ["dashboard-sources"],
+    queryFn: listSources,
+  });
+
+  const displaySignals = useMemo(() => (signals ?? []).slice(0, 10), [signals]);
+
+  const bullishSignals = useMemo(
+    () =>
+      (signals ?? [])
+        .filter((s) => s.direction === "bullish")
+        .sort((a, b) => b.composite_score - a.composite_score)
+        .slice(0, 5),
+    [signals]
+  );
+
+  const bearishSignals = useMemo(
+    () =>
+      (signals ?? [])
+        .filter((s) => s.direction === "bearish")
+        .sort((a, b) => a.composite_score - b.composite_score)
+        .slice(0, 5),
+    [signals]
+  );
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Latest Signals
+
+      {/* Latest Signals */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          Latest Signals
+        </h2>
+        {signalsLoading ? (
+          <LoadingSkeleton variant="card" count={3} />
+        ) : signalsError ? (
+          <ErrorRetry onRetry={() => refetchSignals()} />
+        ) : displaySignals.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {displaySignals.map((s) => (
+              <SignalCard key={s.id} signal={s} />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 text-center">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              No signals yet. Signals will appear after the generation pipeline runs.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* Sector Heatmap + Top Movers */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Sector Sentiment
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Signal data will appear here once the pipeline is running.
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Sentiment Overview
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Sector sentiment heatmap coming in Phase 7.
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          {sectorsLoading ? (
+            <LoadingSkeleton variant="card" count={2} />
+          ) : sectorsError ? (
+            <ErrorRetry onRetry={() => refetchSectors()} />
+          ) : sectors && sectors.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {sectors.map((s) => (
+                <SectorHeatmapCard key={s.sector} sector={s} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
+              No sector data yet. Data will appear after sentiment analysis runs.
+            </p>
+          )}
+        </section>
+
+        <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
             Top Movers
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Top bullish and bearish stocks will appear here.
-          </p>
-        </div>
+          {signalsLoading ? (
+            <LoadingSkeleton variant="row" count={10} />
+          ) : signalsError ? (
+            <ErrorRetry onRetry={() => refetchSignals()} />
+          ) : bullishSignals.length > 0 || bearishSignals.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
+                  Top Bullish
+                </h3>
+                {bullishSignals.length > 0 ? (
+                  bullishSignals.map((s, i) => (
+                    <TopMoversCard key={s.id} signal={s} rank={i + 1} />
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 py-2">
+                    No bullish signals
+                  </p>
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
+                  Top Bearish
+                </h3>
+                {bearishSignals.length > 0 ? (
+                  bearishSignals.map((s, i) => (
+                    <TopMoversCard key={s.id} signal={s} rank={i + 1} />
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 py-2">
+                    No bearish signals
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
+              No signals yet. Top movers will appear after signal generation runs.
+            </p>
+          )}
+        </section>
       </div>
+
+      {/* Article Activity */}
+      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          Article Activity
+        </h2>
+        {sourcesLoading ? (
+          <LoadingSkeleton variant="row" count={5} />
+        ) : sourcesError ? (
+          <ErrorRetry onRetry={() => refetchSources()} />
+        ) : sources && sources.length > 0 ? (
+          <ArticleActivityCard sources={sources} />
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
+            No articles scraped yet. Data will appear after scrapers run.
+          </p>
+        )}
+      </section>
     </div>
   );
 }

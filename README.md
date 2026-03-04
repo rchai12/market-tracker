@@ -106,7 +106,7 @@ backend/           FastAPI + Celery + SQLAlchemy
   worker/utils/    Rate limiter, text cleaner, ticker extractor
 frontend/          React + TypeScript
   src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, etc.)
-  src/components/  UI components (layout, charts, sentiment, signals)
+  src/components/  UI components (layout, charts, sentiment, signals, dashboard, common)
   src/api/         API client modules
 nginx/             Reverse proxy config
 scripts/           Setup and seed scripts (tickers + historical data)
