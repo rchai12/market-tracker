@@ -11,6 +11,12 @@ beat_schedule = {
         "task": "worker.tasks.scraping.market_data.fetch_all_market_data",
         "schedule": crontab(minute=5, day_of_week="1-5"),
     },
+    # Sentiment catch-up - runs at :15 to process any missed articles
+    # (primary sentiment runs chained after scraping at :00)
+    "sentiment-catchup": {
+        "task": "worker.tasks.sentiment.sentiment_task.process_new_articles_sentiment",
+        "schedule": crontab(minute=15),
+    },
     # Signal generation - runs at :30 (after sentiment processing)
     "generate-signals": {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",

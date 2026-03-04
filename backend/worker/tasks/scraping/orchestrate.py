@@ -1,30 +1,22 @@
-"""Orchestration task that fans out all scrapers and logs aggregate results."""
+"""Orchestration task that fans out all scrapers, then triggers sentiment analysis."""
 
 import logging
 
-from celery import group
+from celery import chain, group
 
 from worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-SCRAPERS = [
-    "worker.tasks.scraping.orchestrate.scrape_yahoo_news",
-    "worker.tasks.scraping.orchestrate.scrape_finviz",
-    "worker.tasks.scraping.orchestrate.scrape_reuters",
-    "worker.tasks.scraping.orchestrate.scrape_sec_edgar",
-    "worker.tasks.scraping.orchestrate.scrape_marketwatch",
-    "worker.tasks.scraping.orchestrate.scrape_reddit",
-    "worker.tasks.scraping.orchestrate.scrape_fred",
-]
-
 
 @celery_app.task(name="worker.tasks.scraping.orchestrate_scraping", bind=True, max_retries=0)
 def orchestrate_scraping(self):
-    """Fan out all scrapers in parallel, then log aggregate results."""
+    """Fan out all scrapers in parallel, then chain sentiment processing."""
+    from worker.tasks.sentiment.sentiment_task import process_new_articles_sentiment
+
     logger.info("Starting scrape orchestration")
 
-    job = group(
+    scrape_job = group(
         scrape_yahoo_news.s(),
         scrape_finviz.s(),
         scrape_reuters.s(),
@@ -34,11 +26,17 @@ def orchestrate_scraping(self):
         scrape_fred.s(),
     )
 
-    result = job.apply_async()
+    result = scrape_job.apply_async()
     result.get(timeout=300, disable_sync_subtasks=False)
 
     total_new = sum(r for r in result.results if isinstance(r.result, int))
     logger.info(f"Scrape orchestration complete: {total_new} total new articles")
+
+    # Chain sentiment processing if new articles were found
+    if total_new > 0:
+        logger.info("Triggering sentiment analysis for new articles")
+        process_new_articles_sentiment.delay()
+
     return {"total_new_articles": total_new}
 
 

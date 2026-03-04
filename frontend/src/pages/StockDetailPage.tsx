@@ -3,8 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getStock } from "../api/stocks";
 import { getDailyData } from "../api/marketData";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../api/watchlist";
+import { getTickerSentimentTimeline } from "../api/sentiment";
 import PriceChart from "../components/charts/PriceChart";
 import VolumeChart from "../components/charts/VolumeChart";
+import SentimentChart from "../components/sentiment/SentimentChart";
+import SentimentBadge from "../components/sentiment/SentimentBadge";
 
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -19,6 +22,12 @@ export default function StockDetailPage() {
   const { data: marketData, isLoading: marketLoading } = useQuery({
     queryKey: ["market-data", ticker, "daily"],
     queryFn: () => getDailyData(ticker!, { limit: 365 }),
+    enabled: !!ticker,
+  });
+
+  const { data: sentimentData } = useQuery({
+    queryKey: ["sentiment-timeline", ticker],
+    queryFn: () => getTickerSentimentTimeline(ticker!, 30),
     enabled: !!ticker,
   });
 
@@ -47,13 +56,27 @@ export default function StockDetailPage() {
     return <p className="text-red-500">Stock not found</p>;
   }
 
+  // Compute latest sentiment from timeline data
+  const latestSentiment = sentimentData && sentimentData.length > 0
+    ? sentimentData[sentimentData.length - 1]
+    : null;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {stock.ticker}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {stock.ticker}
+            </h1>
+            {latestSentiment && (
+              <SentimentBadge
+                label={latestSentiment.dominant_label}
+                score={Math.max(latestSentiment.avg_positive, latestSentiment.avg_negative, latestSentiment.avg_neutral)}
+                size="md"
+              />
+            )}
+          </div>
           <p className="text-gray-500 dark:text-gray-400">{stock.company_name}</p>
           {stock.sector_name && (
             <span className="inline-block mt-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded">
@@ -100,15 +123,19 @@ export default function StockDetailPage() {
         </div>
       )}
 
-      {/* Sentiment + Signals placeholders */}
+      {/* Sentiment + Signals */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Sentiment
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Sentiment (30 days)
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Sentiment analysis will appear here (Phase 5).
-          </p>
+          {sentimentData && sentimentData.length > 0 ? (
+            <SentimentChart data={sentimentData} height={180} />
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
+              No sentiment data yet. Data will appear after articles are analyzed.
+            </p>
+          )}
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
