@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 7 + refactor pass complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend.
+**Phase 8A (backend foundation) complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend. Phase 8A added configurable DB pool, structured JSON logging, request correlation IDs, and enhanced health endpoint.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -34,6 +34,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - UI polish: loading skeletons, error retry buttons, consistent empty states
 - SQLAlchemy models for all 13 tables
 - Docker Compose, nginx, Dockerfiles
+- Structured JSON logging with request ID correlation (FastAPI + Celery)
+- Enhanced health endpoint: DB + Redis connectivity checks, `?detail=true` mode
+- Configurable DB pool (pool_size, max_overflow via env vars)
+- Celery task reliability: `task_acks_late`, `task_reject_on_worker_lost`
 - Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring (62 tests)
 
 ### What's next
@@ -166,6 +170,9 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/app/main.py` | FastAPI app factory, CORS, lifespan |
 | `backend/app/dependencies.py` | `get_db`, `get_current_user`, `get_current_admin`, `get_stock_by_ticker` |
 | `backend/app/core/security.py` | JWT create/verify, bcrypt password hashing |
+| `backend/app/core/logging_config.py` | JSONFormatter, setup_logging(), request_id_var ContextVar |
+| `backend/app/core/middleware.py` | RequestLoggingMiddleware — request timing + correlation IDs |
+| `backend/app/api/health.py` | Health endpoint with DB + Redis checks, `?detail=true` |
 | `backend/app/api/router.py` | Aggregates all sub-routers under `/api` |
 | `backend/app/api/auth.py` | Register, login, refresh, me endpoints |
 | `backend/app/api/stocks.py` | Stock list (paginated, filterable) and detail |

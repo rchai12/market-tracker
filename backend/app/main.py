@@ -5,13 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import router
 from app.config import settings
+from app.core.logging_config import setup_logging
+from app.core.middleware import RequestLoggingMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    setup_logging(settings.log_level)
     yield
-    # Shutdown
     from app.database import engine
 
     await engine.dispose()
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestLoggingMiddleware)
 
     app.include_router(router)
 

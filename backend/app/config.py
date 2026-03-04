@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     alert_from_email: str = ""
 
+    # Database pool
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+
+    # Logging
+    log_level: str = "INFO"
+
     # FinBERT
     finbert_model_path: str = "ProsusAI/finbert"
     finbert_batch_size: int = 16
