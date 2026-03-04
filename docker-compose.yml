@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_BIND_IP:-127.0.0.1}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -15,11 +17,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "1"
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_BIND_IP:-127.0.0.1}:6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -29,18 +38,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.5"
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -52,34 +71,65 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
       - internal
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     networks:
       - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
 
   nginx:
     build:
       context: ./nginx
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       - internal
       - public
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
 
 networks:
   internal:
