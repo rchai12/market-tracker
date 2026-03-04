@@ -141,10 +141,10 @@ async def _fetch_all_market_data_async(period: str = "5d") -> dict:
 
 
 @celery_app.task(bind=True, max_retries=1, default_retry_delay=300)
-def seed_historical_market_data(self, period: str = "2y"):
+def seed_historical_market_data(self, period: str = "max"):
     """One-time task to backfill historical OHLCV data.
 
-    Call manually: seed_historical_market_data.delay("2y")
+    Call manually: seed_historical_market_data.delay("max")
     Uses the same storage/upsert logic as the hourly task.
     """
     import asyncio

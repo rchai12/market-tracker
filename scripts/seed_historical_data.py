@@ -1,13 +1,12 @@
 """Seed historical market data for all active tickers.
 
-Run once after initial setup to backfill 2 years of daily OHLCV data
-so the signal algorithm has proper baselines (20-day price/volume averages)
-from day one instead of starting blind.
+Run once after initial setup to backfill the full available price history
+so the signal algorithm has deep historical context from day one.
 
 Usage:
-    python -m scripts.seed_historical_data          # default 2 years
+    python -m scripts.seed_historical_data              # default: max history
+    python -m scripts.seed_historical_data --period 10y
     python -m scripts.seed_historical_data --period 5y
-    python -m scripts.seed_historical_data --period max
 """
 
 import argparse
@@ -128,7 +127,7 @@ async def store_historical_data(stock_id: int, ticker: str, df) -> int:
     return len(rows)
 
 
-async def seed_historical(period: str = "2y", skip_existing: bool = True):
+async def seed_historical(period: str = "max", skip_existing: bool = True):
     """Main entry point: download and store historical data for all active tickers."""
     ticker_map = await get_active_tickers()
     if not ticker_map:
@@ -137,11 +136,12 @@ async def seed_historical(period: str = "2y", skip_existing: bool = True):
 
     existing_counts = await get_existing_data_counts() if skip_existing else {}
 
-    # Filter out tickers that already have substantial data
+    # Filter out tickers that already have substantial historical data
+    # 5000 rows ≈ ~20 years of trading days, good enough to skip re-download
     tickers_to_fetch = []
     for ticker, stock_id in ticker_map.items():
         count = existing_counts.get(stock_id, 0)
-        if skip_existing and count >= 200:
+        if skip_existing and count >= 5000:
             logger.info(f"  Skipping {ticker} — already has {count} rows")
             continue
         tickers_to_fetch.append(ticker)
@@ -193,9 +193,9 @@ def main():
     parser = argparse.ArgumentParser(description="Seed historical market data")
     parser.add_argument(
         "--period",
-        default="2y",
+        default="max",
         choices=["1y", "2y", "5y", "10y", "max"],
-        help="How far back to fetch (default: 2y)",
+        help="How far back to fetch (default: max — full available history)",
     )
     parser.add_argument(
         "--force",

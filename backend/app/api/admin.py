@@ -10,7 +10,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.post("/seed-history")
 async def trigger_historical_seed(
-    period: str = Query("2y", description="yfinance period: 1y, 2y, 5y, 10y, max"),
+    period: str = Query("max", description="yfinance period: 1y, 2y, 5y, 10y, max"),
     _admin: User = Depends(get_current_admin),
 ):
     """Trigger historical market data backfill as a background Celery task."""
