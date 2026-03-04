@@ -96,15 +96,16 @@ make lint
 
 ```
 backend/           FastAPI + Celery + SQLAlchemy
-  app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, admin)
+  app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, sentiment, admin)
   app/models/      SQLAlchemy ORM models (13 tables)
   app/schemas/     Pydantic schemas
   worker/tasks/    Celery tasks (scraping, sentiment, signals)
     scraping/      7 scrapers + orchestrator + market data
+    sentiment/     FinBERT analyzer (singleton) + sentiment processing task
   worker/utils/    Rate limiter, text cleaner, ticker extractor
 frontend/          React + TypeScript
-  src/pages/       Route pages
-  src/components/  UI components (layout, charts)
+  src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, etc.)
+  src/components/  UI components (layout, charts, sentiment)
   src/api/         API client modules
 nginx/             Reverse proxy config
 scripts/           Setup and seed scripts (tickers + historical data)

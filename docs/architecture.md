@@ -31,8 +31,9 @@
 │  │  Queues:               │  │  Schedules:            │   │
 │  │  - scraping            │  │  - :00 scrape all      │   │
 │  │  - sentiment           │  │  - :05 market data     │   │
-│  │  - signals             │  │  - :30 gen signals     │   │
-│  │  - default             │  │  - 3AM maintenance     │   │
+│  │  - signals             │  │  - :15 sentiment       │   │
+│  │  - default             │  │  - :30 gen signals     │   │
+│  │                        │  │  - 3AM maintenance     │   │
 │  └──────────────────────┘  └────────────────────────┘   │
 │                                                          │
 │  ┌──────────────────────┐                               │
@@ -166,6 +167,25 @@ On first setup, `scripts/seed_historical_data.py` backfills the full available p
 This ensures the signal algorithm has deep historical baselines (20-day moving averages for price momentum and volume anomaly) from day one, rather than starting blind and needing weeks to accumulate enough data.
 
 The historical seed is idempotent (upserts via `ON CONFLICT DO UPDATE`) and skips tickers that already have 5,000+ rows.
+
+## Sentiment Analysis Pipeline
+
+FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on first use to avoid startup overhead.
+
+**Flow:**
+1. Scraper orchestration completes → automatically chains `process_new_articles_sentiment`
+2. Task queries all articles where `is_processed = false` with eager-loaded `article_stocks`
+3. For each article, selects best text source: `raw_text` → `summary` → `title`
+4. FinBERT analyzes text (chunking at ~2048 chars for long articles, averaging scores across chunks)
+5. Stores `SentimentScore` per article-stock pair (or `stock_id=NULL` for unlinked articles)
+6. Marks article as `is_processed = true`
+
+**Configuration (via pydantic-settings):**
+- `finbert_model_path`: path to model files (default: `ProsusAI/finbert`)
+- `finbert_batch_size`: inference batch size (default: 16)
+- `finbert_max_length`: max token length (default: 512)
+
+**Safety net:** A Celery Beat task at `:15` runs sentiment processing as a catch-up for any articles missed by the chained flow.
 
 ## Network Security
 

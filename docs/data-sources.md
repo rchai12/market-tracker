@@ -33,7 +33,21 @@ All scrapers extend `BaseScraper` which provides:
 - `article_stocks` join table linking (with confidence scores)
 - `scrape_logs` table logging (articles found, new, errors)
 
-Orchestration: Celery `group()` fans out all 7 scrapers in parallel, hourly at :00.
+Orchestration: Celery `group()` fans out all 7 scrapers in parallel, hourly at :00, then chains FinBERT sentiment processing on new articles.
+
+## Sentiment Analysis (FinBERT)
+
+| Model | Method | Status | Notes |
+|-------|--------|--------|-------|
+| ProsusAI/finbert | PyTorch inference (CPU) | **Done** | Singleton model, lazy-loaded on first use, ~1.5GB in memory |
+
+**Processing pipeline:**
+- Automatically triggered after scraper orchestration completes (chained task)
+- Catch-up task runs at :15 every hour as a safety net
+- Analyzes article text: prefers `raw_text` → `summary` → `title`
+- Long texts (>2048 chars) are chunked at sentence boundaries, scores averaged
+- Batch inference with configurable batch size (default 16) and max token length (default 512)
+- Stores per-article-per-stock sentiment scores (positive/negative/neutral probabilities + dominant label)
 
 ## Historical Data Seeding
 

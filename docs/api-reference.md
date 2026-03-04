@@ -122,10 +122,79 @@ Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=fal
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/sentiment/{ticker}` | Yes | Planned (Phase 5) | Sentiment time series |
-| GET | `/sentiment/{ticker}/articles` | Yes | Planned (Phase 5) | Articles with scores for ticker |
-| GET | `/sentiment/summary` | Yes | Planned (Phase 5) | Sector-level aggregation |
-| GET | `/sentiment/trending` | Yes | Planned (Phase 5) | Highest sentiment volume/change |
+| GET | `/sentiment/{ticker}` | Yes | **Done** | Daily sentiment time series (avg scores per day) |
+| GET | `/sentiment/{ticker}/articles` | Yes | **Done** | Paginated articles with sentiment scores for ticker |
+| GET | `/sentiment/summary/sectors` | Yes | **Done** | Sector-level sentiment aggregation with label counts |
+| GET | `/sentiment/trending/stocks` | Yes | **Done** | Top stocks by sentiment article volume |
+
+### GET /sentiment/{ticker}
+
+Query params: `?days=30` (default 30)
+
+```json
+// Response
+[
+  {
+    "date": "2025-06-15",
+    "avg_positive": 0.65,
+    "avg_negative": 0.15,
+    "avg_neutral": 0.20,
+    "article_count": 8,
+    "dominant_label": "positive"
+  }
+]
+```
+
+### GET /sentiment/{ticker}/articles
+
+Query params: `?page=1&per_page=20`
+
+```json
+{
+  "data": [
+    {
+      "id": 1, "article_id": 42, "stock_id": 5,
+      "label": "positive", "positive": 0.85, "negative": 0.05, "neutral": 0.10,
+      "model_version": "ProsusAI/finbert",
+      "created_at": "2025-06-15T10:00:00Z",
+      "article_title": "XOM beats earnings expectations",
+      "article_source": "yahoo_finance"
+    }
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
+}
+```
+
+### GET /sentiment/summary/sectors
+
+Query params: `?days=7` (default 7)
+
+```json
+[
+  {
+    "sector": "Energy",
+    "avg_positive": 0.45, "avg_negative": 0.25, "avg_neutral": 0.30,
+    "total_articles": 120,
+    "positive_count": 55, "negative_count": 30, "neutral_count": 35,
+    "dominant_label": "positive"
+  }
+]
+```
+
+### GET /sentiment/trending/stocks
+
+Query params: `?days=3&limit=10` (defaults)
+
+```json
+[
+  {
+    "ticker": "XOM",
+    "avg_positive": 0.70, "avg_negative": 0.10, "avg_neutral": 0.20,
+    "total_articles": 25,
+    "dominant_label": "positive"
+  }
+]
+```
 
 ## Signals
 
