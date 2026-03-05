@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Data retention (days)
+    retention_article_text_days: int = 90
+    retention_scrape_log_days: int = 30
+    retention_alert_log_days: int = 90
+    retention_signal_days: int = 180
+    retention_sentiment_days: int = 365
+
     # FinBERT
     finbert_model_path: str = "ProsusAI/finbert"
     finbert_batch_size: int = 16

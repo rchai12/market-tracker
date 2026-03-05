@@ -25,6 +25,7 @@ celery_app.conf.update(
         "worker.tasks.scraping.*": {"queue": "scraping"},
         "worker.tasks.sentiment.*": {"queue": "sentiment"},
         "worker.tasks.signals.*": {"queue": "signals"},
+        "worker.tasks.maintenance.*": {"queue": "maintenance"},
     },
 )
 
@@ -40,6 +41,7 @@ celery_app.autodiscover_tasks([
     "worker.tasks.scraping",
     "worker.tasks.sentiment",
     "worker.tasks.signals",
+    "worker.tasks.maintenance",
 ])
 
 # Import beat schedule
