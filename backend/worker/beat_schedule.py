@@ -22,6 +22,11 @@ beat_schedule = {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",
         "schedule": crontab(minute=30),
     },
+    # Refresh materialized views - runs at :35 (after signal generation at :30)
+    "refresh-matviews": {
+        "task": "worker.tasks.maintenance.refresh_materialized_views",
+        "schedule": crontab(minute=35),
+    },
     # Data maintenance - daily at 3 AM (runs all cleanup tasks sequentially)
     "data-maintenance": {
         "task": "worker.tasks.maintenance.run_all_maintenance",

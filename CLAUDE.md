@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 8 (hardening + deployment) complete.** Auth, stocks, watchlist, market data pipeline, news scraping, sentiment analysis, signal generation, alert dispatch, and dashboard/UI polish are built. Code quality refactor pass eliminated duplication across backend and frontend. Phase 8 added: structured JSON logging, enhanced health endpoint, Docker hardening (non-root users, tini, resource limits, .dockerignore), SSL/TLS with certbot, security headers, graceful shutdown, Alembic initial migration, backup/restore scripts, Flower monitoring, and CI/CD pipeline.
+**Phase 9 (data retention + optimization) complete.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added 9 missing indexes, data retention tasks (article compression, log cleanup), daily sentiment materialized view, admin maintenance/db-stats endpoints, and configurable retention periods.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -45,10 +45,15 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Database backup/restore scripts with retention
 - Flower (Celery monitoring) on :5555 (SSH tunnel access)
 - GitHub Actions CI: lint, test, Docker build
-- Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring (62 tests)
+- 9 performance indexes (sentiment_scores, articles, signals, market_data, etc.)
+- Data retention: article text compression, scrape/alert log cleanup, weak signal purge
+- Daily sentiment materialized view with hourly refresh
+- Admin: maintenance trigger + DB stats (row counts, table sizes)
+- Configurable retention periods via env vars (article text 90d, logs 30d, signals 180d)
+- Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, maintenance (75 tests)
 
 ### What's next
-- Phase 9: Data retention + optimization
+- Phase 10: TBD
 
 ## Architecture
 
@@ -69,8 +74,8 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     services/      Business logic layer (placeholder)
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
-    beat_schedule  Hourly cron schedule (:00 scrape, :05 market data, :15 sentiment catch-up, :30 signals)
-    tasks/         Task modules: scraping/, sentiment/, signals/ (signal_generator + alert_dispatcher)
+    beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, 3AM maintenance)
+    tasks/         Task modules: scraping/, sentiment/, signals/, maintenance/ (retention + matview refresh)
     utils/         Rate limiter, text cleaner, ticker extractor, async_task helper
   alembic/         Database migrations
   tests/           pytest test suite (62 tests)
@@ -198,9 +203,11 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/app/api/sentiment.py` | Sentiment endpoints: timeline, articles, sectors, trending |
 | `backend/app/api/signals.py` | Signal endpoints: list (filtered), per-ticker history, latest feed |
 | `backend/app/api/alerts.py` | Alert endpoints: config CRUD, history, test alert |
-| `backend/app/api/admin.py` | Admin: trigger scrape, seed historical data |
+| `backend/app/api/admin.py` | Admin: trigger scrape, seed historical, maintenance trigger, DB stats |
 | `backend/worker/celery_app.py` | Celery instance, task routing, autodiscovery |
-| `backend/worker/beat_schedule.py` | Hourly cron schedule for all tasks |
+| `backend/worker/tasks/maintenance/retention.py` | Reusable batched delete/nullify utilities for data retention |
+| `backend/worker/tasks/maintenance/tasks.py` | Maintenance tasks: article compression, log cleanup, matview refresh |
+| `backend/worker/beat_schedule.py` | Cron schedule for all tasks (scrape, market, sentiment, signals, maintenance) |
 | `backend/worker/tasks/scraping/orchestrate.py` | Fan-out all 7 scrapers via Celery group → chain sentiment |
 | `backend/worker/tasks/sentiment/finbert_analyzer.py` | Singleton FinBERT model: batch inference, chunking, lazy-loaded |
 | `backend/worker/tasks/sentiment/sentiment_task.py` | Celery task: process unprocessed articles through FinBERT |
@@ -251,6 +258,8 @@ celery -A worker.celery_app beat --loglevel=info
 | POST | `/api/alerts/test` | Yes | Done |
 | POST | `/api/admin/seed-history` | Admin | Done |
 | POST | `/api/admin/scrape-now` | Admin | Done |
+| POST | `/api/admin/maintenance` | Admin | Done |
+| GET | `/api/admin/db-stats` | Admin | Done |
 
 ## Data Pipeline
 

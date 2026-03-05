@@ -162,3 +162,36 @@ def run_all_maintenance(self):
 
     logger.info("All maintenance complete: %s", results)
     return results
+
+
+@celery_app.task(
+    name="worker.tasks.maintenance.refresh_materialized_views",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+)
+def refresh_materialized_views(self):
+    """Refresh materialized views after signal generation.
+
+    Uses CONCURRENTLY to avoid locking reads during refresh.
+    """
+    try:
+        return run_async(_refresh_views_async())
+    except Exception as exc:
+        logger.error("Materialized view refresh failed: %s", exc)
+        raise self.retry(exc=exc)
+
+
+async def _refresh_views_async() -> dict:
+    from sqlalchemy import text
+
+    from app.database import async_session
+
+    async with async_session() as session:
+        await session.execute(
+            text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_sentiment_summary")
+        )
+        await session.commit()
+
+    logger.info("Materialized views refreshed")
+    return {"refreshed": ["mv_daily_sentiment_summary"]}
