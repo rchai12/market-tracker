@@ -1,8 +1,10 @@
 """Admin-only endpoints for system management."""
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_admin
+from app.dependencies import get_current_admin, get_db
 from app.models.user import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -29,3 +31,53 @@ async def trigger_scrape(
 
     task = orchestrate_scraping.delay()
     return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/maintenance")
+async def trigger_maintenance(
+    _admin: User = Depends(get_current_admin),
+):
+    """Trigger all data maintenance tasks as a background Celery task."""
+    from worker.tasks.maintenance.tasks import run_all_maintenance
+
+    task = run_all_maintenance.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.get("/db-stats")
+async def get_db_stats(
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get row counts and estimated sizes for all tables.
+
+    Uses Postgres stats catalog — no full table scans.
+    """
+    result = await db.execute(text("""
+        SELECT
+            relname AS table_name,
+            n_live_tup AS estimated_rows,
+            pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+            pg_total_relation_size(relid) AS total_size_bytes
+        FROM pg_stat_user_tables
+        WHERE schemaname = 'public'
+        ORDER BY pg_total_relation_size(relid) DESC
+    """))
+    rows = result.all()
+
+    tables = [
+        {
+            "table": row.table_name,
+            "estimated_rows": row.estimated_rows,
+            "total_size": row.total_size,
+            "total_size_bytes": row.total_size_bytes,
+        }
+        for row in rows
+    ]
+    total_bytes = sum(t["total_size_bytes"] for t in tables)
+
+    return {
+        "tables": tables,
+        "total_size": f"{total_bytes / (1024 * 1024):.1f} MB",
+        "total_size_bytes": total_bytes,
+    }
