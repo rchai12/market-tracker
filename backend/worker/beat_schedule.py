@@ -22,9 +22,9 @@ beat_schedule = {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",
         "schedule": crontab(minute=30),
     },
-    # Data maintenance - daily at 3 AM
+    # Data maintenance - daily at 3 AM (runs all cleanup tasks sequentially)
     "data-maintenance": {
-        "task": "worker.tasks.maintenance.compress_old_articles",
+        "task": "worker.tasks.maintenance.run_all_maintenance",
         "schedule": crontab(hour=3, minute=0),
     },
 }
