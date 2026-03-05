@@ -1,4 +1,12 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_INSECURE_KEY_DEFAULTS = frozenset({
+    "CHANGE_ME_TO_RANDOM_64_CHAR_STRING",
+    "changeme",
+    "secret",
+    "test",
+})
 
 
 class Settings(BaseSettings):
@@ -18,6 +26,20 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> "Settings":
+        if self.environment == "production":
+            if self.secret_key in _INSECURE_KEY_DEFAULTS:
+                raise ValueError(
+                    "SECRET_KEY must be changed from its default value in production. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+                )
+            if len(self.secret_key) < 32:
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters in production."
+                )
+        return self
 
     # External APIs
     polygon_api_key: str = ""

@@ -6,14 +6,23 @@ via the `request_id_var` context variable.
 """
 
 import logging
+import re
 import sys
 from contextvars import ContextVar
 from datetime import datetime, timezone
+
+# Matches credentials in connection strings (e.g. postgresql://user:password@host)
+_CREDENTIAL_RE = re.compile(r"(://[^:]*:)[^@]+(@)")
 
 # Context variable for request-scoped correlation ID.
 # Set by RequestLoggingMiddleware (middleware.py) for HTTP requests.
 # Importable by any module that needs to include request_id in logs.
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
+
+
+def _sanitize_credentials(text: str) -> str:
+    """Replace passwords in connection strings with ***."""
+    return _CREDENTIAL_RE.sub(r"\1***\2", text)
 
 
 class JSONFormatter(logging.Formatter):
@@ -24,7 +33,7 @@ class JSONFormatter(logging.Formatter):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _sanitize_credentials(record.getMessage()),
         }
 
         request_id = request_id_var.get()
@@ -32,7 +41,9 @@ class JSONFormatter(logging.Formatter):
             log_entry["request_id"] = request_id
 
         if record.exc_info and record.exc_info[0] is not None:
-            log_entry["exception"] = self.formatException(record.exc_info)
+            log_entry["exception"] = _sanitize_credentials(
+                self.formatException(record.exc_info)
+            )
 
         # Avoid json import overhead — manual serialization for simple dict
         parts = []
