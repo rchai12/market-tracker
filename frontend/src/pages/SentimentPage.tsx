@@ -32,7 +32,7 @@ export default function SentimentPage() {
             {sectors.map((sector) => (
               <Link
                 key={sector.sector}
-                to={`/signals?sector=${encodeURIComponent(sector.sector)}`}
+                to={`/signals?sector=${encodeURIComponent(sector.sector || "")}`}
                 className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 block hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
               >
                 <div className="flex items-center justify-between mb-2">
