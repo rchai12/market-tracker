@@ -33,10 +33,6 @@ class BaseScraper(ABC):
         Optional: source_url, raw_text, author, published_at, metadata
         """
 
-    def store(self, articles: list[dict]) -> int:
-        """Store articles in the database. Returns count of new articles inserted."""
-        return run_async(self._store_async(articles))
-
     async def _store_async(self, articles: list[dict]) -> int:
         """Async storage with deduplication by source_url."""
         if not articles:
@@ -95,10 +91,6 @@ class BaseScraper(ABC):
             await session.commit()
         return new_count
 
-    def log_result(self, articles_found: int, new_count: int, errors: int = 0, error_details: str | None = None):
-        """Log scrape result to scrape_logs table."""
-        run_async(self._log_result_async(articles_found, new_count, errors, error_details))
-
     async def _log_result_async(
         self, articles_found: int, new_count: int, errors: int, error_details: str | None
     ):
@@ -115,22 +107,20 @@ class BaseScraper(ABC):
             session.add(log)
             await session.commit()
 
-    def log_success(self, new_count: int) -> None:
-        logger.info(f"[{self.source_name}] Scrape complete: {new_count} new articles")
-
-    def log_failure(self, error: str) -> None:
-        logger.error(f"[{self.source_name}] Scrape failed: {error}")
-
     def run(self) -> int:
         """Execute the full scrape -> parse -> store pipeline."""
+        return run_async(self._run_async())
+
+    async def _run_async(self) -> int:
+        """Run the full pipeline in a single async context to avoid cross-loop issues."""
         try:
             raw_data = self.scrape()
             articles = self.parse(raw_data)
-            new_count = self.store(articles)
-            self.log_result(len(raw_data), new_count)
-            self.log_success(new_count)
+            new_count = await self._store_async(articles)
+            await self._log_result_async(len(raw_data), new_count, 0, None)
+            logger.info(f"[{self.source_name}] Scrape complete: {new_count} new articles")
             return new_count
         except Exception as e:
-            self.log_result(0, 0, errors=1, error_details=str(e))
-            self.log_failure(str(e))
+            await self._log_result_async(0, 0, 1, str(e))
+            logger.error(f"[{self.source_name}] Scrape failed: {e}")
             raise

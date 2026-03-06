@@ -12,6 +12,7 @@ from app.database import async_session
 from app.models.market_data import MarketDataDaily
 from app.models.stock import Stock
 from worker.celery_app import celery_app
+from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +116,8 @@ async def _store_daily_data(stock_id: int, ticker: str, df) -> int:
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=120)
 def fetch_all_market_data(self, period: str = "5d"):
     """Fetch daily OHLCV for all active tickers via yfinance batch API."""
-    import asyncio
-
     try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_fetch_all_market_data_async(period))
-        return result
+        return run_async(_fetch_all_market_data_async(period))
     except Exception as exc:
         logger.error(f"Market data fetch failed: {exc}")
         raise self.retry(exc=exc)
@@ -164,12 +161,8 @@ def seed_historical_market_data(self, period: str = "max"):
     Call manually: seed_historical_market_data.delay("max")
     Uses the same storage/upsert logic as the hourly task.
     """
-    import asyncio
-
     try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_fetch_all_market_data_async(period))
-        return result
+        return run_async(_fetch_all_market_data_async(period))
     except Exception as exc:
         logger.error(f"Historical market data seed failed: {exc}")
         raise self.retry(exc=exc)
