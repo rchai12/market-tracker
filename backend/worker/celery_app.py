@@ -37,12 +37,21 @@ def init_worker_logging(**_kwargs):
 
     setup_logging(settings.log_level)
 
-celery_app.autodiscover_tasks([
-    "worker.tasks.scraping",
-    "worker.tasks.sentiment",
-    "worker.tasks.signals",
-    "worker.tasks.maintenance",
-])
+celery_app.conf.include = [
+    "worker.tasks.scraping.orchestrate",
+    "worker.tasks.scraping.market_data",
+    "worker.tasks.scraping.yahoo_news",
+    "worker.tasks.scraping.finviz",
+    "worker.tasks.scraping.reuters_rss",
+    "worker.tasks.scraping.sec_edgar",
+    "worker.tasks.scraping.marketwatch",
+    "worker.tasks.scraping.reddit",
+    "worker.tasks.scraping.fred",
+    "worker.tasks.sentiment.sentiment_task",
+    "worker.tasks.signals.signal_generator",
+    "worker.tasks.signals.alert_dispatcher",
+    "worker.tasks.maintenance.tasks",
+]
 
 # Import beat schedule
 from worker.beat_schedule import beat_schedule  # noqa: E402
