@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+    registration_enabled: bool = False
 
     @model_validator(mode="after")
     def _validate_secret_key(self) -> "Settings":

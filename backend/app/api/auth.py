@@ -3,7 +3,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, UnauthorizedError
+from app.config import settings
+from app.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -20,6 +21,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=TokenResponse)
 async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
+    if not settings.registration_enabled:
+        raise ForbiddenError("Registration is disabled")
+
     # Check for existing email/username
     result = await db.execute(select(User).where((User.email == body.email) | (User.username == body.username)))
     if result.scalar_one_or_none():

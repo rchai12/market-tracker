@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import apiClient from "../api/client";
 
@@ -78,12 +78,6 @@ export default function LoginPage() {
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
-          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-            Don't have an account?{" "}
-            <Link to="/register" className="text-blue-600 hover:text-blue-500">
-              Create one
-            </Link>
-          </p>
         </form>
       </div>
     </div>
