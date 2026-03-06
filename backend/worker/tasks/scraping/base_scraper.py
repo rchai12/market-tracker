@@ -11,7 +11,7 @@ from app.models.scrape_log import ScrapeLog
 from app.models.stock import Stock
 from worker.utils.async_task import run_async
 from worker.utils.text_cleaner import clean_article_text
-from worker.utils.ticker_extractor import extract_tickers
+from worker.utils.ticker_extractor import build_company_map, extract_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,12 @@ class BaseScraper(ABC):
 
         new_count = 0
         async with async_session() as session:
-            # Load known tickers for extraction
-            result = await session.execute(select(Stock.ticker, Stock.id))
-            ticker_map = {row.ticker: row.id for row in result.all()}
+            # Load known tickers and company names for extraction
+            result = await session.execute(select(Stock.ticker, Stock.id, Stock.company_name))
+            rows = result.all()
+            ticker_map = {row.ticker: row.id for row in rows}
             known_tickers = set(ticker_map.keys())
+            company_map = build_company_map([(row.ticker, row.company_name) for row in rows])
 
             for article_data in articles:
                 source_url = article_data.get("source_url")
@@ -76,6 +78,7 @@ class BaseScraper(ABC):
                     article_data["title"],
                     raw_text,
                     known_tickers,
+                    company_map=company_map,
                 )
                 for ticker, confidence in tickers:
                     stock_id = ticker_map.get(ticker)

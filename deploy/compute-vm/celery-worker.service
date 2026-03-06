@@ -17,7 +17,7 @@ ExecStart=/opt/stock-predictor/backend/.venv/bin/celery -A worker.celery_app wor
     --without-heartbeat \
     --without-mingle \
     --without-gossip \
-    -Q default,scraping,sentiment,signals
+    -Q default,scraping,sentiment,signals,maintenance
 KillSignal=SIGTERM
 TimeoutStopSec=300
 Restart=always
