@@ -13,14 +13,14 @@ export default function SignalCard({ signal }: SignalCardProps) {
   const timeAgo = formatTimeAgo(signal.generated_at);
 
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow p-4 ${strengthStyle}`}>
+    <Link
+      to={`/stocks/${signal.ticker}`}
+      className={`bg-white dark:bg-gray-800 rounded-lg shadow p-4 ${strengthStyle} block hover:ring-2 hover:ring-blue-400 dark:hover:ring-blue-500 transition-all`}
+    >
       <div className="flex items-center justify-between mb-2">
-        <Link
-          to={`/stocks/${signal.ticker}`}
-          className="text-lg font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
-        >
+        <span className="text-lg font-semibold text-gray-900 dark:text-white">
           {signal.ticker}
-        </Link>
+        </span>
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${dirColors.bg} ${dirColors.text}`}>
           {signal.direction}
         </span>
@@ -56,6 +56,6 @@ export default function SignalCard({ signal }: SignalCardProps) {
       )}
 
       <p className="text-xs text-gray-400 dark:text-gray-500">{timeAgo}</p>
-    </div>
+    </Link>
   );
 }
