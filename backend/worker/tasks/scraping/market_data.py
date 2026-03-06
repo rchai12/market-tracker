@@ -1,6 +1,7 @@
 """Market data ingestion task using yfinance."""
 
 import logging
+import math
 from datetime import date, datetime, timezone
 
 import yfinance as yf
@@ -55,20 +56,36 @@ async def _store_daily_data(stock_id: int, ticker: str, df) -> int:
     if df is None or df.empty:
         return 0
 
+    def _safe_float(val):
+        if val is None:
+            return None
+        v = float(val)
+        return None if math.isnan(v) or math.isinf(v) else v
+
+    def _safe_int(val):
+        if val is None:
+            return None
+        v = float(val)
+        return None if math.isnan(v) or math.isinf(v) else int(v)
+
     rows = []
     for idx, row in df.iterrows():
         # idx is the date index from yfinance
         row_date = idx.date() if hasattr(idx, "date") else idx
 
+        close = _safe_float(row.get("Close"))
+        if close is None:
+            continue
+
         rows.append({
             "stock_id": stock_id,
             "date": row_date,
-            "open": float(row.get("Open", 0)) if row.get("Open") is not None else None,
-            "high": float(row.get("High", 0)) if row.get("High") is not None else None,
-            "low": float(row.get("Low", 0)) if row.get("Low") is not None else None,
-            "close": float(row.get("Close", 0)) if row.get("Close") is not None else None,
-            "adj_close": float(row.get("Adj Close", 0)) if row.get("Adj Close") is not None else None,
-            "volume": int(row.get("Volume", 0)) if row.get("Volume") is not None else None,
+            "open": _safe_float(row.get("Open")),
+            "high": _safe_float(row.get("High")),
+            "low": _safe_float(row.get("Low")),
+            "close": close,
+            "adj_close": _safe_float(row.get("Adj Close")),
+            "volume": _safe_int(row.get("Volume")),
             "source": "yfinance",
         })
 
@@ -78,7 +95,7 @@ async def _store_daily_data(stock_id: int, ticker: str, df) -> int:
     async with async_session() as session:
         stmt = pg_insert(MarketDataDaily).values(rows)
         stmt = stmt.on_conflict_do_update(
-            constraint="uq_market_data_daily_stock_id",
+            constraint="uq_market_data_daily_stock_date",
             set_={
                 "open": stmt.excluded.open,
                 "high": stmt.excluded.high,
