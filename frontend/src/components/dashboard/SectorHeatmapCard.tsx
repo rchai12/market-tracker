@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { SentimentSummary } from "../../types";
 import SentimentBadge from "../sentiment/SentimentBadge";
 
@@ -23,7 +24,10 @@ export default function SectorHeatmapCard({ sector }: SectorHeatmapCardProps) {
   const bg = getSentimentBackground(sector);
 
   return (
-    <div className={`rounded-xl p-4 border border-gray-200 dark:border-gray-700 ${bg}`}>
+    <Link
+      to={`/signals?sector=${encodeURIComponent(sector.sector)}`}
+      className={`rounded-xl p-4 border border-gray-200 dark:border-gray-700 ${bg} block hover:border-blue-400 dark:hover:border-blue-500 transition-colors`}
+    >
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
           {sector.sector}
@@ -58,6 +62,6 @@ export default function SectorHeatmapCard({ sector }: SectorHeatmapCardProps) {
           +{(sector.avg_positive * 100).toFixed(0)}% / −{(sector.avg_negative * 100).toFixed(0)}%
         </span>
       </div>
-    </div>
+    </Link>
   );
 }

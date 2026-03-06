@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { getSectorSentiment, getTrendingSentiment } from "../api/sentiment";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
 
@@ -29,9 +30,10 @@ export default function SentimentPage() {
         ) : sectors && sectors.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sectors.map((sector) => (
-              <div
+              <Link
                 key={sector.sector}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                to={`/signals?sector=${encodeURIComponent(sector.sector)}`}
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 block hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
               >
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-medium text-gray-900 dark:text-white">
@@ -62,7 +64,7 @@ export default function SentimentPage() {
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                   {sector.total_articles} articles analyzed
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         ) : (
@@ -98,8 +100,13 @@ export default function SentimentPage() {
                     key={item.ticker}
                     className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30"
                   >
-                    <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">
-                      {item.ticker}
+                    <td className="py-2 px-3 font-medium">
+                      <Link
+                        to={`/stocks/${item.ticker}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {item.ticker}
+                      </Link>
                     </td>
                     <td className="py-2 px-3 text-center text-gray-600 dark:text-gray-300">
                       {item.total_articles}
