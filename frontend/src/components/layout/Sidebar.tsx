@@ -1,4 +1,6 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { listSectors } from "../../api/stocks";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: "grid" },
@@ -10,6 +12,15 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const [searchParams] = useSearchParams();
+  const activeSector = searchParams.get("sector");
+
+  const { data: sectors } = useQuery({
+    queryKey: ["sectors"],
+    queryFn: listSectors,
+    staleTime: 5 * 60 * 1000,
+  });
+
   return (
     <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen p-4">
       <div className="mb-8">
@@ -41,16 +52,34 @@ export default function Sidebar() {
       </nav>
 
       <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs text-gray-500 dark:text-gray-400 px-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400 px-3 mb-2">
           Sectors
         </p>
-        <div className="mt-2 space-y-1">
-          <span className="block px-3 py-1 text-sm text-gray-600 dark:text-gray-400">
-            Energy
-          </span>
-          <span className="block px-3 py-1 text-sm text-gray-600 dark:text-gray-400">
-            Financials
-          </span>
+        <div className="space-y-1">
+          <NavLink
+            to="/signals"
+            end
+            className={`block px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              !activeSector
+                ? "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+            }`}
+          >
+            All Sectors
+          </NavLink>
+          {sectors?.map((sector) => (
+            <NavLink
+              key={sector}
+              to={`/signals?sector=${encodeURIComponent(sector)}`}
+              className={`block px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                activeSector === sector
+                  ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+            >
+              {sector}
+            </NavLink>
+          ))}
         </div>
       </div>
     </aside>

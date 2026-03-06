@@ -15,3 +15,8 @@ export async function getStock(ticker: string): Promise<Stock> {
   const { data } = await apiClient.get(`/stocks/${ticker}`);
   return data;
 }
+
+export async function listSectors(): Promise<string[]> {
+  const { data } = await apiClient.get("/stocks/sectors");
+  return data;
+}

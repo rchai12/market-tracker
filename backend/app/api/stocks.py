@@ -14,6 +14,18 @@ from app.schemas.stock import PaginatedStocks, StockDetailResponse, StockRespons
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
+@router.get("/sectors", response_model=list[str])
+async def list_sectors(
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all active sector names."""
+    result = await db.execute(
+        select(Sector.name).where(Sector.is_active == True).order_by(Sector.name)  # noqa: E712
+    )
+    return result.scalars().all()
+
+
 @router.get("", response_model=PaginatedStocks)
 async def list_stocks(
     sector: str | None = Query(None, description="Filter by sector name"),

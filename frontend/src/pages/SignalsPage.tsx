@@ -1,17 +1,28 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { listSignals } from "../api/signals";
+import { listSectors } from "../api/stocks";
 import SignalCard from "../components/signals/SignalCard";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
 
 export default function SignalsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [direction, setDirection] = useState<string>("");
   const [strength, setStrength] = useState<string>("");
   const [ticker, setTicker] = useState<string>("");
 
+  const effectiveSector = searchParams.get("sector") || "";
+
+  const { data: sectors } = useQuery({
+    queryKey: ["sectors"],
+    queryFn: listSectors,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data, isLoading } = useQuery({
-    queryKey: ["signals", page, direction, strength, ticker],
+    queryKey: ["signals", page, direction, strength, ticker, effectiveSector],
     queryFn: () =>
       listSignals({
         page,
@@ -19,8 +30,18 @@ export default function SignalsPage() {
         direction: direction || undefined,
         strength: strength || undefined,
         ticker: ticker || undefined,
+        sector: effectiveSector || undefined,
       }),
   });
+
+  const handleSectorChange = (value: string) => {
+    setPage(1);
+    if (value) {
+      setSearchParams({ sector: value });
+    } else {
+      setSearchParams({});
+    }
+  };
 
   return (
     <div>
@@ -36,6 +57,16 @@ export default function SignalsPage() {
             onChange={(e) => { setTicker(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
           />
+          <select
+            value={effectiveSector}
+            onChange={(e) => handleSectorChange(e.target.value)}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+          >
+            <option value="">All Sectors</option>
+            {sectors?.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
           <select
             value={direction}
             onChange={(e) => { setDirection(e.target.value); setPage(1); }}
@@ -97,7 +128,7 @@ export default function SignalsPage() {
         </>
       ) : (
         <p className="text-gray-500 dark:text-gray-400">
-          No signals yet. Signals will appear after the generation pipeline runs.
+          No signals found{effectiveSector ? ` for ${effectiveSector} sector` : ""}. Signals will appear after the generation pipeline runs.
         </p>
       )}
     </div>

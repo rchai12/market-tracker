@@ -17,6 +17,7 @@ export async function listSignals(params?: {
   direction?: string;
   strength?: string;
   ticker?: string;
+  sector?: string;
 }): Promise<PaginatedResponse<Signal>> {
   const { data } = await apiClient.get("/signals", { params });
   return data;

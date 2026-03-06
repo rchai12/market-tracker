@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
+from app.models.sector import Sector
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
@@ -83,6 +84,7 @@ async def list_signals(
     direction: str | None = Query(None),
     strength: str | None = Query(None),
     ticker: str | None = Query(None),
+    sector: str | None = Query(None, description="Filter by sector name"),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -99,6 +101,13 @@ async def list_signals(
         base_query = base_query.join(Stock).where(
             func.upper(Stock.ticker) == ticker.upper()
         )
+
+    if sector:
+        if ticker:
+            # Stock already joined
+            base_query = base_query.join(Sector).where(func.lower(Sector.name) == sector.lower())
+        else:
+            base_query = base_query.join(Stock).join(Sector).where(func.lower(Sector.name) == sector.lower())
 
     count_query = select(func.count()).select_from(base_query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
