@@ -54,7 +54,7 @@ docker compose exec backend alembic upgrade head
 # Seed tickers + full historical market data (~30+ years)
 make seed-all
 # Or step by step:
-# make seed          # Seed 45 Energy + Financials tickers
+# make seed          # Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs
 # make seed-history  # Backfill full OHLCV history (takes a few minutes)
 ```
 
@@ -222,19 +222,35 @@ docker compose exec postgres psql -U sp_user -d stock_predictor -c "SELECT pg_si
 
 ```bash
 # Docker VM
-cd ~/stock-predictor
+cd ~/market-tracker
 git pull
-docker compose build
-docker compose up -d
-docker compose exec backend alembic upgrade head
+docker compose up -d --build frontend backend   # Only rebuild changed services
+docker compose exec backend alembic upgrade head  # If migrations changed
 
 # Compute VM
 cd /opt/stock-predictor
 git pull
 cd backend
 source .venv/bin/activate
-pip install -e ".[worker]"
+pip install -e ".[worker]"                        # If dependencies changed
+sudo cp ../deploy/compute-vm/celery-worker.service /etc/systemd/system/  # If service file changed
+sudo systemctl daemon-reload
 sudo systemctl restart celery-worker celery-beat
+```
+
+### Manual Task Triggers (Compute VM)
+
+```bash
+cd /opt/stock-predictor/backend
+
+# Trigger scraping
+.venv/bin/celery -A worker.celery_app call worker.tasks.scraping.orchestrate_scraping --queue scraping
+
+# Trigger sentiment analysis
+.venv/bin/celery -A worker.celery_app call worker.tasks.sentiment.sentiment_task.process_new_articles_sentiment --queue sentiment
+
+# Trigger signal generation
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.signal_generator.generate_all_signals --queue signals
 ```
 
 ## Backup

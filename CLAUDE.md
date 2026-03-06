@@ -4,43 +4,54 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 9 (data retention + optimization) complete.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added 9 missing indexes, data retention tasks (article compression, log cleanup), daily sentiment materialized view, admin maintenance/db-stats endpoints, and configurable retention periods.
+**Phase 9 (data retention + optimization) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
 - Stock listing with sector filter, search, pagination
+- Sectors API: dynamic sector list from DB (`/api/stocks/sectors`)
+- 6 stock sectors: Energy, Financials, Technology, Communication Services, Consumer Discretionary, Market ETFs (~86 tickers)
 - Watchlist CRUD
 - Market data pipeline: yfinance → Postgres (hourly via Celery, weekdays at :05)
 - Historical data seeding: full available history (~30+ years) via `make seed-history`
 - News scraping pipeline: 7 sources (Yahoo Finance, Finviz, Reuters RSS, SEC EDGAR, MarketWatch, Reddit, FRED)
 - Scraper orchestration: Celery group fans out all scrapers hourly at :00, chains sentiment processing
+- Ticker extraction: $TICKER patterns (0.95), parenthetical (AAPL) (0.90), ALL-CAPS matching (0.70), company name matching (0.60)
 - Articles API with pagination, source/ticker/status filtering
 - FinBERT sentiment analysis: singleton model, batch inference, 512-token chunking, lazy-loaded on compute VM
 - Sentiment API: per-ticker timeline, scored articles, sector summaries, trending stocks
 - Sentiment pipeline: auto-processes new articles after scraping + :15 catch-up task
 - Signal generation: composite scoring (sentiment momentum 40%, sentiment volume 25%, price momentum 20%, volume anomaly 15%)
-- Signal API: paginated list with direction/strength/ticker filters, per-ticker history, latest signals feed
+- Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed
 - Alert dispatch: Discord webhooks + SMTP email, per-user AlertConfig matching, AlertLog history
 - Alert API: config CRUD, alert history, test alert endpoint
-- Admin API: trigger scrape and historical seed on demand
-- React frontend with AppLayout (sidebar + header), login/register, dark mode
+- Admin API: trigger scrape, historical seed, maintenance, DB stats
+- React frontend with AppLayout (sidebar + header), login/register, dark mode (default dark, persists on refresh)
+- Dynamic sidebar with sector links fetched from API, clickable to filtered signals view
 - TradingView Lightweight Charts: candlestick price chart + volume histogram
-- Sentiment UI: SentimentBadge, SentimentChart, SentimentPage (sector + trending), StockDetailPage integration
-- Signal UI: SignalCard, SignalsPage (filtered grid), AlertsPage (config CRUD + history)
+- Sentiment UI: SentimentBadge, SentimentChart, SentimentPage (clickable sector cards + trending tickers)
+- Signal UI: SignalCard (full card clickable → stock detail), SignalsPage (filtered grid with sector dropdown), AlertsPage (config CRUD + history)
 - StockDetailPage with price/volume charts, sentiment chart, signal history, watchlist toggle
-- Dashboard: signals feed (10 latest moderate+), sector sentiment heatmap, top movers (bullish/bearish), article activity chart
+- Dashboard: signals feed (10 latest moderate+), clickable sector sentiment heatmap, top movers (bullish/bearish), article activity chart
 - Settings page: profile display, dark mode toggle, notification info
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
 - SQLAlchemy models for all 13 tables
 - Docker Compose with resource limits, health checks, non-root users, tini init
 - Nginx reverse proxy with SSL/TLS (Let's Encrypt), HSTS, CSP, security headers
+- Nginx auth rate limiting: 5 req/min per IP on `/api/auth/` (brute-force protection)
+- Password complexity: min 8 chars, uppercase + lowercase + digit required
+- Username validation: 3-50 characters
+- Pagination bounds: all endpoints enforce `per_page` max 100
 - Certbot auto-renewal service
 - Structured JSON logging with request ID correlation (FastAPI + Celery)
 - Enhanced health endpoint: DB + Redis connectivity checks, `?detail=true` mode
 - Configurable DB pool (pool_size, max_overflow via env vars)
+- Celery explicit task include (not autodiscover) for reliable task registration
+- Celery task routing: 5 queues (default, scraping, sentiment, signals, maintenance)
 - Celery task reliability: `task_acks_late`, `task_reject_on_worker_lost`
 - Celery graceful shutdown with systemd TimeoutStopSec
+- asyncpg connection safety: engine.dispose() in run_async() to prevent cross-loop issues
 - Alembic initial migration (13 tables)
 - Database backup/restore scripts with retention
 - Flower (Celery monitoring) on :5555 (SSH tunnel access)
@@ -50,7 +61,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Daily sentiment materialized view with hourly refresh
 - Admin: maintenance trigger + DB stats (row counts, table sizes)
 - Configurable retention periods via env vars (article text 90d, logs 30d, signals 180d)
-- Unit tests for JWT, password hashing, ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, maintenance (75 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, maintenance, password validation, secret key (102 tests)
 
 ### What's next
 - Phase 10: TBD
@@ -71,14 +82,14 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions
     models/        SQLAlchemy ORM models (13 tables)
     schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, common)
-    services/      Business logic layer (placeholder)
+
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
     beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, 3AM maintenance)
     tasks/         Task modules: scraping/, sentiment/, signals/, maintenance/ (retention + matview refresh)
     utils/         Rate limiter, text cleaner, ticker extractor, async_task helper
   alembic/         Database migrations
-  tests/           pytest test suite (62 tests)
+  tests/           pytest test suite (96 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts)
   src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart), Sentiment (SentimentBadge), Signals (SignalCard), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard), Common (LoadingSkeleton, ErrorRetry, Card)
@@ -88,8 +99,8 @@ frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/types/       TypeScript interfaces
   src/utils/       Shared utilities (formatTimeAgo, humanizeSource)
 nginx/             Reverse proxy config (SSL/TLS template with envsubst)
-scripts/           seed_sp500, seed_historical_data, backup, restore, setup scripts
-deploy/            Systemd units and env templates for VMs
+scripts/           backup, restore, setup scripts
+deploy/            Systemd units and env templates for VMs (celery-worker.service, celery-beat.service)
 docs/              Architecture, deployment, API reference, data sources
 ```
 
@@ -134,8 +145,16 @@ python -m pytest tests/ -v                           # Run tests
 
 ### Celery (on compute VM)
 ```bash
-celery -A worker.celery_app worker --loglevel=info --concurrency=2
-celery -A worker.celery_app beat --loglevel=info
+# Managed by systemd (celery-worker.service, celery-beat.service)
+sudo systemctl restart celery-worker celery-beat
+sudo journalctl -u celery-worker -f              # Watch worker logs
+sudo journalctl -u celery-beat -f                 # Watch beat logs
+
+# Manual task triggers
+cd /opt/stock-predictor/backend
+.venv/bin/celery -A worker.celery_app call worker.tasks.scraping.orchestrate_scraping --queue scraping
+.venv/bin/celery -A worker.celery_app call worker.tasks.sentiment.sentiment_task.process_new_articles_sentiment --queue sentiment
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.signal_generator.generate_all_signals --queue signals
 ```
 
 ## Code Conventions
@@ -204,7 +223,7 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/app/api/signals.py` | Signal endpoints: list (filtered), per-ticker history, latest feed |
 | `backend/app/api/alerts.py` | Alert endpoints: config CRUD, history, test alert |
 | `backend/app/api/admin.py` | Admin: trigger scrape, seed historical, maintenance trigger, DB stats |
-| `backend/worker/celery_app.py` | Celery instance, task routing, autodiscovery |
+| `backend/worker/celery_app.py` | Celery instance, task routing, explicit task include |
 | `backend/worker/tasks/maintenance/retention.py` | Reusable batched delete/nullify utilities for data retention |
 | `backend/worker/tasks/maintenance/tasks.py` | Maintenance tasks: article compression, log cleanup, matview refresh |
 | `backend/worker/beat_schedule.py` | Cron schedule for all tasks (scrape, market, sentiment, signals, maintenance) |
@@ -213,10 +232,10 @@ celery -A worker.celery_app beat --loglevel=info
 | `backend/worker/tasks/sentiment/sentiment_task.py` | Celery task: process unprocessed articles through FinBERT |
 | `backend/worker/tasks/signals/signal_generator.py` | Celery task: composite signal scoring for all active stocks |
 | `backend/worker/tasks/signals/alert_dispatcher.py` | Celery task: match signals to AlertConfigs, send Discord/email |
-| `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker extraction |
+| `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker + company name extraction |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
-| `scripts/seed_sp500.py` | Seed Energy + Financials tickers |
-| `scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
+| `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
+| `backend/scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
 | `backend/alembic/versions/001_initial_schema.py` | Initial migration: all 13 tables |
 | `scripts/backup.sh` | Database backup with configurable retention |
 | `scripts/restore.sh` | Database restore from backup |
@@ -235,6 +254,7 @@ celery -A worker.celery_app beat --loglevel=info
 | POST | `/api/auth/refresh` | No | Done |
 | GET | `/api/auth/me` | Yes | Done |
 | GET | `/api/stocks` | Yes | Done |
+| GET | `/api/stocks/sectors` | Yes | Done |
 | GET | `/api/stocks/{ticker}` | Yes | Done |
 | GET | `/api/watchlist` | Yes | Done |
 | POST | `/api/watchlist` | Yes | Done |
@@ -265,13 +285,17 @@ celery -A worker.celery_app beat --loglevel=info
 
 ```
 Initialization:
-  make seed-all → seed tickers + backfill full historical OHLCV (max available, ~30+ years)
+  make seed-all → seed 6 sectors (~86 tickers) + backfill full historical OHLCV (max available, ~30+ years)
 
-Hourly:
-  Celery Beat (:00) → fan-out 7 scrapers → store articles + extract tickers → FinBERT sentiment analysis
-  Celery Beat (:05, weekdays) → fetch market data via yfinance (5-day window)
-  Celery Beat (:15) → sentiment catch-up (process any unprocessed articles)
-  Celery Beat (:30) → generate composite signals → dispatch alerts (Discord + email) for moderate+ signals
+Hourly (Celery Beat on Compute VM):
+  :00 → fan-out 7 scrapers → store articles + extract tickers (symbol + company name matching) → chain FinBERT sentiment
+  :05 → fetch market data via yfinance (5-day window, weekdays only)
+  :15 → sentiment catch-up (process any unprocessed articles)
+  :30 → generate composite signals → dispatch alerts (Discord + email) for moderate+ signals
+  :35 → refresh materialized views (daily sentiment)
+
+Daily:
+  3:00 AM → data maintenance (compress old articles, clean logs, purge weak signals)
 ```
 
 ## Signal Scoring

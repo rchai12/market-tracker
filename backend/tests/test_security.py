@@ -58,6 +58,46 @@ class TestSecretKeyValidation:
                 )
 
 
+class TestPasswordValidation:
+    """Tests for password complexity requirements on registration."""
+
+    def test_short_password_rejected(self):
+        from app.schemas.auth import UserRegister
+
+        with pytest.raises(ValueError, match="at least 8 characters"):
+            UserRegister(email="a@b.com", username="testuser", password="Short1")
+
+    def test_no_uppercase_rejected(self):
+        from app.schemas.auth import UserRegister
+
+        with pytest.raises(ValueError, match="uppercase"):
+            UserRegister(email="a@b.com", username="testuser", password="alllower1")
+
+    def test_no_lowercase_rejected(self):
+        from app.schemas.auth import UserRegister
+
+        with pytest.raises(ValueError, match="lowercase"):
+            UserRegister(email="a@b.com", username="testuser", password="ALLUPPER1")
+
+    def test_no_digit_rejected(self):
+        from app.schemas.auth import UserRegister
+
+        with pytest.raises(ValueError, match="digit"):
+            UserRegister(email="a@b.com", username="testuser", password="NoDigitsHere")
+
+    def test_valid_password_accepted(self):
+        from app.schemas.auth import UserRegister
+
+        user = UserRegister(email="a@b.com", username="testuser", password="ValidPass1")
+        assert user.password == "ValidPass1"
+
+    def test_short_username_rejected(self):
+        from app.schemas.auth import UserRegister
+
+        with pytest.raises(ValueError, match="3-50 characters"):
+            UserRegister(email="a@b.com", username="ab", password="ValidPass1")
+
+
 class TestCredentialSanitization:
     """Tests for log credential scrubbing."""
 
