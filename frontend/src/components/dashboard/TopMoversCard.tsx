@@ -8,7 +8,7 @@ interface TopMoversCardProps {
 }
 
 export default function TopMoversCard({ signal, rank }: TopMoversCardProps) {
-  const dir = DIRECTION_COLORS[signal.direction] || DIRECTION_COLORS.neutral;
+  const dir = DIRECTION_COLORS[signal.direction] ?? DIRECTION_COLORS.neutral!;
 
   return (
     <div className="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0">

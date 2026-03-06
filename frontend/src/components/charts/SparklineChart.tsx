@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { createChart, type IChartApi, ColorType } from "lightweight-charts";
+import { createChart, type IChartApi, type LineWidth, ColorType } from "lightweight-charts";
 import type { MarketDataDaily } from "../../types";
 
 interface SparklineChartProps {
@@ -29,12 +29,12 @@ export default function SparklineChart({ data, height = 40 }: SparklineChartProp
       crosshair: { mode: 0 },
     });
 
-    const isUp = data[data.length - 1].close >= data[0].close;
+    const isUp = data[data.length - 1]!.close >= data[0]!.close;
     const lineColor = isUp ? "#22c55e" : "#ef4444";
 
     const series = chart.addLineSeries({
       color: lineColor,
-      lineWidth: 1.5,
+      lineWidth: 2 as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     });

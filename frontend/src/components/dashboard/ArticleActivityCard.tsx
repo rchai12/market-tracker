@@ -6,7 +6,7 @@ interface ArticleActivityCardProps {
 
 export default function ArticleActivityCard({ sources }: ArticleActivityCardProps) {
   const sorted = [...sources].sort((a, b) => b.count - a.count);
-  const maxCount = sorted.length > 0 ? sorted[0].count : 1;
+  const maxCount = sorted.length > 0 ? sorted[0]!.count : 1;
   const total = sorted.reduce((sum, s) => sum + s.count, 0);
 
   return (

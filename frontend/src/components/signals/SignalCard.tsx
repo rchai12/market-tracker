@@ -8,7 +8,7 @@ interface SignalCardProps {
 }
 
 export default function SignalCard({ signal }: SignalCardProps) {
-  const dirColors = DIRECTION_COLORS[signal.direction] || DIRECTION_COLORS.neutral;
+  const dirColors = DIRECTION_COLORS[signal.direction] ?? DIRECTION_COLORS.neutral!;
   const strengthStyle = STRENGTH_STYLES[signal.strength] || "";
   const timeAgo = formatTimeAgo(signal.generated_at);
 
