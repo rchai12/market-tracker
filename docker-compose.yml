@@ -110,15 +110,8 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
+    container_name: stock-predictor-nginx
     restart: unless-stopped
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - certbot_certs:/etc/letsencrypt:ro
-      - certbot_www:/var/www/certbot:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -126,7 +119,7 @@ services:
         condition: service_healthy
     networks:
       - internal
-      - public
+      - proxy_net
     deploy:
       resources:
         limits:
@@ -150,26 +143,12 @@ services:
           memory: 256M
           cpus: "0.25"
 
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: "0.1"
-
 networks:
   internal:
     driver: bridge
-  public:
-    driver: bridge
+  proxy_net:
+    external: true
 
 volumes:
   postgres_data:
   redis_data:
-  certbot_certs:
-  certbot_www:

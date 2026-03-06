@@ -5,7 +5,8 @@
 - Two Oracle Cloud free-tier ARM (Ampere A1) VMs provisioned
 - Both VMs on the same VCN (Virtual Cloud Network)
 - SSH access to both VMs
-- A domain name pointed at the Docker VM's public IP (for HTTPS)
+- A domain name with Cloudflare DNS proxied to the Docker VM's public IP
+- An existing shared nginx reverse proxy on the Docker VM (routes by domain)
 
 ## Docker VM Setup
 
@@ -36,7 +37,15 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 ```
 
-### 3. Start Services
+### 3. Create shared Docker network
+
+The `proxy_net` network connects stock-predictor to the existing shared nginx proxy on the VM.
+
+```bash
+docker network create proxy_net
+```
+
+### 4. Start Services
 
 ```bash
 docker compose up -d
@@ -49,29 +58,57 @@ make seed-all
 # make seed-history  # Backfill full OHLCV history (takes a few minutes)
 ```
 
-### 4. Verify
+### 5. Verify
 
 ```bash
-curl http://localhost/api/health
+# Direct check (via internal nginx)
+docker compose exec nginx curl -f http://localhost/api/health
 # Expected: {"status":"healthy","service":"stock-predictor"}
 ```
 
-### 5. HTTPS (Let's Encrypt)
+### 6. Connect to Shared Reverse Proxy
+
+The existing nginx proxy on the Docker VM routes traffic by domain. Cloudflare handles SSL.
+
+**Add `proxy_net` to the existing app's docker-compose** (the one running the shared nginx):
+```yaml
+networks:
+  proxy_net:
+    external: true
+```
+
+Connect the shared nginx service to `proxy_net`:
+```yaml
+services:
+  nginx:  # the existing shared nginx
+    networks:
+      - default
+      - proxy_net
+```
+
+**Uncomment the stock predictor server block** in the existing app's `nginx/conf.d/default.conf`:
+```nginx
+server {
+    listen 80;
+    server_name stocks.yourdomain.com;
+
+    location / {
+        proxy_pass http://stock-predictor-nginx:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Restart the existing nginx, then add a Cloudflare DNS A record for `stocks.yourdomain.com` → Docker VM public IP (proxied).
+
+### 7. Verify end-to-end
 
 ```bash
-# Install certbot
-sudo apt install -y certbot
-
-# Get certificate (stop nginx temporarily)
-docker compose stop nginx
-sudo certbot certonly --standalone -d yourdomain.com
-
-# Copy certs to Docker volume
-sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem /var/lib/docker/volumes/stock-predictor_certbot_certs/_data/
-sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem /var/lib/docker/volumes/stock-predictor_certbot_certs/_data/
-
-# Update nginx.conf to use SSL, then restart
-docker compose up -d nginx
+curl https://stocks.yourdomain.com/api/health
+# Expected: {"status":"healthy","service":"stock-predictor"}
 ```
 
 ## Compute VM Setup
