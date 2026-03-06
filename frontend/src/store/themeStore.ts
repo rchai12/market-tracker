@@ -9,7 +9,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      isDark: false,
+      isDark: true,
       toggle: () =>
         set((state) => {
           const newDark = !state.isDark;
@@ -17,6 +17,16 @@ export const useThemeStore = create<ThemeState>()(
           return { isDark: newDark };
         }),
     }),
-    { name: "theme-storage" }
+    {
+      name: "theme-storage",
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          document.documentElement.classList.toggle("dark", state.isDark);
+        }
+      },
+    }
   )
 );
+
+// Apply dark class immediately for default (before hydration)
+document.documentElement.classList.add("dark");
