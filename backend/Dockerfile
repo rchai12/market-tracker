@@ -10,12 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies only (no app code yet)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . && pip cache purge 2>/dev/null; true
 
 # Copy application code
 COPY . .
+
+# Ensure local packages are importable
+ENV PYTHONPATH=/app
 
 # Create non-root user
 RUN groupadd --gid 1000 appuser \
