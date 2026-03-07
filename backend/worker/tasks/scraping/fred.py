@@ -30,16 +30,17 @@ class FredScraper(BaseScraper):
         """Fetch recent FRED releases and economic data points."""
         from app.config import settings
 
-        # FRED doesn't require an API key for basic access, but it helps
-        # For now, scrape the releases page
         articles = []
 
+        if not settings.fred_api_key:
+            logger.warning("FRED API key not configured (FRED_API_KEY), skipping")
+            return articles
+
         try:
-            # Fetch recent releases
             resp = httpx.get(
                 "https://api.stlouisfed.org/fred/releases/dates",
                 params={
-                    "api_key": settings.polygon_api_key or "DEMO_KEY",  # FRED key reuse or demo
+                    "api_key": settings.fred_api_key,
                     "file_type": "json",
                     "limit": 20,
                     "sort_order": "desc",

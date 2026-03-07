@@ -2,11 +2,24 @@
 
 import logging
 
-from celery import chain, group
+from celery import group
+from sqlalchemy import select
 
+from app.database import async_session
+from app.models.stock import Stock
 from worker.celery_app import celery_app
+from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_active_tickers() -> list[str]:
+    """Load active stock tickers from the database."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Stock.ticker).where(Stock.is_active == True)  # noqa: E712
+        )
+        return [row[0] for row in result.all()]
 
 
 @celery_app.task(name="worker.tasks.scraping.orchestrate_scraping", bind=True, max_retries=0)
@@ -16,10 +29,14 @@ def orchestrate_scraping(self):
 
     logger.info("Starting scrape orchestration")
 
+    # Load tickers for scrapers that need them
+    tickers = run_async(_load_active_tickers())
+    logger.info(f"Loaded {len(tickers)} active tickers for scraping")
+
     scrape_job = group(
-        scrape_yahoo_news.s(),
-        scrape_finviz.s(),
-        scrape_reuters.s(),
+        scrape_yahoo_news.s(tickers),
+        scrape_finviz.s(tickers),
+        scrape_google_news.s(),
         scrape_sec_edgar.s(),
         scrape_marketwatch.s(),
         scrape_reddit.s(),
@@ -41,35 +58,35 @@ def orchestrate_scraping(self):
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
-def scrape_yahoo_news(self):
+def scrape_yahoo_news(self, tickers=None):
     """Scrape Yahoo Finance news."""
     try:
         from worker.tasks.scraping.yahoo_news import YahooNewsScraper
-        return YahooNewsScraper().run()
+        return YahooNewsScraper(tickers=tickers).run()
     except Exception as exc:
         logger.error(f"Yahoo News scrape failed: {exc}")
         raise self.retry(exc=exc)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
-def scrape_finviz(self):
+def scrape_finviz(self, tickers=None):
     """Scrape Finviz news."""
     try:
         from worker.tasks.scraping.finviz import FinvizScraper
-        return FinvizScraper().run()
+        return FinvizScraper(tickers=tickers).run()
     except Exception as exc:
         logger.error(f"Finviz scrape failed: {exc}")
         raise self.retry(exc=exc)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
-def scrape_reuters(self):
-    """Scrape Reuters RSS feeds."""
+def scrape_google_news(self):
+    """Scrape Google News RSS for financial news."""
     try:
-        from worker.tasks.scraping.reuters_rss import ReutersRssScraper
-        return ReutersRssScraper().run()
+        from worker.tasks.scraping.google_news import GoogleNewsScraper
+        return GoogleNewsScraper().run()
     except Exception as exc:
-        logger.error(f"Reuters scrape failed: {exc}")
+        logger.error(f"Google News scrape failed: {exc}")
         raise self.retry(exc=exc)
 
 

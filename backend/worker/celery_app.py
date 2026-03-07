@@ -42,7 +42,7 @@ celery_app.conf.include = [
     "worker.tasks.scraping.market_data",
     "worker.tasks.scraping.yahoo_news",
     "worker.tasks.scraping.finviz",
-    "worker.tasks.scraping.reuters_rss",
+    "worker.tasks.scraping.google_news",
     "worker.tasks.scraping.sec_edgar",
     "worker.tasks.scraping.marketwatch",
     "worker.tasks.scraping.reddit",

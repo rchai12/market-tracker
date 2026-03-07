@@ -1,4 +1,4 @@
-"""MarketWatch news scraper via Dow Jones RSS feed."""
+"""Google News RSS scraper for financial news."""
 
 import logging
 from datetime import datetime, timezone
@@ -9,20 +9,19 @@ from worker.tasks.scraping.base_scraper import BaseScraper
 
 logger = logging.getLogger(__name__)
 
-# MarketWatch RSS feeds via Dow Jones
-MARKETWATCH_FEEDS = [
-    "https://feeds.content.dowjones.io/public/rss/mw_topstories",
-    "https://feeds.content.dowjones.io/public/rss/mw_marketpulse",
+GOOGLE_NEWS_FEEDS = [
+    "https://news.google.com/rss/search?q=stock+market+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=earnings+report+when:1d&hl=en-US&gl=US&ceid=US:en",
 ]
 
 
-class MarketWatchScraper(BaseScraper):
-    source_name = "marketwatch"
+class GoogleNewsScraper(BaseScraper):
+    source_name = "google_news"
 
     def scrape(self) -> list[dict]:
         articles = []
 
-        for feed_url in MARKETWATCH_FEEDS:
+        for feed_url in GOOGLE_NEWS_FEEDS:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
@@ -31,10 +30,10 @@ class MarketWatchScraper(BaseScraper):
                         "url": entry.get("link", ""),
                         "summary": entry.get("summary", ""),
                         "published": entry.get("published", ""),
-                        "author": entry.get("author", ""),
+                        "source_name": entry.get("source", {}).get("title", ""),
                     })
             except Exception as e:
-                logger.warning(f"Failed to parse MarketWatch feed {feed_url}: {e}")
+                logger.warning(f"Failed to parse Google News feed {feed_url}: {e}")
 
         return articles
 
@@ -66,8 +65,8 @@ class MarketWatchScraper(BaseScraper):
                 "source_url": url,
                 "title": title,
                 "raw_text": item.get("summary"),
-                "author": item.get("author"),
                 "published_at": published_at or datetime.now(timezone.utc),
+                "metadata": {"original_source": item.get("source_name", "")},
             })
 
         return parsed

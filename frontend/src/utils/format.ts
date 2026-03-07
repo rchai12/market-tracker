@@ -13,10 +13,11 @@ export function formatTimeAgo(dateStr: string): string {
 export const SOURCE_LABELS: Record<string, string> = {
   yahoo_finance: "Yahoo Finance",
   finviz: "Finviz",
-  reuters_rss: "Reuters",
+  google_news: "Google News",
   sec_edgar: "SEC EDGAR",
   marketwatch: "MarketWatch",
-  reddit: "Reddit",
+  reddit_stocks: "Reddit (stocks)",
+  reddit_wallstreetbets: "Reddit (WSB)",
   fred: "FRED",
 };
 

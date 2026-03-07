@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # External APIs
     polygon_api_key: str = ""
+    fred_api_key: str = ""
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
     reddit_user_agent: str = "stock-predictor/1.0"

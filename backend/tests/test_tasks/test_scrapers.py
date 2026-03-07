@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from worker.tasks.scraping.fred import FredScraper
-from worker.tasks.scraping.reuters_rss import ReutersRssScraper
+from worker.tasks.scraping.google_news import GoogleNewsScraper
 from worker.tasks.scraping.sec_edgar import SecEdgarScraper
 from worker.tasks.scraping.yahoo_news import YahooNewsScraper
 
@@ -46,32 +46,32 @@ class TestYahooNewsScraper:
         assert articles[0]["title"] == "Stock Market Rally Pushes Higher Today"
 
 
-class TestReutersRssScraper:
+class TestGoogleNewsScraper:
     def test_parse_deduplicates(self):
-        scraper = ReutersRssScraper()
+        scraper = GoogleNewsScraper()
         raw = [
-            {"url": "https://reuters.com/1", "title": "Markets rally", "summary": "...", "published": "", "author": ""},
-            {"url": "https://reuters.com/1", "title": "Markets rally", "summary": "...", "published": "", "author": ""},
+            {"url": "https://news.google.com/1", "title": "Markets rally", "summary": "...", "published": "", "source_name": "Reuters"},
+            {"url": "https://news.google.com/1", "title": "Markets rally", "summary": "...", "published": "", "source_name": "Reuters"},
         ]
         result = scraper.parse(raw)
         assert len(result) == 1
 
     def test_parse_skips_empty_title(self):
-        scraper = ReutersRssScraper()
+        scraper = GoogleNewsScraper()
         raw = [
-            {"url": "https://reuters.com/1", "title": "", "summary": "...", "published": "", "author": ""},
+            {"url": "https://news.google.com/1", "title": "", "summary": "...", "published": "", "source_name": ""},
         ]
         result = scraper.parse(raw)
         assert len(result) == 0
 
     def test_parse_sets_source(self):
-        scraper = ReutersRssScraper()
+        scraper = GoogleNewsScraper()
         raw = [
-            {"url": "https://reuters.com/1", "title": "Test", "summary": "Body", "published": "", "author": "John"},
+            {"url": "https://news.google.com/1", "title": "Test article", "summary": "Body", "published": "", "source_name": "CNBC"},
         ]
         result = scraper.parse(raw)
-        assert result[0]["source"] == "reuters"
-        assert result[0]["author"] == "John"
+        assert result[0]["source"] == "google_news"
+        assert result[0]["metadata"]["original_source"] == "CNBC"
 
 
 class TestSecEdgarScraper:
