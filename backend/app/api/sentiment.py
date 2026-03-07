@@ -13,7 +13,7 @@ from app.models.sector import Sector
 from app.models.sentiment import SentimentScore
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 from app.schemas.sentiment import (
     PaginatedSentiment,
     SentimentScoreResponse,
@@ -78,9 +78,7 @@ async def get_ticker_sentiment_articles(
 
     base_query = select(SentimentScore).where(SentimentScore.stock_id == stock.id)
 
-    # Count
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, base_query)
 
     # Fetch page with article join
     query = (

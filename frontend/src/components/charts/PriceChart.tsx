@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { createChart, type IChartApi, type ISeriesApi, ColorType } from "lightweight-charts";
+import { createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
 import type { MarketDataDaily } from "../../types";
+import { getChartThemeOptions } from "../../utils/chartConfig";
 
 interface PriceChartProps {
   data: MarketDataDaily[];
@@ -18,22 +19,9 @@ export default function PriceChart({ data, height = 400 }: PriceChartProps) {
     const isDark = document.documentElement.classList.contains("dark");
 
     const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: isDark ? "#1f2937" : "#ffffff" },
-        textColor: isDark ? "#9ca3af" : "#374151",
-      },
-      grid: {
-        vertLines: { color: isDark ? "#374151" : "#e5e7eb" },
-        horzLines: { color: isDark ? "#374151" : "#e5e7eb" },
-      },
+      ...getChartThemeOptions(isDark),
       width: chartContainerRef.current.clientWidth,
       height,
-      timeScale: {
-        borderColor: isDark ? "#4b5563" : "#d1d5db",
-      },
-      rightPriceScale: {
-        borderColor: isDark ? "#4b5563" : "#d1d5db",
-      },
     });
 
     const candlestickSeries = chart.addCandlestickSeries({
@@ -48,7 +36,6 @@ export default function PriceChart({ data, height = 400 }: PriceChartProps) {
     chartRef.current = chart;
     seriesRef.current = candlestickSeries;
 
-    // Handle resize
     const handleResize = () => {
       if (chartContainerRef.current) {
         chart.applyOptions({ width: chartContainerRef.current.clientWidth });
@@ -62,7 +49,6 @@ export default function PriceChart({ data, height = 400 }: PriceChartProps) {
     };
   }, [height]);
 
-  // Update data when it changes
   useEffect(() => {
     if (!seriesRef.current || !data.length) return;
 

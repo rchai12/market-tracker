@@ -7,16 +7,7 @@ export default function Header() {
   const { isDark, toggle } = useThemeStore();
 
   return (
-    <header className="h-14 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 flex items-center justify-between">
-      <div>
-        {/* Search bar placeholder - will be expanded later */}
-        <input
-          type="text"
-          placeholder="Search tickers..."
-          className="w-64 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
+    <header className="h-14 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 flex items-center justify-end">
       <div className="flex items-center gap-4">
         <button
           type="button"

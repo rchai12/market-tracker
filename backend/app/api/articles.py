@@ -10,7 +10,7 @@ from app.models.article import Article, ArticleStock
 from app.models.stock import Stock
 from app.models.user import User
 from app.schemas.article import ArticleResponse, PaginatedArticles
-from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -39,9 +39,7 @@ async def list_articles(
             func.upper(Stock.ticker) == ticker.upper()
         )
 
-    # Count total
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, base_query)
 
     # Fetch page
     query = (

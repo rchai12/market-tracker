@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { createChart, type IChartApi, type ISeriesApi, ColorType } from "lightweight-charts";
+import { createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
 import type { MarketDataDaily } from "../../types";
+import { getChartThemeOptions } from "../../utils/chartConfig";
 
 interface VolumeChartProps {
   data: MarketDataDaily[];
@@ -16,24 +17,16 @@ export default function VolumeChart({ data, height = 150 }: VolumeChartProps) {
     if (!chartContainerRef.current) return;
 
     const isDark = document.documentElement.classList.contains("dark");
+    const themeOptions = getChartThemeOptions(isDark);
 
     const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: isDark ? "#1f2937" : "#ffffff" },
-        textColor: isDark ? "#9ca3af" : "#374151",
-      },
+      ...themeOptions,
       grid: {
         vertLines: { visible: false },
         horzLines: { color: isDark ? "#374151" : "#e5e7eb" },
       },
       width: chartContainerRef.current.clientWidth,
       height,
-      timeScale: {
-        borderColor: isDark ? "#4b5563" : "#d1d5db",
-      },
-      rightPriceScale: {
-        borderColor: isDark ? "#4b5563" : "#d1d5db",
-      },
     });
 
     const volumeSeries = chart.addHistogramSeries({

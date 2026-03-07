@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getSectorSentiment, getTrendingSentiment } from "../api/sentiment";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
+import LoadingSkeleton from "../components/common/LoadingSkeleton";
 
 export default function SentimentPage() {
   const { data: sectors, isLoading: sectorsLoading } = useQuery({
@@ -26,7 +27,7 @@ export default function SentimentPage() {
           Sector Sentiment (7 days)
         </h2>
         {sectorsLoading ? (
-          <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+          <LoadingSkeleton variant="card" count={4} />
         ) : sectors && sectors.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sectors.map((sector) => (
@@ -80,7 +81,7 @@ export default function SentimentPage() {
           Trending by Sentiment (3 days)
         </h2>
         {trendingLoading ? (
-          <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+          <LoadingSkeleton variant="row" count={5} />
         ) : trending && trending.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

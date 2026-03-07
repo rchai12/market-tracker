@@ -8,7 +8,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.sector import Sector
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 from app.schemas.stock import PaginatedStocks, StockDetailResponse, StockResponse
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -46,9 +46,7 @@ async def list_stocks(
             (Stock.ticker.ilike(pattern)) | (Stock.company_name.ilike(pattern))
         )
 
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, query)
 
     # Paginate
     query = query.order_by(Stock.ticker).offset((page - 1) * per_page).limit(per_page)

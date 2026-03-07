@@ -10,7 +10,7 @@ from app.models.sector import Sector
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
-from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 from app.schemas.signal import PaginatedSignals, SignalResponse
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -53,8 +53,7 @@ async def get_signal_history(
 
     base_query = select(Signal).where(Signal.stock_id == stock.id)
 
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, base_query)
 
     query = (
         base_query
@@ -109,8 +108,7 @@ async def list_signals(
         else:
             base_query = base_query.join(Stock).join(Sector).where(func.lower(Sector.name) == sector.lower())
 
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, base_query)
 
     query = (
         base_query

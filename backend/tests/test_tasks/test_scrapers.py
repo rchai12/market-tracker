@@ -67,7 +67,7 @@ class TestGoogleNewsScraper:
     def test_parse_sets_source(self):
         scraper = GoogleNewsScraper()
         raw = [
-            {"url": "https://news.google.com/1", "title": "Test article", "summary": "Body", "published": "", "source_name": "CNBC"},
+            {"url": "https://news.google.com/1", "title": "Test article", "summary": "Body", "published": "", "source_detail": {"title": "CNBC"}},
         ]
         result = scraper.parse(raw)
         assert result[0]["source"] == "google_news"

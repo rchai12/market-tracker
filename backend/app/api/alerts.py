@@ -20,7 +20,7 @@ from app.schemas.alert import (
     TestAlertRequest,
     TestAlertResponse,
 )
-from app.schemas.common import PaginationMeta, calc_total_pages
+from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -49,20 +49,7 @@ async def get_alert_configs(
         )
         ticker_map = {row.id: row.ticker for row in stock_result.all()}
 
-    return [
-        AlertConfigResponse(
-            id=c.id,
-            user_id=c.user_id,
-            stock_id=c.stock_id,
-            ticker=ticker_map.get(c.stock_id) if c.stock_id else None,
-            min_strength=c.min_strength,
-            direction_filter=c.direction_filter,
-            channel=c.channel,
-            is_active=c.is_active,
-            created_at=c.created_at,
-        )
-        for c in configs
-    ]
+    return [_config_to_response(c, ticker_map.get(c.stock_id) if c.stock_id else None) for c in configs]
 
 
 @router.post("/configs", response_model=AlertConfigResponse, status_code=201)
@@ -92,17 +79,7 @@ async def create_alert_config(
     db.add(config)
     await db.flush()
 
-    return AlertConfigResponse(
-        id=config.id,
-        user_id=config.user_id,
-        stock_id=config.stock_id,
-        ticker=ticker,
-        min_strength=config.min_strength,
-        direction_filter=config.direction_filter,
-        channel=config.channel,
-        is_active=config.is_active,
-        created_at=config.created_at,
-    )
+    return _config_to_response(config, ticker)
 
 
 @router.put("/configs/{config_id}", response_model=AlertConfigResponse)
@@ -142,17 +119,7 @@ async def update_alert_config(
         )
         ticker = stock_result.scalar_one_or_none()
 
-    return AlertConfigResponse(
-        id=config.id,
-        user_id=config.user_id,
-        stock_id=config.stock_id,
-        ticker=ticker,
-        min_strength=config.min_strength,
-        direction_filter=config.direction_filter,
-        channel=config.channel,
-        is_active=config.is_active,
-        created_at=config.created_at,
-    )
+    return _config_to_response(config, ticker)
 
 
 @router.delete("/configs/{config_id}", status_code=204)
@@ -187,8 +154,7 @@ async def get_alert_history(
     """Get sent alert log for the current user."""
     base_query = select(AlertLog).where(AlertLog.user_id == user.id)
 
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = (await db.execute(count_query)).scalar() or 0
+    total = await get_total_count(db, base_query)
 
     query = (
         base_query
@@ -259,10 +225,8 @@ async def send_test_alert(
     for ch in channels:
         if ch == "discord":
             success, error = await _send_discord_alert(mock_signal, user)
-        elif ch == "email":
-            success, error = await _send_email_alert(mock_signal, user)
         else:
-            success, error = False, f"Unknown channel: {ch}"
+            success, error = await _send_email_alert(mock_signal, user)
         results.append((ch, success, error))
 
     all_success = all(r[1] for r in results)
@@ -276,4 +240,21 @@ async def send_test_alert(
     return TestAlertResponse(
         success=all_success,
         message="; ".join(messages),
+    )
+
+
+# ── Helpers ──
+
+
+def _config_to_response(config: AlertConfig, ticker: str | None) -> AlertConfigResponse:
+    return AlertConfigResponse(
+        id=config.id,
+        user_id=config.user_id,
+        stock_id=config.stock_id,
+        ticker=ticker,
+        min_strength=config.min_strength,
+        direction_filter=config.direction_filter,
+        channel=config.channel,
+        is_active=config.is_active,
+        created_at=config.created_at,
     )
