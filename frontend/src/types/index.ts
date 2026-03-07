@@ -120,6 +120,30 @@ export interface MarketDataDaily {
   volume: number;
 }
 
+export interface SignalAccuracy {
+  scope: string;
+  window_days: number;
+  total_evaluated: number;
+  correct_count: number;
+  accuracy_pct: number;
+  avg_return_correct: number;
+  avg_return_wrong: number;
+  bullish_accuracy_pct: number | null;
+  bearish_accuracy_pct: number | null;
+}
+
+export interface SignalWeights {
+  sector_name: string | null;
+  sentiment_momentum: number;
+  sentiment_volume: number;
+  price_momentum: number;
+  volume_anomaly: number;
+  sample_count: number;
+  accuracy_pct: number | null;
+  computed_at: string | null;
+  source: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   meta: {

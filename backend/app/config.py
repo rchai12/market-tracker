@@ -76,9 +76,21 @@ class Settings(BaseSettings):
     finbert_batch_size: int = 16
     finbert_max_length: int = 512
 
+    # Signal feedback loop
+    feedback_enabled: bool = True
+    feedback_evaluation_windows: str = "1,3,5"
+    feedback_min_samples: int = 50
+    feedback_weight_min: float = 0.05
+    feedback_weight_max: float = 0.60
+    feedback_lookback_days: int = 90
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",")]
+
+    @property
+    def feedback_windows_list(self) -> list[int]:
+        return [int(w.strip()) for w in self.feedback_evaluation_windows.split(",")]
 
 
 settings = Settings()

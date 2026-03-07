@@ -32,7 +32,8 @@
 │  │  - scraping            │  │  - :00 scrape all      │   │
 │  │  - sentiment           │  │  - :05 market data     │   │
 │  │  - signals             │  │  - :15 sentiment       │   │
-│  │  - default             │  │  - :30 gen signals     │   │
+│  │  - maintenance         │  │  - :30 gen signals     │   │
+│  │  - default             │  │  - :35 matview refresh │   │
 │  │                        │  │  - 3AM maintenance     │   │
 │  └──────────────────────┘  └────────────────────────┘   │
 │                                                          │
@@ -61,6 +62,13 @@
                     ┌──────▼──────┐
                     │  Scrapers   │  (Celery tasks on Compute VM)
                     │  (hourly)   │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │   Ticker    │  $TICKER (0.95), (TICKER) (0.90),
+                    │ Extraction  │  ALL-CAPS (0.70), company name (0.60),
+                    │ + Industry  │  industry keywords (0.45)
+                    │  Matching   │
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
@@ -124,13 +132,13 @@ stocks >── sectors
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
 | users | Authentication and preferences | email, username, password_hash, discord_webhook_url |
-| sectors | Stock groupings (Energy, Financials, ...) | name, is_active |
-| stocks | S&P 500 tickers | ticker, company_name, sector_id, is_active |
+| sectors | Stock groupings (Energy, Financials, Technology, ...) | name, is_active |
+| stocks | S&P 500 tickers | ticker, company_name, sector_id, industry, is_active |
 | market_data_daily | Historical OHLCV | stock_id, date, open/high/low/close/volume |
 | market_data_intraday | Intraday prices | stock_id, timestamp, OHLCV |
 | articles | Scraped news/filings | source, source_url, title, raw_text, is_processed |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
-| sentiment_scores | FinBERT analysis results | article_id, label, positive/negative/neutral scores |
+| sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
 | signals | Composite trading signals | stock_id, direction, strength, composite_score, reasoning |
 | alert_configs | User alert preferences | user_id, stock_id, min_strength, channel |
 | alert_logs | Sent alert history | signal_id, user_id, channel, success |
@@ -186,6 +194,22 @@ FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on
 - `finbert_max_length`: max token length (default: 512)
 
 **Safety net:** A Celery Beat task at `:15` runs sentiment processing as a catch-up for any articles missed by the chained flow.
+
+## Article-to-Stock Linking
+
+Articles are linked to stocks via the `article_stocks` join table using a tiered confidence system:
+
+| Method | Confidence | Example |
+|--------|-----------|---------|
+| `$TICKER` in text | 0.95 | "$XOM rallies on earnings" |
+| `(TICKER)` parenthetical | 0.90 | "Exxon Mobil (XOM) reports..." |
+| ALL-CAPS word matching | 0.70 | "...shares of XOM rose..." |
+| Company name matching | 0.60 | "Exxon Mobil announced..." |
+| Industry keyword matching | 0.45 | "OPEC cuts oil production" → all Oil & Gas Integrated stocks |
+
+**Industry keyword matching** enables linking of broad sector/macro news to relevant stocks without explicit ticker mentions. A mapping of 80+ keywords (including cross-cutting macro themes like tariffs, sanctions, interest rates) maps to 20 sub-industries. When an article matches industry keywords but not specific tickers, it creates low-confidence links to all stocks in the matched industries.
+
+Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions" + "oil" → links to XOM, CVX, COP, OXY at confidence 0.45.
 
 ## Signal Generation + Alert Dispatch
 

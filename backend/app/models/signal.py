@@ -25,3 +25,4 @@ class Signal(Base):
 
     stock = relationship("Stock", back_populates="signals")
     alert_logs = relationship("AlertLog", back_populates="signal")
+    outcomes = relationship("SignalOutcome", back_populates="signal", cascade="all, delete-orphan")

@@ -30,3 +30,27 @@ class SignalResponse(BaseModel):
 class PaginatedSignals(BaseModel):
     data: list[SignalResponse]
     meta: PaginationMeta
+
+
+class SignalAccuracyResponse(BaseModel):
+    scope: str
+    window_days: int
+    total_evaluated: int
+    correct_count: int
+    accuracy_pct: float
+    avg_return_correct: float
+    avg_return_wrong: float
+    bullish_accuracy_pct: float | None = None
+    bearish_accuracy_pct: float | None = None
+
+
+class SignalWeightsResponse(BaseModel):
+    sector_name: str | None
+    sentiment_momentum: float
+    sentiment_volume: float
+    price_momentum: float
+    volume_anomaly: float
+    sample_count: int
+    accuracy_pct: float | None
+    computed_at: datetime | None
+    source: str

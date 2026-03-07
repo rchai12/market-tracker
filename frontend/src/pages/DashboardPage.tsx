@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getLatestSignals } from "../api/signals";
+import { getLatestSignals, getSignalAccuracy } from "../api/signals";
 import { getSectorSentiment } from "../api/sentiment";
 import { listSources } from "../api/articles";
+import AccuracyCard from "../components/dashboard/AccuracyCard";
 import SignalCard from "../components/signals/SignalCard";
 import SectorHeatmapCard from "../components/dashboard/SectorHeatmapCard";
 import TopMoversCard from "../components/dashboard/TopMoversCard";
@@ -39,6 +40,16 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ["dashboard-sources"],
     queryFn: listSources,
+  });
+
+  const {
+    data: accuracy,
+    isLoading: accuracyLoading,
+    isError: accuracyError,
+    refetch: refetchAccuracy,
+  } = useQuery({
+    queryKey: ["dashboard-accuracy"],
+    queryFn: () => getSignalAccuracy({ window_days: 5 }),
   });
 
   const displaySignals = useMemo(() => (signals ?? []).slice(0, 10), [signals]);
@@ -86,6 +97,20 @@ export default function DashboardPage() {
               No signals yet. Signals will appear after the generation pipeline runs.
             </p>
           </div>
+        )}
+      </section>
+
+      {/* Signal Accuracy */}
+      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          Signal Accuracy
+        </h2>
+        {accuracyLoading ? (
+          <LoadingSkeleton variant="row" count={2} />
+        ) : accuracyError ? (
+          <ErrorRetry onRetry={() => refetchAccuracy()} />
+        ) : (
+          <AccuracyCard data={accuracy ?? []} />
         )}
       </section>
 

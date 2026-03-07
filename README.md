@@ -4,12 +4,14 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 
 ## Features
 
-- **News Scraping**: Hourly ingestion from 7 sources (Yahoo Finance, Finviz, Reuters, SEC EDGAR, MarketWatch, Reddit, FRED)
+- **News Scraping**: Hourly ingestion from 7 sources (Yahoo Finance, Finviz, Google News, Reuters RSS, SEC EDGAR, MarketWatch, Reddit, FRED)
 - **Historical Data**: Full available price history (~30+ years) seeded on initialization via yfinance
+- **Ticker & Industry Linking**: 4-tier ticker extraction ($TICKER, parenthetical, ALL-CAPS, company name) plus industry keyword matching for sector-level news (80+ keywords, cross-cutting macro themes)
 - **Sentiment Analysis**: FinBERT model scores every article as bullish/bearish/neutral
 - **Signal Generation**: Composite scoring algorithm combining sentiment momentum, article volume, price momentum, and volume anomalies
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
 - **Web Dashboard**: React app with TradingView charts, sentiment timelines, signal feeds, and watchlists
+- **Data Maintenance**: Automated retention (article compression, log cleanup, weak signal purge), materialized views
 - **JWT Authentication**: Secure user accounts with watchlists and alert preferences
 
 ## Architecture
@@ -99,11 +101,12 @@ backend/           FastAPI + Celery + SQLAlchemy
   app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, admin)
   app/models/      SQLAlchemy ORM models (13 tables)
   app/schemas/     Pydantic schemas
-  worker/tasks/    Celery tasks (scraping, sentiment, signals)
-    scraping/      7 scrapers + orchestrator + market data
+  worker/tasks/    Celery tasks (scraping, sentiment, signals, maintenance)
+    scraping/      7 scrapers + FeedScraper base + orchestrator + market data
     sentiment/     FinBERT analyzer (singleton) + sentiment processing task
     signals/       Signal generator (composite scoring) + alert dispatcher (Discord + email)
-  worker/utils/    Rate limiter, text cleaner, ticker extractor
+    maintenance/   Data retention (compression, cleanup, purge) + matview refresh
+  worker/utils/    Rate limiter, text cleaner, ticker extractor (with industry keyword matching)
 frontend/          React + TypeScript
   src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, etc.)
   src/components/  UI components (layout, charts, sentiment, signals, dashboard, common)
@@ -116,11 +119,18 @@ docs/              Architecture, deployment, API reference, data sources
 
 ## Scope
 
-Currently tracking **45 stocks** across two S&P 500 sectors:
-- **Energy**: XOM, CVX, COP, SLB, EOG, MPC, and more
-- **Financials**: JPM, BAC, GS, V, MA, BRK-B, and more
+Currently tracking **~86 stocks** across 6 S&P 500 sectors with 20 sub-industry classifications:
 
-Additional sectors can be activated in the database.
+| Sector | Industries | Example Tickers |
+|--------|-----------|-----------------|
+| Energy | Oil & Gas Integrated, E&P, Equipment, Refining, Midstream | XOM, CVX, COP, SLB, EOG, MPC |
+| Financials | Banks, Insurance, Capital Markets, Payments | JPM, BAC, GS, V, MA, BRK-B |
+| Technology | Semiconductors, Software, IT Services, Cybersecurity, Consumer Electronics | NVDA, MSFT, AAPL, ORCL, PANW |
+| Communication Services | Social Media, Streaming & Entertainment, Telecom | META, GOOGL, NFLX, DIS, TMUS |
+| Consumer Discretionary | E-Commerce, EV & Auto, Retail, Restaurants | AMZN, TSLA, HD, MCD |
+| Market ETFs | ETF | SPY, QQQ, DIA, IWM, VTI |
+
+Industry classifications enable keyword-based article linking — broad news like "OPEC cuts production" automatically links to Oil & Gas stocks even without explicit ticker mentions.
 
 ## Documentation
 

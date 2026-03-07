@@ -4,7 +4,8 @@ import { getStock } from "../api/stocks";
 import { getDailyData } from "../api/marketData";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../api/watchlist";
 import { getTickerSentimentTimeline, getTickerSentimentArticles } from "../api/sentiment";
-import { getSignalHistory } from "../api/signals";
+import { getSignalHistory, getTickerAccuracy } from "../api/signals";
+import AccuracyBadge from "../components/signals/AccuracyBadge";
 import { humanizeSource, formatTimeAgo } from "../utils/format";
 import PriceChart from "../components/charts/PriceChart";
 import VolumeChart from "../components/charts/VolumeChart";
@@ -44,6 +45,12 @@ export default function StockDetailPage() {
   const { data: articlesData } = useQuery({
     queryKey: ["sentiment-articles", ticker],
     queryFn: () => getTickerSentimentArticles(ticker!, 1, 10),
+    enabled: !!ticker,
+  });
+
+  const { data: accuracyData } = useQuery({
+    queryKey: ["ticker-accuracy", ticker],
+    queryFn: () => getTickerAccuracy(ticker!),
     enabled: !!ticker,
   });
 
@@ -171,6 +178,28 @@ export default function StockDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Signal Accuracy */}
+      {accuracyData && accuracyData.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mt-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Signal Accuracy
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {accuracyData.map((acc) => (
+              <div key={acc.window_days} className="text-center rounded-lg bg-gray-50 dark:bg-gray-700/50 p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                  {acc.window_days}-Day Window
+                </p>
+                <AccuracyBadge accuracy={acc.accuracy_pct} size="md" />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {acc.correct_count}/{acc.total_evaluated} correct
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent Articles */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mt-4">

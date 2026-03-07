@@ -71,7 +71,8 @@ username=user@example.com&password=secret
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
 | GET | `/stocks` | Yes | **Done** | List stocks (paginated, filterable by sector/search) |
-| GET | `/stocks/{ticker}` | Yes | **Done** | Stock detail (latest sentiment + signal TBD) |
+| GET | `/stocks/sectors` | Yes | **Done** | List active sector names |
+| GET | `/stocks/{ticker}` | Yes | **Done** | Stock detail with sector and industry |
 
 Query params for `/stocks`: `?sector=energy&search=exxon&page=1&per_page=20`
 
@@ -204,7 +205,7 @@ Query params: `?days=3&limit=10` (defaults)
 | GET | `/signals/latest` | Yes | **Done** | Most recent signals across all stocks (dashboard feed) |
 | GET | `/signals/{ticker}` | Yes | **Done** | Signal history for a specific ticker |
 
-Query params for `/signals`: `?direction=bullish&strength=strong&ticker=XOM&page=1&per_page=20`
+Query params for `/signals`: `?direction=bullish&strength=strong&ticker=XOM&sector=energy&page=1&per_page=20`
 
 Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
 
@@ -277,8 +278,8 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
 |--------|------|------|--------|-------------|
 | POST | `/admin/seed-history` | Admin | **Done** | Trigger historical market data backfill (Celery task) |
 | POST | `/admin/scrape-now` | Admin | **Done** | Trigger immediate scrape orchestration (Celery task) |
-| GET | `/admin/scrape-logs` | Admin | Planned (Phase 8) | Scrape execution history |
-| GET | `/admin/system/health` | Admin | Planned (Phase 8) | Service health: DB, Redis, workers |
+| POST | `/admin/maintenance` | Admin | **Done** | Trigger data maintenance (compression, cleanup, purge) |
+| GET | `/admin/db-stats` | Admin | **Done** | Database stats (row counts, table sizes) |
 
 ### POST /admin/seed-history
 ```
@@ -291,4 +292,19 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
 ```
 // Response
 { "task_id": "def-456", "status": "queued" }
+```
+
+### POST /admin/maintenance
+```
+// Response
+{ "task_id": "ghi-789", "status": "queued" }
+```
+
+### GET /admin/db-stats
+```json
+// Response
+[
+  { "table": "articles", "row_count": 15000, "size": "45 MB" },
+  { "table": "sentiment_scores", "row_count": 8500, "size": "12 MB" }
+]
 ```

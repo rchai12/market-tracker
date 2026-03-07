@@ -50,6 +50,8 @@ celery_app.conf.include = [
     "worker.tasks.sentiment.sentiment_task",
     "worker.tasks.signals.signal_generator",
     "worker.tasks.signals.alert_dispatcher",
+    "worker.tasks.signals.outcome_evaluator",
+    "worker.tasks.signals.weight_optimizer",
     "worker.tasks.maintenance.tasks",
 ]
 

@@ -14,10 +14,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import async_session
 from app.models.market_data import MarketDataDaily
 from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
+from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
@@ -75,11 +77,14 @@ async def _generate_signals_async() -> dict:
             logger.warning("No active stocks found")
             return {"signals": 0, "alerts": 0, "errors": 0}
 
+        # Pre-load adaptive weights (sector_id -> weights dict)
+        weights_map = await _load_all_weights(session)
+
         logger.info(f"Generating signals for {len(stocks)} active stocks")
 
         for stock in stocks:
             try:
-                score_data = await _compute_composite_score(session, stock.id, now)
+                score_data = await _compute_composite_score(session, stock.id, now, weights_map, stock.sector_id)
 
                 if score_data is None:
                     continue
@@ -136,7 +141,11 @@ def _dispatch_alert_task(signal_id: int):
 
 
 async def _compute_composite_score(
-    session: AsyncSession, stock_id: int, now: datetime
+    session: AsyncSession,
+    stock_id: int,
+    now: datetime,
+    weights_map: dict | None = None,
+    sector_id: int | None = None,
 ) -> dict | None:
     """Compute all four components and the weighted composite for a stock."""
     sent_momentum = await calc_sentiment_momentum(session, stock_id, now)
@@ -157,11 +166,14 @@ async def _compute_composite_score(
     pm = price_mom if price_mom is not None else 0.0
     va = vol_anomaly if vol_anomaly is not None else 0.0
 
+    # Use adaptive weights if available, otherwise default
+    w = _get_weights(weights_map, sector_id)
+
     composite = (
-        WEIGHT_SENTIMENT_MOMENTUM * sm
-        + WEIGHT_SENTIMENT_VOLUME * sv
-        + WEIGHT_PRICE_MOMENTUM * pm
-        + WEIGHT_VOLUME_ANOMALY * va
+        w["sentiment_momentum"] * sm
+        + w["sentiment_volume"] * sv
+        + w["price_momentum"] * pm
+        + w["volume_anomaly"] * va
     )
 
     return {
@@ -171,6 +183,49 @@ async def _compute_composite_score(
         "price_momentum": pm,
         "volume_anomaly": va,
         "article_count": article_count,
+        "weights_source": w["source"],
+    }
+
+
+async def _load_all_weights(session: AsyncSession) -> dict:
+    """Pre-load all adaptive weights into a sector_id -> weights dict."""
+    if not settings.feedback_enabled:
+        return {}
+
+    result = await session.execute(
+        select(SignalWeight).where(SignalWeight.sample_count >= settings.feedback_min_samples)
+    )
+    rows = result.scalars().all()
+
+    weights_map = {}
+    for row in rows:
+        weights_map[row.sector_id] = {
+            "sentiment_momentum": float(row.sentiment_momentum),
+            "sentiment_volume": float(row.sentiment_volume),
+            "price_momentum": float(row.price_momentum),
+            "volume_anomaly": float(row.volume_anomaly),
+            "source": "sector" if row.sector_id else "global",
+        }
+    return weights_map
+
+
+def _get_weights(weights_map: dict | None, sector_id: int | None) -> dict:
+    """Look up adaptive weights: sector-specific → global → defaults."""
+    if weights_map:
+        if sector_id is not None and sector_id in weights_map:
+            return weights_map[sector_id]
+        if None in weights_map:
+            return weights_map[None]
+    return _default_weights()
+
+
+def _default_weights() -> dict:
+    return {
+        "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM,
+        "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
+        "price_momentum": WEIGHT_PRICE_MOMENTUM,
+        "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
+        "source": "default",
     }
 
 

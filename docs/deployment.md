@@ -51,10 +51,10 @@ docker network create proxy_net
 docker compose up -d
 docker compose exec backend alembic upgrade head
 
-# Seed tickers + full historical market data (~30+ years)
+# Seed tickers (6 sectors, ~86 tickers, 20 sub-industries) + full historical market data (~30+ years)
 make seed-all
 # Or step by step:
-# make seed          # Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs
+# make seed          # Seed 6 sectors (~86 tickers) with industry classifications
 # make seed-history  # Backfill full OHLCV history (takes a few minutes)
 ```
 

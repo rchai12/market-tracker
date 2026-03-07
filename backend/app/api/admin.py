@@ -44,6 +44,28 @@ async def trigger_maintenance(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/evaluate-outcomes")
+async def trigger_outcome_evaluation(
+    _admin: User = Depends(get_current_admin),
+):
+    """Trigger signal outcome evaluation as a background Celery task."""
+    from worker.tasks.signals.outcome_evaluator import evaluate_signal_outcomes
+
+    task = evaluate_signal_outcomes.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/compute-weights")
+async def trigger_weight_computation(
+    _admin: User = Depends(get_current_admin),
+):
+    """Trigger adaptive weight computation as a background Celery task."""
+    from worker.tasks.signals.weight_optimizer import compute_adaptive_weights
+
+    task = compute_adaptive_weights.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.get("/db-stats")
 async def get_db_stats(
     _admin: User = Depends(get_current_admin),

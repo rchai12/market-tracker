@@ -6,9 +6,10 @@
 |--------|--------|------------|-----------|--------|-------|
 | Yahoo Finance News | HTTP scraping (httpx + BeautifulSoup) | 2 req/s (conservative) | News articles | **Done** | General + per-ticker news pages |
 | Finviz | HTTP scraping (httpx + BeautifulSoup) | 1 req/s | News aggregator | **Done** | Per-ticker news table scraping |
+| Google News | RSS feed (FeedScraper) | 1 req/min (polite) | News articles | **Done** | Stock market + earnings report feeds |
 | Reuters RSS | RSS feed parsing (feedparser) | 1 req/min (polite) | News articles | **Done** | business-finance + markets feeds |
 | SEC EDGAR | REST API (httpx) | 10 req/s (stated limit) | Filings (8-K, 10-Q, 10-K) | **Done** | Maps form types to event categories |
-| MarketWatch | HTTP scraping (httpx + BeautifulSoup) | 1 req/s | News articles | **Done** | Latest news page scraping |
+| MarketWatch | RSS feed (FeedScraper) | 1 req/min (polite) | News articles | **Done** | Top stories + market pulse feeds |
 | Reddit (r/stocks, r/wallstreetbets) | PRAW (Reddit API) | 60 req/min | Posts | **Done** | Filters by score >= 10, skips stickied |
 
 ## Market Data
@@ -26,14 +27,17 @@
 
 ## Scraper Architecture
 
-All scrapers extend `BaseScraper` which provides:
+All scrapers extend `BaseScraper` (or `FeedScraper` for RSS/Atom sources) which provides:
 - `scrape()` → `parse()` → `store()` pipeline
 - Deduplication by `source_url` (unique DB constraint)
-- Automatic ticker extraction from article titles and body text
-- `article_stocks` join table linking (with confidence scores)
+- Automatic ticker extraction from article titles and body text (4 patterns)
+- Industry keyword matching for broad sector/macro news (80+ keywords → 20 sub-industries)
+- `article_stocks` join table linking (with tiered confidence scores)
 - `scrape_logs` table logging (articles found, new, errors)
 
-Orchestration: Celery `group()` fans out all 7 scrapers in parallel, hourly at :00, then chains FinBERT sentiment processing on new articles.
+**FeedScraper** (extends BaseScraper): shared base class for RSS/Atom feed scrapers, providing feedparser integration, date parsing, and dedup. Used by Google News and MarketWatch.
+
+Orchestration: Celery `group()` fans out all scrapers in parallel, hourly at :00, then chains FinBERT sentiment processing on new articles.
 
 ## Sentiment Analysis (FinBERT)
 
@@ -60,13 +64,16 @@ On first initialization, `scripts/seed_historical_data.py` downloads the full av
 
 ## Scope
 
-### Active Sectors
-- **Energy**: XOM, CVX, COP, SLB, EOG, MPC, PXD, PSX, VLO, OXY, WMB, HES, HAL, DVN, FANG, KMI, BKR, CTRA, OKE, TRGP
-- **Financials**: BRK-B, JPM, V, MA, BAC, WFC, GS, MS, SPGI, BLK, AXP, C, SCHW, CB, MMC, PGR, ICE, AON, CME, MCO, USB, TFC, AIG, MET, ALL
+### Active Sectors (~86 tickers across 6 sectors, 20 sub-industries)
 
-### Future Expansion
-Remaining S&P 500 sectors (stored as inactive in the sectors table):
-Technology, Health Care, Consumer Discretionary, Communication Services, Industrials, Consumer Staples, Utilities, Real Estate, Materials
+| Sector | Industries | Tickers |
+|--------|-----------|---------|
+| Energy | Oil & Gas Integrated, E&P, Equipment, Refining, Midstream | XOM, CVX, COP, SLB, EOG, MPC, PSX, VLO, OXY, WMB, HAL, DVN, FANG, KMI, BKR, CTRA, OKE, TRGP |
+| Financials | Banks, Insurance, Capital Markets, Payments, Diversified | BRK-B, JPM, V, MA, BAC, WFC, GS, MS, SPGI, BLK, AXP, C, SCHW, CB, MMC, PGR, ICE, AON, CME, MCO, USB, TFC, AIG, MET, ALL |
+| Technology | Semiconductors, Software, IT Services, Cybersecurity, Consumer Electronics | NVDA, AMD, INTC, MSFT, AAPL, ORCL, CRM, ADBE, INTU, NOW, PLTR, ACN, IBM, CSCO, PANW, QCOM, TXN, AMAT, MU, AVGO |
+| Communication Services | Social Media, Streaming & Entertainment, Telecom | META, GOOGL, NFLX, DIS, TMUS, VZ, T, CMCSA |
+| Consumer Discretionary | E-Commerce, EV & Auto, Retail, Restaurants | AMZN, TSLA, HD, LOW, TJX, NKE, MCD, SBUX |
+| Market ETFs | ETF | SPY, QQQ, DIA, IWM, VTI |
 
 ## Deduplication Strategy
 
@@ -74,7 +81,23 @@ Articles are deduplicated by `source_url` (unique constraint). If the same artic
 
 ## Ticker Extraction
 
-Articles are mapped to stock tickers using:
-1. `$TICKER` notation in text (confidence 0.95)
-2. ALL CAPS words matching known tickers (confidence 0.70)
-3. Common false positives excluded: A, I, CEO, CFO, CTO, IPO, SEC, FDA, GDP, CPI, ETF, NYSE, USA, API
+Articles are mapped to stock tickers using a tiered confidence system:
+
+| Method | Confidence | Example |
+|--------|-----------|---------|
+| `$TICKER` notation | 0.95 | "$XOM rallies on earnings" |
+| `(TICKER)` parenthetical | 0.90 | "Exxon Mobil (XOM) reports..." |
+| ALL-CAPS word matching | 0.70 | "...shares of XOM rose..." |
+| Company name matching | 0.60 | "Exxon Mobil announced..." |
+| Industry keyword matching | 0.45 | "OPEC cuts oil production" → Oil & Gas stocks |
+
+Common false positives excluded: A, I, CEO, CFO, CTO, IPO, SEC, FDA, GDP, CPI, ETF, NYSE, USA, API, etc.
+
+### Industry Keyword Matching
+
+When articles don't match specific tickers but contain industry-relevant keywords, they are linked to all stocks in the matched sub-industry at lower confidence (0.45). This enables broad sector/macro news to flow through the sentiment pipeline.
+
+- **80+ keywords** mapped to 20 sub-industries
+- **Cross-cutting themes**: tariffs, sanctions, interest rates, supply chain, etc. map to multiple industries simultaneously
+- Keywords are matched longest-first to avoid false positives (e.g., "crude oil" matched before "oil")
+- Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions" + "oil" → links to XOM, CVX, COP, OXY
