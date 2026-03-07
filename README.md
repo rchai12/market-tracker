@@ -8,9 +8,11 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Historical Data**: Full available price history (~30+ years) seeded on initialization via yfinance
 - **Ticker & Industry Linking**: 4-tier ticker extraction ($TICKER, parenthetical, ALL-CAPS, company name) plus industry keyword matching for sector-level news (80+ keywords, cross-cutting macro themes)
 - **Sentiment Analysis**: FinBERT model scores every article as bullish/bearish/neutral
-- **Signal Generation**: Composite scoring algorithm combining sentiment momentum, article volume, price momentum, and volume anomalies
+- **Signal Generation**: 6-component composite scoring (sentiment momentum, article volume, price momentum, volume anomaly, RSI, trend) with adaptive per-sector weights
+- **Technical Indicators**: RSI (14), SMA (20/50), EMA, MACD (12/26/9), Bollinger Bands — computed on-the-fly from stored OHLCV data
+- **Signal Feedback Loop**: Outcome evaluation (1/3/5-day windows), adaptive weight optimization, accuracy tracking
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
-- **Web Dashboard**: React app with TradingView charts, sentiment timelines, signal feeds, and watchlists
+- **Web Dashboard**: React app with TradingView charts, indicator overlays (SMA, Bollinger), RSI/MACD sub-charts, sentiment timelines, signal feeds, accuracy metrics, and watchlists
 - **Data Maintenance**: Automated retention (article compression, log cleanup, weak signal purge), materialized views
 - **JWT Authentication**: Secure user accounts with watchlists and alert preferences
 
@@ -104,9 +106,9 @@ backend/           FastAPI + Celery + SQLAlchemy
   worker/tasks/    Celery tasks (scraping, sentiment, signals, maintenance)
     scraping/      7 scrapers + FeedScraper base + orchestrator + market data
     sentiment/     FinBERT analyzer (singleton) + sentiment processing task
-    signals/       Signal generator (composite scoring) + alert dispatcher (Discord + email)
+    signals/       Signal generator (6-component scoring) + alert dispatcher + outcome evaluator + weight optimizer
     maintenance/   Data retention (compression, cleanup, purge) + matview refresh
-  worker/utils/    Rate limiter, text cleaner, ticker extractor (with industry keyword matching)
+  worker/utils/    Rate limiter, text cleaner, ticker extractor, technical indicators (RSI, SMA, EMA, MACD, Bollinger)
 frontend/          React + TypeScript
   src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, etc.)
   src/components/  UI components (layout, charts, sentiment, signals, dashboard, common)

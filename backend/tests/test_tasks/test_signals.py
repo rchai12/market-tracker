@@ -159,8 +159,10 @@ class TestScoringMath:
     def test_composite_weights_sum_to_one(self):
         from worker.tasks.signals.signal_generator import (
             WEIGHT_PRICE_MOMENTUM,
+            WEIGHT_RSI,
             WEIGHT_SENTIMENT_MOMENTUM,
             WEIGHT_SENTIMENT_VOLUME,
+            WEIGHT_TREND,
             WEIGHT_VOLUME_ANOMALY,
         )
 
@@ -169,6 +171,8 @@ class TestScoringMath:
             + WEIGHT_SENTIMENT_VOLUME
             + WEIGHT_PRICE_MOMENTUM
             + WEIGHT_VOLUME_ANOMALY
+            + WEIGHT_RSI
+            + WEIGHT_TREND
         )
         assert abs(total - 1.0) < 0.001
 

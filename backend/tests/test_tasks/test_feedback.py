@@ -83,10 +83,12 @@ class TestWeightLoading:
 
     def test_default_weights_values(self):
         result = _default_weights()
-        assert result["sentiment_momentum"] == 0.40
-        assert result["sentiment_volume"] == 0.25
-        assert result["price_momentum"] == 0.20
-        assert result["volume_anomaly"] == 0.15
+        assert result["sentiment_momentum"] == 0.30
+        assert result["sentiment_volume"] == 0.20
+        assert result["price_momentum"] == 0.15
+        assert result["volume_anomaly"] == 0.10
+        assert result["rsi"] == 0.15
+        assert result["trend"] == 0.10
 
     def test_get_weights_empty_map_returns_defaults(self):
         result = _get_weights({}, sector_id=1)

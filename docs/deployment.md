@@ -251,6 +251,12 @@ cd /opt/stock-predictor/backend
 
 # Trigger signal generation
 .venv/bin/celery -A worker.celery_app call worker.tasks.signals.signal_generator.generate_all_signals --queue signals
+
+# Trigger outcome evaluation (signal feedback)
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.outcome_evaluator.evaluate_signal_outcomes --queue signals
+
+# Trigger adaptive weight computation
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.weight_optimizer.compute_adaptive_weights --queue signals
 ```
 
 ## Backup

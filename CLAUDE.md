@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 9 (data retention + optimization) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
+**Phase 11 (technical indicators) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -21,17 +21,17 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - FinBERT sentiment analysis: singleton model, batch inference, 512-token chunking, lazy-loaded on compute VM
 - Sentiment API: per-ticker timeline, scored articles, sector summaries, trending stocks
 - Sentiment pipeline: auto-processes new articles after scraping + :15 catch-up task
-- Signal generation: composite scoring (sentiment momentum 40%, sentiment volume 25%, price momentum 20%, volume anomaly 15%)
+- Signal generation: 6-component composite scoring (sentiment momentum 30%, sentiment volume 20%, price momentum 15%, volume anomaly 10%, RSI 15%, trend 10%)
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed
 - Alert dispatch: Discord webhooks + SMTP email, per-user AlertConfig matching, AlertLog history
 - Alert API: config CRUD, alert history, test alert endpoint
 - Admin API: trigger scrape, historical seed, maintenance, DB stats
 - React frontend with AppLayout (sidebar + header), login/register, dark mode (default dark, persists on refresh)
 - Dynamic sidebar with sector links fetched from API, clickable to filtered signals view
-- TradingView Lightweight Charts: candlestick price chart + volume histogram
+- TradingView Lightweight Charts: candlestick price chart + volume histogram + indicator overlays (SMA, Bollinger Bands) + RSI/MACD sub-charts
 - Sentiment UI: SentimentBadge, SentimentChart, SentimentPage (clickable sector cards + trending tickers)
 - Signal UI: SignalCard (full card clickable → stock detail), SignalsPage (filtered grid with sector dropdown), AlertsPage (config CRUD + history)
-- StockDetailPage with price/volume charts, sentiment chart, signal history, watchlist toggle
+- StockDetailPage with price/volume charts, indicator toggles (SMA, Bollinger, RSI, MACD), sentiment chart, signal history, signal accuracy, watchlist toggle
 - Dashboard: signals feed (10 latest moderate+), clickable sector sentiment heatmap, top movers (bullish/bearish), article activity chart
 - Settings page: profile display, dark mode toggle, notification info
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
@@ -61,10 +61,13 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Daily sentiment materialized view with hourly refresh
 - Admin: maintenance trigger + DB stats (row counts, table sizes)
 - Configurable retention periods via env vars (article text 90d, logs 30d, signals 180d)
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, maintenance, password validation, secret key (102 tests)
+- Signal feedback loop: outcome evaluation (1/3/5-day windows), adaptive per-sector weight optimization, accuracy metrics API
+- Technical indicators: RSI (Wilder's 14-period), SMA (20/50), EMA, MACD (12/26/9), Bollinger Bands — pure-Python computation module
+- Indicators API: on-the-fly computation from stored OHLCV data (no extra DB table)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, maintenance, password validation, secret key (166 tests)
 
 ### What's next
-- Phase 10: TBD
+- Phase 12: TBD
 
 ## Architecture
 
@@ -85,14 +88,14 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
 
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
-    beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, 3AM maintenance)
-    tasks/         Task modules: scraping/, sentiment/, signals/, maintenance/ (retention + matview refresh)
-    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper
+    beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights)
+    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, dispatcher, outcome evaluator, weight optimizer), maintenance/ (retention + matview refresh)
+    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper, technical_indicators
   alembic/         Database migrations
-  tests/           pytest test suite (96 tests)
+  tests/           pytest test suite (166 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts)
-  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart), Sentiment (SentimentBadge), Signals (SignalCard), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, Login, Register, etc.)
   src/store/       Zustand state stores (auth, theme)
@@ -217,10 +220,10 @@ cd /opt/stock-predictor/backend
 | `backend/app/api/auth.py` | Register, login, refresh, me endpoints |
 | `backend/app/api/stocks.py` | Stock list (paginated, filterable) and detail |
 | `backend/app/api/watchlist.py` | Watchlist CRUD |
-| `backend/app/api/market_data.py` | Daily + intraday OHLCV endpoints |
+| `backend/app/api/market_data.py` | Daily + intraday OHLCV + indicators endpoints |
 | `backend/app/api/articles.py` | Article list (paginated, filterable by source/ticker) + sources |
 | `backend/app/api/sentiment.py` | Sentiment endpoints: timeline, articles, sectors, trending |
-| `backend/app/api/signals.py` | Signal endpoints: list (filtered), per-ticker history, latest feed |
+| `backend/app/api/signals.py` | Signal endpoints: list (filtered), per-ticker history, latest feed, accuracy, weights |
 | `backend/app/api/alerts.py` | Alert endpoints: config CRUD, history, test alert |
 | `backend/app/api/admin.py` | Admin: trigger scrape, seed historical, maintenance trigger, DB stats |
 | `backend/worker/celery_app.py` | Celery instance, task routing, explicit task include |
@@ -230,8 +233,11 @@ cd /opt/stock-predictor/backend
 | `backend/worker/tasks/scraping/orchestrate.py` | Fan-out all 7 scrapers via Celery group → chain sentiment |
 | `backend/worker/tasks/sentiment/finbert_analyzer.py` | Singleton FinBERT model: batch inference, chunking, lazy-loaded |
 | `backend/worker/tasks/sentiment/sentiment_task.py` | Celery task: process unprocessed articles through FinBERT |
-| `backend/worker/tasks/signals/signal_generator.py` | Celery task: composite signal scoring for all active stocks |
+| `backend/worker/tasks/signals/signal_generator.py` | Celery task: 6-component composite signal scoring for all active stocks |
 | `backend/worker/tasks/signals/alert_dispatcher.py` | Celery task: match signals to AlertConfigs, send Discord/email |
+| `backend/worker/tasks/signals/outcome_evaluator.py` | Celery task: evaluate signal accuracy after 1/3/5 day windows |
+| `backend/worker/tasks/signals/weight_optimizer.py` | Celery task: compute per-sector adaptive weights from outcomes |
+| `backend/worker/utils/technical_indicators.py` | Pure computation: RSI, SMA, EMA, MACD, Bollinger Bands |
 | `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker + company name extraction |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
@@ -261,6 +267,7 @@ cd /opt/stock-predictor/backend
 | DELETE | `/api/watchlist/{ticker}` | Yes | Done |
 | GET | `/api/market-data/{ticker}/daily` | Yes | Done |
 | GET | `/api/market-data/{ticker}/intraday` | Yes | Done |
+| GET | `/api/market-data/{ticker}/indicators` | Yes | Done |
 | GET | `/api/articles` | Yes | Done |
 | GET | `/api/articles/sources` | Yes | Done |
 | GET | `/api/sentiment/{ticker}` | Yes | Done |
@@ -269,6 +276,9 @@ cd /opt/stock-predictor/backend
 | GET | `/api/sentiment/trending/stocks` | Yes | Done |
 | GET | `/api/signals` | Yes | Done |
 | GET | `/api/signals/latest` | Yes | Done |
+| GET | `/api/signals/accuracy` | Yes | Done |
+| GET | `/api/signals/accuracy/{ticker}` | Yes | Done |
+| GET | `/api/signals/weights` | Yes | Done |
 | GET | `/api/signals/{ticker}` | Yes | Done |
 | GET | `/api/alerts/configs` | Yes | Done |
 | POST | `/api/alerts/configs` | Yes | Done |
@@ -294,15 +304,24 @@ Hourly (Celery Beat on Compute VM):
   :30 → generate composite signals → dispatch alerts (Discord + email) for moderate+ signals
   :35 → refresh materialized views (daily sentiment)
 
+  :45 → evaluate signal outcomes (1/3/5-day windows)
+
 Daily:
   3:00 AM → data maintenance (compress old articles, clean logs, purge weak signals)
+  4:00 AM → compute adaptive signal weights (per-sector optimization from outcomes)
 ```
 
 ## Signal Scoring
 
 ```
-composite = 0.40 * sentiment_momentum + 0.25 * sentiment_volume
-          + 0.20 * price_momentum    + 0.15 * volume_anomaly
+composite = 0.30 * sentiment_momentum + 0.20 * sentiment_volume
+          + 0.15 * price_momentum    + 0.10 * volume_anomaly
+          + 0.15 * rsi_score         + 0.10 * trend_score
+
+RSI score:   tanh((50 - rsi) / 50 * 2.5)  — oversold → positive, overbought → negative
+Trend score: 0.6 * sma_crossover + 0.4 * macd_histogram_signal
+
+Weights are adaptive: per-sector optimization runs daily at 4 AM based on outcome accuracy.
 
 Strong: |score| > 0.6  |  Moderate: > 0.35  |  Weak: otherwise
 ```

@@ -17,6 +17,8 @@ class Signal(Base):
     sentiment_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
     price_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
     volume_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
+    rsi_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
+    trend_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
     article_count: Mapped[int] = mapped_column(Integer, default=0)
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

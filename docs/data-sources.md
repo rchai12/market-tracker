@@ -53,6 +53,20 @@ Orchestration: Celery `group()` fans out all scrapers in parallel, hourly at :00
 - Batch inference with configurable batch size (default 16) and max token length (default 512)
 - Stores per-article-per-stock sentiment scores (positive/negative/neutral probabilities + dominant label)
 
+## Technical Indicators (computed, not fetched)
+
+Technical indicators are computed on-the-fly from stored OHLCV data — no external data source needed:
+
+| Indicator | Parameters | Used For |
+|-----------|-----------|----------|
+| SMA | 20-period, 50-period | Price chart overlays, trend score (SMA crossover) |
+| EMA | Configurable | MACD calculation building block |
+| RSI | 14-period (Wilder's) | Signal scoring (rsi_score component), RSI sub-chart |
+| MACD | Fast=12, Slow=26, Signal=9 | Signal scoring (trend_score component), MACD sub-chart |
+| Bollinger Bands | 20-period, 2 std dev | Price chart overlays (volatility visualization) |
+
+Computed via `worker/utils/technical_indicators.py` (pure Python, no external dependencies). The `/market-data/{ticker}/indicators` endpoint fetches extra OHLCV rows for warmup so early indicator values are accurate.
+
 ## Historical Data Seeding
 
 On first initialization, `scripts/seed_historical_data.py` downloads the full available price history for all active tickers via yfinance (`period="max"`). This gives ~30+ years of daily OHLCV data (~7,500 rows per ticker, ~340K rows total) so the signal algorithm has deep baselines from day one.

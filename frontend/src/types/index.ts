@@ -79,6 +79,8 @@ export interface Signal {
   sentiment_score: number | null;
   price_score: number | null;
   volume_score: number | null;
+  rsi_score: number | null;
+  trend_score: number | null;
   article_count: number;
   reasoning: string | null;
   generated_at: string;
@@ -138,10 +140,25 @@ export interface SignalWeights {
   sentiment_volume: number;
   price_momentum: number;
   volume_anomaly: number;
+  rsi: number;
+  trend: number;
   sample_count: number;
   accuracy_pct: number | null;
   computed_at: string | null;
   source: string;
+}
+
+export interface IndicatorData {
+  date: string;
+  sma20: number | null;
+  sma50: number | null;
+  rsi: number | null;
+  macd_line: number | null;
+  macd_signal: number | null;
+  macd_histogram: number | null;
+  bb_upper: number | null;
+  bb_middle: number | null;
+  bb_lower: number | null;
 }
 
 export interface PaginatedResponse<T> {

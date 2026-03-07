@@ -34,7 +34,9 @@
 │  │  - signals             │  │  - :15 sentiment       │   │
 │  │  - maintenance         │  │  - :30 gen signals     │   │
 │  │  - default             │  │  - :35 matview refresh │   │
+│  │                        │  │  - :45 eval outcomes   │   │
 │  │                        │  │  - 3AM maintenance     │   │
+│  │                        │  │  - 4AM adapt weights   │   │
 │  └──────────────────────┘  └────────────────────────┘   │
 │                                                          │
 │  ┌──────────────────────┐                               │
@@ -104,10 +106,21 @@
        └──────┬──────┘        └─────────────┘
               │
        ┌──────▼──────┐
+       │  Outcome    │  (evaluate after 1/3/5 days)
+       │  Evaluator  │
+       └──────┬──────┘
+              │
+       ┌──────▼──────┐
+       │  Adaptive   │  (re-weight components daily)
+       │  Weights    │──── feeds back to Signal Generator
+       └──────┬──────┘
+              │
+       ┌──────▼──────┐
        │  React App  │
        │ (Dashboard, │
        │  Charts,    │
-       │  Signals)   │
+       │  Indicators,│
+       │  Accuracy)  │
        └─────────────┘
 ```
 
@@ -124,7 +137,9 @@ stocks ──< market_data_intraday
 articles ──< sentiment_scores
 stocks ──< signals
 signals ──< alert_logs
+signals ──< signal_outcomes
 stocks >── sectors
+sectors ──< signal_weights
 ```
 
 ### Tables
@@ -139,7 +154,9 @@ stocks >── sectors
 | articles | Scraped news/filings | source, source_url, title, raw_text, is_processed |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
-| signals | Composite trading signals | stock_id, direction, strength, composite_score, reasoning |
+| signals | Composite trading signals | stock_id, direction, strength, composite_score, rsi_score, trend_score, reasoning |
+| signal_outcomes | Signal accuracy evaluation | signal_id, window_days, is_correct, price_change_pct |
+| signal_weights | Adaptive component weights (per-sector) | sector_id, sentiment_momentum, rsi, trend, accuracy_pct |
 | alert_configs | User alert preferences | user_id, stock_id, min_strength, channel |
 | alert_logs | Sent alert history | signal_id, user_id, channel, success |
 | watchlist_items | User watchlists | user_id, stock_id |
@@ -147,26 +164,43 @@ stocks >── sectors
 
 ## Signal Scoring Algorithm
 
-The composite signal combines four components:
+The composite signal combines six components:
 
 ```
-composite = 0.40 * sentiment_momentum
-          + 0.25 * sentiment_volume
-          + 0.20 * price_momentum
-          + 0.15 * volume_anomaly
+composite = 0.30 * sentiment_momentum + 0.20 * sentiment_volume
+          + 0.15 * price_momentum    + 0.10 * volume_anomaly
+          + 0.15 * rsi_score         + 0.10 * trend_score
 ```
 
-| Component | Description | Range |
-|-----------|-------------|-------|
-| sentiment_momentum | Exponentially weighted avg of sentiment scores (half-life 6h) | [-1, 1] |
-| sentiment_volume | Article count vs 20-day baseline, amplifies direction | [0, 1] |
-| price_momentum | 5-day price change, tanh scaled | [-1, 1] |
-| volume_anomaly | Trading volume vs 20-day avg, amplifies direction | [0, 1] |
+| Component | Weight | Description | Range |
+|-----------|--------|-------------|-------|
+| sentiment_momentum | 0.30 | Exponentially weighted avg of sentiment scores (half-life 6h) | [-1, 1] |
+| sentiment_volume | 0.20 | Article count vs 20-day baseline, amplifies direction | [0, 1] |
+| price_momentum | 0.15 | 5-day price change, tanh scaled | [-1, 1] |
+| volume_anomaly | 0.10 | Trading volume vs 20-day avg, amplifies direction | [0, 1] |
+| rsi_score | 0.15 | RSI(14) mapped to [-1,1] via `tanh((50 - rsi) / 50 * 2.5)` — oversold = bullish | [-1, 1] |
+| trend_score | 0.10 | 60% SMA crossover (SMA20 vs SMA50) + 40% MACD histogram signal | [-1, 1] |
 
 **Thresholds:**
 - Strong: |composite| > 0.6
 - Moderate: |composite| > 0.35
 - Weak: everything else
+
+### Adaptive Weights
+
+Default weights are overridden by per-sector adaptive weights computed daily at 4 AM. The weight optimizer analyzes signal outcomes (1/3/5-day windows) to determine which components are most predictive for each sector, then rebalances weights accordingly. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0.
+
+### Technical Indicators
+
+All indicators are computed on-the-fly from stored OHLCV data (no extra DB tables):
+
+| Indicator | Parameters | Purpose |
+|-----------|-----------|---------|
+| SMA | 20-period, 50-period | Moving average overlays, trend direction |
+| EMA | Configurable period | MACD calculation building block |
+| RSI | 14-period (Wilder's) | Overbought/oversold detection for signal scoring |
+| MACD | Fast=12, Slow=26, Signal=9 | Trend momentum for signal scoring and charting |
+| Bollinger Bands | 20-period, 2 std deviations | Volatility visualization on price chart |
 
 ## Historical Data Initialization
 
@@ -213,14 +247,18 @@ Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions"
 
 ## Signal Generation + Alert Dispatch
 
-At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from four components:
+At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from six components:
 
-| Component (weight) | Source | Calculation |
+| Component (default weight) | Source | Calculation |
 |---------------------|--------|-------------|
-| Sentiment momentum (40%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
-| Sentiment volume (25%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
-| Price momentum (20%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
-| Volume anomaly (15%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
+| Sentiment momentum (30%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
+| Sentiment volume (20%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
+| Price momentum (15%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
+| Volume anomaly (10%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
+| RSI score (15%) | `market_data_daily` (30d) | 14-period RSI mapped to [-1,1] — oversold = bullish |
+| Trend score (10%) | `market_data_daily` (60d) | SMA crossover (60%) + MACD histogram (40%) |
+
+Weights are loaded from `signal_weights` table (per-sector or global fallback), falling back to defaults if no adaptive weights exist yet.
 
 **Thresholds:** |composite| > 0.6 = strong, > 0.35 = moderate, else weak. Direction: > 0.01 = bullish, < -0.01 = bearish.
 
@@ -229,6 +267,24 @@ At `:30` every hour, `generate_all_signals` iterates all active stocks and compu
 - **Email**: HTML email via SMTP (smtplib, run in thread to avoid blocking)
 
 Each attempt is logged in `AlertLog` with success/error status.
+
+## Signal Feedback Loop
+
+### Outcome Evaluation (`:45` hourly)
+
+After signals are generated, `evaluate_signal_outcomes` checks signals that have reached their evaluation window (1, 3, or 5 trading days). For each:
+1. Fetches the closing price at signal generation and at the evaluation date
+2. Computes price change percentage
+3. Determines correctness: bullish + price up = correct, bearish + price down = correct
+4. Stores result in `signal_outcomes` table
+
+### Adaptive Weight Optimization (4 AM daily)
+
+`compute_adaptive_weights` analyzes evaluated outcomes per sector to find optimal component weights:
+1. For each sector with sufficient samples (configurable minimum), checks which components' sign aligned with actual price direction
+2. Components that predicted direction more accurately get higher weights
+3. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0
+4. Results stored in `signal_weights` table (upserted per sector + global fallback)
 
 ## Network Security
 

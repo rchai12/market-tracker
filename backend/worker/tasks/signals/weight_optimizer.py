@@ -1,7 +1,7 @@
 """Adaptive weight computation Celery task.
 
 Analyzes historical signal accuracy per sector to compute optimal weights
-for the 4 signal components. Runs daily at 4 AM after maintenance.
+for the 6 signal components. Runs daily at 4 AM after maintenance.
 """
 
 import logging
@@ -93,6 +93,8 @@ async def _compute_sector_weights(
             Signal.sentiment_score,
             Signal.price_score,
             Signal.volume_score,
+            Signal.rsi_score,
+            Signal.trend_score,
             Signal.direction,
             SignalOutcome.is_correct,
             SignalOutcome.price_change_pct,
@@ -113,8 +115,9 @@ async def _compute_sector_weights(
     if len(rows) < settings.feedback_min_samples:
         return None
 
-    component_correct = {"sentiment_momentum": 0, "sentiment_volume": 0, "price_momentum": 0, "volume_anomaly": 0}
-    component_total = {k: 0 for k in component_correct}
+    components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "rsi", "trend"]
+    component_correct = {k: 0 for k in components}
+    component_total = {k: 0 for k in components}
     total_correct = 0
 
     for row in rows:
@@ -137,6 +140,18 @@ async def _compute_sector_weights(
             if (1.0 if float(row.volume_score) > 0 else -1.0) == actual_dir:
                 component_correct["volume_anomaly"] += 1
             component_total["volume_anomaly"] += 1
+
+        # RSI score
+        if row.rsi_score is not None:
+            if (1.0 if float(row.rsi_score) > 0 else -1.0) == actual_dir:
+                component_correct["rsi"] += 1
+            component_total["rsi"] += 1
+
+        # Trend score
+        if row.trend_score is not None:
+            if (1.0 if float(row.trend_score) > 0 else -1.0) == actual_dir:
+                component_correct["trend"] += 1
+            component_total["trend"] += 1
 
         # Sentiment volume not stored separately — use overall correctness as proxy
         component_correct["sentiment_volume"] += 1 if row.is_correct else 0
@@ -167,6 +182,8 @@ async def _compute_sector_weights(
         "sentiment_volume": round(clamped["sentiment_volume"], 4),
         "price_momentum": round(clamped["price_momentum"], 4),
         "volume_anomaly": round(clamped["volume_anomaly"], 4),
+        "rsi": round(clamped["rsi"], 4),
+        "trend": round(clamped["trend"], 4),
         "sample_count": len(rows),
         "accuracy_pct": round(overall_accuracy, 2),
     }
@@ -232,6 +249,8 @@ async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights:
         sentiment_volume=weights["sentiment_volume"],
         price_momentum=weights["price_momentum"],
         volume_anomaly=weights["volume_anomaly"],
+        rsi=weights["rsi"],
+        trend=weights["trend"],
         sample_count=weights["sample_count"],
         accuracy_pct=weights["accuracy_pct"],
         computed_at=datetime.now(timezone.utc),
@@ -242,6 +261,8 @@ async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights:
             "sentiment_volume": stmt.excluded.sentiment_volume,
             "price_momentum": stmt.excluded.price_momentum,
             "volume_anomaly": stmt.excluded.volume_anomaly,
+            "rsi": stmt.excluded.rsi,
+            "trend": stmt.excluded.trend,
             "sample_count": stmt.excluded.sample_count,
             "accuracy_pct": stmt.excluded.accuracy_pct,
             "computed_at": stmt.excluded.computed_at,

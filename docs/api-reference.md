@@ -82,8 +82,33 @@ Query params for `/stocks`: `?sector=energy&search=exxon&page=1&per_page=20`
 |--------|------|------|--------|-------------|
 | GET | `/market-data/{ticker}/daily` | Yes | **Done** | Daily OHLCV |
 | GET | `/market-data/{ticker}/intraday` | Yes | **Done** | Intraday data |
+| GET | `/market-data/{ticker}/indicators` | Yes | **Done** | Technical indicators (SMA, RSI, MACD, Bollinger Bands) |
 
-Query params: `?start_date=2025-01-01&end_date=2025-12-31&limit=365`
+Query params for `/market-data/{ticker}/daily`: `?start_date=2025-01-01&end_date=2025-12-31&limit=365`
+
+### GET /market-data/{ticker}/indicators
+
+Computes technical indicators on-the-fly from stored OHLCV data. Fetches extra rows for warmup so early values are accurate.
+
+Query params: `?days=365` (default 365)
+
+```json
+// Response
+[
+  {
+    "date": "2025-06-15",
+    "sma20": 145.32,
+    "sma50": 142.18,
+    "rsi": 62.5,
+    "macd_line": 1.23,
+    "macd_signal": 0.98,
+    "macd_histogram": 0.25,
+    "bb_upper": 152.10,
+    "bb_middle": 145.32,
+    "bb_lower": 138.54
+  }
+]
+```
 
 ## Articles
 
@@ -201,8 +226,11 @@ Query params: `?days=3&limit=10` (defaults)
 
 | Method | Path | Auth | Status | Description |
 |--------|------|------|--------|-------------|
-| GET | `/signals` | Yes | **Done** | All signals (paginated, filterable by direction/strength/ticker) |
+| GET | `/signals` | Yes | **Done** | All signals (paginated, filterable by direction/strength/ticker/sector) |
 | GET | `/signals/latest` | Yes | **Done** | Most recent signals across all stocks (dashboard feed) |
+| GET | `/signals/accuracy` | Yes | **Done** | Global or sector signal accuracy metrics |
+| GET | `/signals/accuracy/{ticker}` | Yes | **Done** | Per-ticker accuracy across 1/3/5 day windows |
+| GET | `/signals/weights` | Yes | **Done** | Active signal weights (per-sector and global fallback) |
 | GET | `/signals/{ticker}` | Yes | **Done** | Signal history for a specific ticker |
 
 Query params for `/signals`: `?direction=bullish&strength=strong&ticker=XOM&sector=energy&page=1&per_page=20`
@@ -216,9 +244,44 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
     "id": 1, "stock_id": 5, "ticker": "XOM", "company_name": "Exxon Mobil",
     "direction": "bullish", "strength": "moderate",
     "composite_score": 0.42, "sentiment_score": 0.35, "price_score": 0.15, "volume_score": 0.10,
+    "rsi_score": 0.22, "trend_score": 0.18,
     "article_count": 8, "reasoning": "XOM: moderate bullish signal (score: 0.420)...",
     "generated_at": "2025-06-15T10:30:00Z",
     "window_start": "2025-06-15T09:30:00Z", "window_end": "2025-06-15T10:30:00Z"
+  }
+]
+```
+
+### GET /signals/accuracy
+
+Query params: `?window_days=5&sector=energy&days=90`
+
+```json
+[
+  {
+    "scope": "global",
+    "window_days": 5,
+    "total_evaluated": 150,
+    "correct_count": 92,
+    "accuracy_pct": 61.3,
+    "avg_return_correct": 2.15,
+    "avg_return_wrong": -1.82,
+    "bullish_accuracy_pct": 63.5,
+    "bearish_accuracy_pct": 58.1
+  }
+]
+```
+
+### GET /signals/weights
+```json
+[
+  {
+    "sector_name": null,
+    "sentiment_momentum": 0.30, "sentiment_volume": 0.20,
+    "price_momentum": 0.15, "volume_anomaly": 0.10,
+    "rsi": 0.15, "trend": 0.10,
+    "sample_count": 500, "accuracy_pct": 58.2,
+    "computed_at": "2025-06-15T04:00:00Z", "source": "global"
   }
 ]
 ```

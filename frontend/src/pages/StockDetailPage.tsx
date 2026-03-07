@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getStock } from "../api/stocks";
-import { getDailyData } from "../api/marketData";
+import { getDailyData, getIndicators } from "../api/marketData";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../api/watchlist";
 import { getTickerSentimentTimeline, getTickerSentimentArticles } from "../api/sentiment";
 import { getSignalHistory, getTickerAccuracy } from "../api/signals";
@@ -9,6 +10,8 @@ import AccuracyBadge from "../components/signals/AccuracyBadge";
 import { humanizeSource, formatTimeAgo } from "../utils/format";
 import PriceChart from "../components/charts/PriceChart";
 import VolumeChart from "../components/charts/VolumeChart";
+import RSIChart from "../components/charts/RSIChart";
+import MACDChart from "../components/charts/MACDChart";
 import SentimentChart from "../components/sentiment/SentimentChart";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
 import SignalCard from "../components/signals/SignalCard";
@@ -17,6 +20,10 @@ import LoadingSkeleton from "../components/common/LoadingSkeleton";
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const queryClient = useQueryClient();
+  const [showSMA, setShowSMA] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(false);
+  const [showRSI, setShowRSI] = useState(false);
+  const [showMACD, setShowMACD] = useState(false);
 
   const { data: stock, isLoading: stockLoading } = useQuery({
     queryKey: ["stock", ticker],
@@ -45,6 +52,12 @@ export default function StockDetailPage() {
   const { data: articlesData } = useQuery({
     queryKey: ["sentiment-articles", ticker],
     queryFn: () => getTickerSentimentArticles(ticker!, 1, 10),
+    enabled: !!ticker,
+  });
+
+  const { data: indicatorData } = useQuery({
+    queryKey: ["indicators", ticker],
+    queryFn: () => getIndicators(ticker!, { days: 365 }),
     enabled: !!ticker,
   });
 
@@ -123,19 +136,68 @@ export default function StockDetailPage() {
 
       {/* Price Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-          Price
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Price
+          </h2>
+          {marketData && marketData.length > 0 && indicatorData && (
+            <div className="flex gap-2">
+              {(["SMA", "Bollinger", "RSI", "MACD"] as const).map((label) => {
+                const active = label === "SMA" ? showSMA : label === "Bollinger" ? showBollinger : label === "RSI" ? showRSI : showMACD;
+                const toggle = label === "SMA" ? setShowSMA : label === "Bollinger" ? setShowBollinger : label === "RSI" ? setShowRSI : setShowMACD;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggle((v) => !v)}
+                    className={`px-2 py-1 text-xs rounded font-medium transition-colors ${
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         {marketLoading ? (
           <LoadingSkeleton variant="chart" count={1} />
         ) : marketData && marketData.length > 0 ? (
-          <PriceChart data={marketData} />
+          <PriceChart
+            data={marketData}
+            indicators={indicatorData}
+            showSMA={showSMA}
+            showBollinger={showBollinger}
+          />
         ) : (
           <p className="text-gray-500 dark:text-gray-400 py-8 text-center">
             No market data yet. Data will appear after the first market data fetch.
           </p>
         )}
       </div>
+
+      {/* RSI Chart */}
+      {showRSI && indicatorData && indicatorData.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            RSI (14)
+          </h2>
+          <RSIChart data={indicatorData} />
+        </div>
+      )}
+
+      {/* MACD Chart */}
+      {showMACD && indicatorData && indicatorData.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            MACD (12, 26, 9)
+          </h2>
+          <MACDChart data={indicatorData} />
+        </div>
+      )}
 
       {/* Volume Chart */}
       {marketData && marketData.length > 0 && (

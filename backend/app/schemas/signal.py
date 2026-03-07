@@ -18,6 +18,8 @@ class SignalResponse(BaseModel):
     sentiment_score: float | None
     price_score: float | None
     volume_score: float | None
+    rsi_score: float | None
+    trend_score: float | None
     article_count: int
     reasoning: str | None
     generated_at: datetime
@@ -50,6 +52,8 @@ class SignalWeightsResponse(BaseModel):
     sentiment_volume: float
     price_momentum: float
     volume_anomaly: float
+    rsi: float
+    trend: float
     sample_count: int
     accuracy_pct: float | None
     computed_at: datetime | None

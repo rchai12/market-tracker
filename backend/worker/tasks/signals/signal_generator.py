@@ -1,10 +1,12 @@
 """Signal generation Celery task.
 
 Computes composite signal scores for all active stocks by combining:
-- Sentiment momentum (40%): exponentially weighted avg of sentiment, half-life 6h
-- Sentiment volume (25%): article count vs 20-day baseline, signed by net sentiment
-- Price momentum (20%): 5-day price change, tanh-scaled to [-1, 1]
-- Volume anomaly (15%): trading volume vs 20-day avg, signed by price direction
+- Sentiment momentum (30%): exponentially weighted avg of sentiment, half-life 6h
+- Sentiment volume (20%): article count vs 20-day baseline, signed by net sentiment
+- Price momentum (15%): 5-day price change, tanh-scaled to [-1, 1]
+- Volume anomaly (10%): trading volume vs 20-day avg, signed by price direction
+- RSI (15%): 14-period RSI mapped to oversold(+)/overbought(-) score
+- Trend (10%): SMA crossover + MACD histogram combined score
 """
 
 import logging
@@ -23,19 +25,24 @@ from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
+from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
 logger = logging.getLogger(__name__)
 
-# ── Scoring weights ──
-WEIGHT_SENTIMENT_MOMENTUM = 0.40
-WEIGHT_SENTIMENT_VOLUME = 0.25
-WEIGHT_PRICE_MOMENTUM = 0.20
-WEIGHT_VOLUME_ANOMALY = 0.15
+# ── Scoring weights (6 components, sum to 1.0) ──
+WEIGHT_SENTIMENT_MOMENTUM = 0.30
+WEIGHT_SENTIMENT_VOLUME = 0.20
+WEIGHT_PRICE_MOMENTUM = 0.15
+WEIGHT_VOLUME_ANOMALY = 0.10
+WEIGHT_RSI = 0.15
+WEIGHT_TREND = 0.10
 
 # ── Parameters ──
 SENTIMENT_HALF_LIFE_HOURS = 6
 BASELINE_DAYS = 20
 PRICE_MOMENTUM_DAYS = 5
+RSI_LOOKBACK_DAYS = 30
+TREND_LOOKBACK_DAYS = 60
 
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
@@ -105,6 +112,8 @@ async def _generate_signals_async() -> dict:
                     sentiment_score=round(score_data["sentiment_momentum"], 5),
                     price_score=round(score_data["price_momentum"], 5),
                     volume_score=round(score_data["volume_anomaly"], 5),
+                    rsi_score=round(score_data["rsi_score"], 5),
+                    trend_score=round(score_data["trend_score"], 5),
                     article_count=score_data["article_count"],
                     reasoning=reasoning,
                     generated_at=now,
@@ -147,11 +156,13 @@ async def _compute_composite_score(
     weights_map: dict | None = None,
     sector_id: int | None = None,
 ) -> dict | None:
-    """Compute all four components and the weighted composite for a stock."""
+    """Compute all six components and the weighted composite for a stock."""
     sent_momentum = await calc_sentiment_momentum(session, stock_id, now)
     sent_volume = await calc_sentiment_volume(session, stock_id, now)
     price_mom = await calc_price_momentum(session, stock_id, now)
     vol_anomaly = await calc_volume_anomaly(session, stock_id, now)
+    rsi = await calc_rsi_score(session, stock_id, now)
+    trend = await calc_trend_score(session, stock_id, now)
 
     article_count = await _get_recent_article_count(session, stock_id, now)
 
@@ -165,6 +176,8 @@ async def _compute_composite_score(
     sv = sent_volume if sent_volume is not None else 0.0
     pm = price_mom if price_mom is not None else 0.0
     va = vol_anomaly if vol_anomaly is not None else 0.0
+    rsi_val = rsi if rsi is not None else 0.0
+    trend_val = trend if trend is not None else 0.0
 
     # Use adaptive weights if available, otherwise default
     w = _get_weights(weights_map, sector_id)
@@ -174,6 +187,8 @@ async def _compute_composite_score(
         + w["sentiment_volume"] * sv
         + w["price_momentum"] * pm
         + w["volume_anomaly"] * va
+        + w["rsi"] * rsi_val
+        + w["trend"] * trend_val
     )
 
     return {
@@ -182,6 +197,8 @@ async def _compute_composite_score(
         "sentiment_volume": sv,
         "price_momentum": pm,
         "volume_anomaly": va,
+        "rsi_score": rsi_val,
+        "trend_score": trend_val,
         "article_count": article_count,
         "weights_source": w["source"],
     }
@@ -204,6 +221,8 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "sentiment_volume": float(row.sentiment_volume),
             "price_momentum": float(row.price_momentum),
             "volume_anomaly": float(row.volume_anomaly),
+            "rsi": float(row.rsi),
+            "trend": float(row.trend),
             "source": "sector" if row.sector_id else "global",
         }
     return weights_map
@@ -225,6 +244,8 @@ def _default_weights() -> dict:
         "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
         "price_momentum": WEIGHT_PRICE_MOMENTUM,
         "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
+        "rsi": WEIGHT_RSI,
+        "trend": WEIGHT_TREND,
         "source": "default",
     }
 
@@ -379,6 +400,71 @@ async def calc_volume_anomaly(
     return magnitude * price_direction
 
 
+async def calc_rsi_score(
+    session: AsyncSession, stock_id: int, now: datetime
+) -> float | None:
+    """RSI-based score: oversold (<30) → positive, overbought (>70) → negative."""
+    result = await session.execute(
+        select(MarketDataDaily.close)
+        .where(MarketDataDaily.stock_id == stock_id)
+        .where(MarketDataDaily.close != None)  # noqa: E711
+        .order_by(MarketDataDaily.date.desc())
+        .limit(RSI_LOOKBACK_DAYS)
+    )
+    rows = result.all()
+
+    if len(rows) < 16:  # Need at least 14+1 for RSI + 1 for warmup
+        return None
+
+    closes = [float(r.close) for r in reversed(rows)]
+    rsi_values = compute_rsi(closes, period=14)
+    latest_rsi = rsi_values[-1]
+    if latest_rsi is None:
+        return None
+
+    # Center at 50, scale so edges hit ~1: RSI<30 → positive, RSI>70 → negative
+    centered = (50 - latest_rsi) / 50
+    return math.tanh(centered * 2.5)
+
+
+async def calc_trend_score(
+    session: AsyncSession, stock_id: int, now: datetime
+) -> float | None:
+    """Combined SMA crossover + MACD crossover trend score."""
+    result = await session.execute(
+        select(MarketDataDaily.close)
+        .where(MarketDataDaily.stock_id == stock_id)
+        .where(MarketDataDaily.close != None)  # noqa: E711
+        .order_by(MarketDataDaily.date.desc())
+        .limit(TREND_LOOKBACK_DAYS)
+    )
+    rows = result.all()
+
+    if len(rows) < 52:  # Need 50 for SMA50 + buffer
+        return None
+
+    closes = [float(r.close) for r in reversed(rows)]
+
+    # SMA crossover component
+    sma20 = compute_sma(closes, 20)
+    sma50 = compute_sma(closes, 50)
+    sma_score = 0.0
+    if sma20[-1] is not None and sma50[-1] is not None and sma50[-1] != 0:
+        sma_diff = (sma20[-1] - sma50[-1]) / sma50[-1]
+        sma_score = math.tanh(sma_diff * 10)
+
+    # MACD crossover component
+    macd_data = compute_macd(closes)
+    macd_score = 0.0
+    latest_macd = macd_data[-1]
+    if latest_macd["histogram"] is not None and closes[-1] != 0:
+        norm_hist = latest_macd["histogram"] / closes[-1]
+        macd_score = math.tanh(norm_hist * 100)
+
+    # Combine: SMA crossover (60%) + MACD (40%)
+    return 0.6 * sma_score + 0.4 * macd_score
+
+
 async def _get_recent_article_count(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> int:
@@ -434,5 +520,15 @@ def _build_reasoning(
     if abs(va) > 0.3:
         vol_desc = "above" if va > 0 else "below"
         parts.append(f"Volume {vol_desc} average ({va:.3f})")
+
+    rsi_val = score_data.get("rsi_score", 0)
+    if abs(rsi_val) > 0.3:
+        rsi_desc = "oversold" if rsi_val > 0 else "overbought"
+        parts.append(f"RSI indicates {rsi_desc} ({rsi_val:.3f})")
+
+    trend_val = score_data.get("trend_score", 0)
+    if abs(trend_val) > 0.2:
+        trend_desc = "uptrend" if trend_val > 0 else "downtrend"
+        parts.append(f"Technical trend is {trend_desc} ({trend_val:.3f})")
 
     return ". ".join(parts) + "."
