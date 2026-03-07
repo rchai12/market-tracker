@@ -11,7 +11,7 @@ from app.models.scrape_log import ScrapeLog
 from app.models.stock import Stock
 from worker.utils.async_task import run_async
 from worker.utils.text_cleaner import clean_article_text
-from worker.utils.ticker_extractor import build_company_map, extract_tickers
+from worker.utils.ticker_extractor import build_company_map, extract_tickers, match_industry_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,18 @@ class BaseScraper(ABC):
 
         new_count = 0
         async with async_session() as session:
-            # Load known tickers and company names for extraction
-            result = await session.execute(select(Stock.ticker, Stock.id, Stock.company_name))
+            # Load known tickers, company names, and industry mappings
+            result = await session.execute(select(Stock.ticker, Stock.id, Stock.company_name, Stock.industry))
             rows = result.all()
             ticker_map = {row.ticker: row.id for row in rows}
             known_tickers = set(ticker_map.keys())
             company_map = build_company_map([(row.ticker, row.company_name) for row in rows])
+
+            # Build industry -> list of stock IDs mapping
+            industry_stock_map: dict[str, list[int]] = {}
+            for row in rows:
+                if row.industry:
+                    industry_stock_map.setdefault(row.industry, []).append(row.id)
 
             for article_data in articles:
                 source_url = article_data.get("source_url")
@@ -73,13 +79,14 @@ class BaseScraper(ABC):
                 session.add(article)
                 await session.flush()
 
-                # Extract and link tickers
+                # Extract and link tickers (direct matches)
                 tickers = extract_tickers(
                     article_data["title"],
                     raw_text,
                     known_tickers,
                     company_map=company_map,
                 )
+                directly_linked_stock_ids: set[int] = set()
                 for ticker, confidence in tickers:
                     stock_id = ticker_map.get(ticker)
                     if stock_id:
@@ -88,6 +95,18 @@ class BaseScraper(ABC):
                             .values(article_id=article.id, stock_id=stock_id, confidence=confidence)
                             .on_conflict_do_nothing()
                         )
+                        directly_linked_stock_ids.add(stock_id)
+
+                # Industry keyword matching (lower confidence, skip already-linked stocks)
+                matched_industries = match_industry_keywords(article_data["title"], raw_text)
+                for industry in matched_industries:
+                    for stock_id in industry_stock_map.get(industry, []):
+                        if stock_id not in directly_linked_stock_ids:
+                            await session.execute(
+                                pg_insert(ArticleStock)
+                                .values(article_id=article.id, stock_id=stock_id, confidence=0.45)
+                                .on_conflict_do_nothing()
+                            )
 
                 new_count += 1
 

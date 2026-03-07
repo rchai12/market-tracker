@@ -17,6 +17,7 @@ class StockResponse(BaseModel):
     company_name: str
     sector_id: int | None
     sector_name: str | None = None
+    industry: str | None = None
     market_cap: int | None
     is_active: bool
 

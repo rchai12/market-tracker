@@ -75,6 +75,123 @@ def extract_tickers(
     return sorted(results.items(), key=lambda x: x[1], reverse=True)
 
 
+# ── Industry keyword mapping ──
+# Maps keywords/phrases to industries they're relevant to.
+# Cross-cutting macro themes map to multiple industries.
+KEYWORD_INDUSTRY_MAP: dict[str, list[str]] = {
+    # Energy: Oil & Gas
+    "crude oil": ["Oil & Gas Integrated", "Oil & Gas E&P"],
+    "oil prices": ["Oil & Gas Integrated", "Oil & Gas Refining"],
+    "oil sanctions": ["Oil & Gas Integrated", "Oil & Gas E&P"],
+    "oil exploration": ["Oil & Gas E&P"],
+    "oilfield services": ["Oil & Gas Equipment"],
+    "gasoline prices": ["Oil & Gas Refining"],
+    "fuel prices": ["Oil & Gas Refining"],
+    "natural gas": ["Oil & Gas Midstream", "Oil & Gas E&P"],
+    "gas pipeline": ["Oil & Gas Midstream"],
+    "oil": ["Oil & Gas Integrated"],
+    "petroleum": ["Oil & Gas Integrated"],
+    "opec": ["Oil & Gas Integrated", "Oil & Gas E&P"],
+    "brent": ["Oil & Gas Integrated"],
+    "wti": ["Oil & Gas Integrated"],
+    "shale": ["Oil & Gas E&P"],
+    "drilling": ["Oil & Gas E&P", "Oil & Gas Equipment"],
+    "fracking": ["Oil & Gas E&P"],
+    "rig count": ["Oil & Gas Equipment"],
+    "refinery": ["Oil & Gas Refining"],
+    "pipeline": ["Oil & Gas Midstream"],
+    "lng": ["Oil & Gas Midstream"],
+    # Financials
+    "interest rate": ["Banks", "Capital Markets", "Insurance"],
+    "fed rate": ["Banks", "Capital Markets"],
+    "rate hike": ["Banks", "Capital Markets", "Insurance"],
+    "rate cut": ["Banks", "Capital Markets", "Insurance"],
+    "digital payments": ["Payments"],
+    "credit card": ["Payments"],
+    "banking": ["Banks"],
+    "bank": ["Banks"],
+    "loan": ["Banks"],
+    "mortgage": ["Banks"],
+    "deposit": ["Banks"],
+    "insurance": ["Insurance"],
+    "underwriting": ["Insurance"],
+    "reinsurance": ["Insurance"],
+    "asset management": ["Capital Markets"],
+    "credit rating": ["Capital Markets"],
+    "stock exchange": ["Capital Markets"],
+    "payment": ["Payments"],
+    "fintech": ["Payments", "Banks"],
+    # Technology
+    "chip shortage": ["Semiconductors", "Consumer Electronics"],
+    "ai chip": ["Semiconductors"],
+    "cloud computing": ["Software"],
+    "enterprise software": ["Software"],
+    "semiconductor": ["Semiconductors"],
+    "chip": ["Semiconductors"],
+    "gpu": ["Semiconductors"],
+    "wafer": ["Semiconductors"],
+    "foundry": ["Semiconductors"],
+    "saas": ["Software"],
+    "cybersecurity": ["Cybersecurity"],
+    "data breach": ["Cybersecurity"],
+    "ransomware": ["Cybersecurity"],
+    # Comms / Media
+    "online advertising": ["Social Media"],
+    "social media": ["Social Media"],
+    "digital ads": ["Social Media"],
+    "ad revenue": ["Social Media"],
+    "streaming": ["Streaming & Entertainment"],
+    "box office": ["Streaming & Entertainment"],
+    "subscriber": ["Streaming & Entertainment"],
+    "5g": ["Telecom"],
+    "wireless": ["Telecom"],
+    "broadband": ["Telecom"],
+    "telecom": ["Telecom"],
+    # Consumer
+    "online retail": ["E-Commerce", "Retail"],
+    "online shopping": ["E-Commerce"],
+    "e-commerce": ["E-Commerce"],
+    "electric vehicle": ["EV & Auto"],
+    "autonomous driving": ["EV & Auto"],
+    "charging station": ["EV & Auto"],
+    "ev": ["EV & Auto"],
+    "battery": ["EV & Auto"],
+    "retail sales": ["Retail"],
+    "home improvement": ["Retail"],
+    "consumer spending": ["Retail", "Restaurants", "E-Commerce", "Streaming & Entertainment"],
+    "restaurant": ["Restaurants"],
+    "fast food": ["Restaurants"],
+    # Cross-cutting macro themes
+    "tariff": ["Semiconductors", "Consumer Electronics", "Retail", "EV & Auto", "E-Commerce"],
+    "trade war": ["Semiconductors", "Consumer Electronics", "Retail", "EV & Auto"],
+    "sanctions": ["Oil & Gas Integrated", "Oil & Gas E&P", "Banks"],
+    "inflation": ["Retail", "Restaurants", "Consumer Electronics"],
+    "china": ["Semiconductors", "Consumer Electronics", "Software"],
+    "supply chain": ["Semiconductors", "Consumer Electronics", "EV & Auto", "Retail"],
+    "regulation": ["Banks", "Capital Markets", "Payments", "Social Media"],
+    "antitrust": ["Software", "Social Media", "E-Commerce"],
+}
+
+# Pre-sort keywords by length (longest first) to match specific phrases before generic ones
+_SORTED_KEYWORDS = sorted(KEYWORD_INDUSTRY_MAP.keys(), key=len, reverse=True)
+
+
+def match_industry_keywords(title: str, body: str | None) -> set[str]:
+    """Scan article text for industry-relevant keywords.
+
+    Returns set of matched industry names. Matches longer phrases first
+    to prefer "crude oil" over "oil".
+    """
+    text = f"{title} {body or ''}".lower()
+    matched_industries: set[str] = set()
+
+    for keyword in _SORTED_KEYWORDS:
+        if keyword in text:
+            matched_industries.update(KEYWORD_INDUSTRY_MAP[keyword])
+
+    return matched_industries
+
+
 def build_company_map(stocks: list[tuple[str, str]]) -> dict[str, str]:
     """Build a company name -> ticker map from (ticker, company_name) pairs.
 

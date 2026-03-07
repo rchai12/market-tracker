@@ -13,6 +13,7 @@ class Stock(Base):
     ticker: Mapped[str] = mapped_column(String(10), unique=True, nullable=False, index=True)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
     sector_id: Mapped[int | None] = mapped_column(ForeignKey("sectors.id"), index=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     market_cap: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

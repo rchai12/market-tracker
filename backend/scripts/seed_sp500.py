@@ -11,110 +11,110 @@ from app.models.stock import Stock
 
 # Energy sector stocks (S&P 500)
 ENERGY_STOCKS = [
-    ("XOM", "Exxon Mobil Corporation"),
-    ("CVX", "Chevron Corporation"),
-    ("COP", "ConocoPhillips"),
-    ("SLB", "Schlumberger Limited"),
-    ("EOG", "EOG Resources Inc"),
-    ("MPC", "Marathon Petroleum Corporation"),
-    ("PSX", "Phillips 66"),
-    ("VLO", "Valero Energy Corporation"),
-    ("OXY", "Occidental Petroleum Corporation"),
-    ("WMB", "Williams Companies Inc"),
-    ("HAL", "Halliburton Company"),
-    ("DVN", "Devon Energy Corporation"),
-    ("FANG", "Diamondback Energy Inc"),
-    ("KMI", "Kinder Morgan Inc"),
-    ("BKR", "Baker Hughes Company"),
-    ("CTRA", "Coterra Energy Inc"),
-    ("OKE", "ONEOK Inc"),
-    ("TRGP", "Targa Resources Corp"),
+    ("XOM", "Exxon Mobil Corporation", "Oil & Gas Integrated"),
+    ("CVX", "Chevron Corporation", "Oil & Gas Integrated"),
+    ("COP", "ConocoPhillips", "Oil & Gas Integrated"),
+    ("OXY", "Occidental Petroleum Corporation", "Oil & Gas Integrated"),
+    ("EOG", "EOG Resources Inc", "Oil & Gas E&P"),
+    ("DVN", "Devon Energy Corporation", "Oil & Gas E&P"),
+    ("FANG", "Diamondback Energy Inc", "Oil & Gas E&P"),
+    ("CTRA", "Coterra Energy Inc", "Oil & Gas E&P"),
+    ("SLB", "Schlumberger Limited", "Oil & Gas Equipment"),
+    ("HAL", "Halliburton Company", "Oil & Gas Equipment"),
+    ("BKR", "Baker Hughes Company", "Oil & Gas Equipment"),
+    ("MPC", "Marathon Petroleum Corporation", "Oil & Gas Refining"),
+    ("PSX", "Phillips 66", "Oil & Gas Refining"),
+    ("VLO", "Valero Energy Corporation", "Oil & Gas Refining"),
+    ("WMB", "Williams Companies Inc", "Oil & Gas Midstream"),
+    ("KMI", "Kinder Morgan Inc", "Oil & Gas Midstream"),
+    ("OKE", "ONEOK Inc", "Oil & Gas Midstream"),
+    ("TRGP", "Targa Resources Corp", "Oil & Gas Midstream"),
 ]
 
 # Financials sector stocks (S&P 500)
 FINANCIALS_STOCKS = [
-    ("BRK-B", "Berkshire Hathaway Inc"),
-    ("JPM", "JPMorgan Chase & Co"),
-    ("V", "Visa Inc"),
-    ("MA", "Mastercard Incorporated"),
-    ("BAC", "Bank of America Corporation"),
-    ("WFC", "Wells Fargo & Company"),
-    ("GS", "Goldman Sachs Group Inc"),
-    ("MS", "Morgan Stanley"),
-    ("SPGI", "S&P Global Inc"),
-    ("BLK", "BlackRock Inc"),
-    ("AXP", "American Express Company"),
-    ("C", "Citigroup Inc"),
-    ("SCHW", "Charles Schwab Corporation"),
-    ("CB", "Chubb Limited"),
-    ("MMC", "Marsh & McLennan Companies"),
-    ("PGR", "Progressive Corporation"),
-    ("ICE", "Intercontinental Exchange Inc"),
-    ("AON", "Aon plc"),
-    ("CME", "CME Group Inc"),
-    ("MCO", "Moody's Corporation"),
-    ("USB", "U.S. Bancorp"),
-    ("TFC", "Truist Financial Corporation"),
-    ("AIG", "American International Group"),
-    ("MET", "MetLife Inc"),
-    ("ALL", "Allstate Corporation"),
+    ("BRK-B", "Berkshire Hathaway Inc", "Diversified Financial"),
+    ("JPM", "JPMorgan Chase & Co", "Banks"),
+    ("BAC", "Bank of America Corporation", "Banks"),
+    ("WFC", "Wells Fargo & Company", "Banks"),
+    ("GS", "Goldman Sachs Group Inc", "Banks"),
+    ("MS", "Morgan Stanley", "Banks"),
+    ("C", "Citigroup Inc", "Banks"),
+    ("USB", "U.S. Bancorp", "Banks"),
+    ("TFC", "Truist Financial Corporation", "Banks"),
+    ("V", "Visa Inc", "Payments"),
+    ("MA", "Mastercard Incorporated", "Payments"),
+    ("AXP", "American Express Company", "Payments"),
+    ("SPGI", "S&P Global Inc", "Capital Markets"),
+    ("BLK", "BlackRock Inc", "Capital Markets"),
+    ("SCHW", "Charles Schwab Corporation", "Capital Markets"),
+    ("ICE", "Intercontinental Exchange Inc", "Capital Markets"),
+    ("CME", "CME Group Inc", "Capital Markets"),
+    ("MCO", "Moody's Corporation", "Capital Markets"),
+    ("AON", "Aon plc", "Capital Markets"),
+    ("MMC", "Marsh & McLennan Companies", "Capital Markets"),
+    ("CB", "Chubb Limited", "Insurance"),
+    ("PGR", "Progressive Corporation", "Insurance"),
+    ("AIG", "American International Group", "Insurance"),
+    ("MET", "MetLife Inc", "Insurance"),
+    ("ALL", "Allstate Corporation", "Insurance"),
 ]
 
 # Technology sector stocks (S&P 500)
 TECHNOLOGY_STOCKS = [
-    ("AAPL", "Apple Inc"),
-    ("MSFT", "Microsoft Corporation"),
-    ("NVDA", "NVIDIA Corporation"),
-    ("AVGO", "Broadcom Inc"),
-    ("ORCL", "Oracle Corporation"),
-    ("CRM", "Salesforce Inc"),
-    ("AMD", "Advanced Micro Devices Inc"),
-    ("ADBE", "Adobe Inc"),
-    ("CSCO", "Cisco Systems Inc"),
-    ("ACN", "Accenture plc"),
-    ("INTC", "Intel Corporation"),
-    ("IBM", "International Business Machines"),
-    ("INTU", "Intuit Inc"),
-    ("TXN", "Texas Instruments Inc"),
-    ("QCOM", "Qualcomm Inc"),
-    ("NOW", "ServiceNow Inc"),
-    ("AMAT", "Applied Materials Inc"),
-    ("MU", "Micron Technology Inc"),
-    ("PANW", "Palo Alto Networks Inc"),
-    ("PLTR", "Palantir Technologies Inc"),
+    ("AAPL", "Apple Inc", "Consumer Electronics"),
+    ("MSFT", "Microsoft Corporation", "Software"),
+    ("NVDA", "NVIDIA Corporation", "Semiconductors"),
+    ("AVGO", "Broadcom Inc", "Semiconductors"),
+    ("AMD", "Advanced Micro Devices Inc", "Semiconductors"),
+    ("INTC", "Intel Corporation", "Semiconductors"),
+    ("QCOM", "Qualcomm Inc", "Semiconductors"),
+    ("TXN", "Texas Instruments Inc", "Semiconductors"),
+    ("AMAT", "Applied Materials Inc", "Semiconductors"),
+    ("MU", "Micron Technology Inc", "Semiconductors"),
+    ("ORCL", "Oracle Corporation", "Software"),
+    ("CRM", "Salesforce Inc", "Software"),
+    ("ADBE", "Adobe Inc", "Software"),
+    ("INTU", "Intuit Inc", "Software"),
+    ("NOW", "ServiceNow Inc", "Software"),
+    ("PLTR", "Palantir Technologies Inc", "Software"),
+    ("CSCO", "Cisco Systems Inc", "IT Services"),
+    ("ACN", "Accenture plc", "IT Services"),
+    ("IBM", "International Business Machines", "IT Services"),
+    ("PANW", "Palo Alto Networks Inc", "Cybersecurity"),
 ]
 
 # Communication Services stocks (S&P 500)
 COMMUNICATION_STOCKS = [
-    ("GOOGL", "Alphabet Inc Class A"),
-    ("META", "Meta Platforms Inc"),
-    ("NFLX", "Netflix Inc"),
-    ("DIS", "Walt Disney Company"),
-    ("CMCSA", "Comcast Corporation"),
-    ("TMUS", "T-Mobile US Inc"),
-    ("VZ", "Verizon Communications Inc"),
-    ("T", "AT&T Inc"),
+    ("GOOGL", "Alphabet Inc Class A", "Social Media"),
+    ("META", "Meta Platforms Inc", "Social Media"),
+    ("NFLX", "Netflix Inc", "Streaming & Entertainment"),
+    ("DIS", "Walt Disney Company", "Streaming & Entertainment"),
+    ("CMCSA", "Comcast Corporation", "Telecom"),
+    ("TMUS", "T-Mobile US Inc", "Telecom"),
+    ("VZ", "Verizon Communications Inc", "Telecom"),
+    ("T", "AT&T Inc", "Telecom"),
 ]
 
 # Consumer Discretionary stocks (S&P 500)
 CONSUMER_DISC_STOCKS = [
-    ("AMZN", "Amazon.com Inc"),
-    ("TSLA", "Tesla Inc"),
-    ("HD", "Home Depot Inc"),
-    ("MCD", "McDonald's Corporation"),
-    ("NKE", "Nike Inc"),
-    ("LOW", "Lowe's Companies Inc"),
-    ("SBUX", "Starbucks Corporation"),
-    ("TJX", "TJX Companies Inc"),
+    ("AMZN", "Amazon.com Inc", "E-Commerce"),
+    ("TSLA", "Tesla Inc", "EV & Auto"),
+    ("HD", "Home Depot Inc", "Retail"),
+    ("LOW", "Lowe's Companies Inc", "Retail"),
+    ("TJX", "TJX Companies Inc", "Retail"),
+    ("NKE", "Nike Inc", "Retail"),
+    ("MCD", "McDonald's Corporation", "Restaurants"),
+    ("SBUX", "Starbucks Corporation", "Restaurants"),
 ]
 
 # Market ETFs / Indices
 MARKET_ETFS = [
-    ("SPY", "SPDR S&P 500 ETF Trust"),
-    ("QQQ", "Invesco QQQ Trust"),
-    ("DIA", "SPDR Dow Jones Industrial Average ETF"),
-    ("IWM", "iShares Russell 2000 ETF"),
-    ("VTI", "Vanguard Total Stock Market ETF"),
+    ("SPY", "SPDR S&P 500 ETF Trust", "ETF"),
+    ("QQQ", "Invesco QQQ Trust", "ETF"),
+    ("DIA", "SPDR Dow Jones Industrial Average ETF", "ETF"),
+    ("IWM", "iShares Russell 2000 ETF", "ETF"),
+    ("VTI", "Vanguard Total Stock Market ETF", "ETF"),
 ]
 
 # All sectors and their stocks
@@ -131,15 +131,23 @@ SECTOR_STOCKS = {
 async def seed():
     async with async_session() as session:
         count = 0
+        updated = 0
 
         for sector_name, stocks in SECTOR_STOCKS.items():
             sector = await get_or_create_sector(session, sector_name, is_active=True)
             await session.flush()
 
-            for ticker, name in stocks:
-                created = await get_or_create_stock(session, ticker, name, sector.id)
+            for ticker, name, industry in stocks:
+                created = await get_or_create_stock(session, ticker, name, sector.id, industry)
                 if created:
                     count += 1
+                else:
+                    # Update industry on existing stocks
+                    result = await session.execute(select(Stock).where(Stock.ticker == ticker))
+                    stock = result.scalar_one_or_none()
+                    if stock and stock.industry != industry:
+                        stock.industry = industry
+                        updated += 1
 
         # Create inactive sectors for future expansion
         for name in ["Health Care", "Industrials", "Consumer Staples",
@@ -153,7 +161,7 @@ async def seed():
             )
 
         await session.commit()
-        print(f"Seeded {count} new stocks across {len(SECTOR_STOCKS)} sectors")
+        print(f"Seeded {count} new stocks, updated {updated} industries across {len(SECTOR_STOCKS)} sectors")
 
 
 async def get_or_create_sector(session: AsyncSession, name: str, is_active: bool) -> Sector:
@@ -168,10 +176,15 @@ async def get_or_create_sector(session: AsyncSession, name: str, is_active: bool
     return sector
 
 
-async def get_or_create_stock(session: AsyncSession, ticker: str, name: str, sector_id: int) -> bool:
+async def get_or_create_stock(
+    session: AsyncSession, ticker: str, name: str, sector_id: int, industry: str | None = None
+) -> bool:
     result = await session.execute(select(Stock).where(Stock.ticker == ticker))
     if result.scalar_one_or_none() is None:
-        session.add(Stock(ticker=ticker, company_name=name, sector_id=sector_id, is_active=True))
+        session.add(Stock(
+            ticker=ticker, company_name=name, sector_id=sector_id,
+            industry=industry, is_active=True,
+        ))
         return True
     return False
 

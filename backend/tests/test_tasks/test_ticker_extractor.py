@@ -1,6 +1,6 @@
 """Tests for ticker extraction utility."""
 
-from worker.utils.ticker_extractor import build_company_map, extract_tickers
+from worker.utils.ticker_extractor import build_company_map, extract_tickers, match_industry_keywords
 
 KNOWN_TICKERS = {"XOM", "CVX", "JPM", "AAPL", "MSFT", "BAC", "GS", "V", "ORCL", "TSLA"}
 
@@ -139,3 +139,72 @@ class TestBuildCompanyMap:
         m = build_company_map([("XOM", "Exxon Mobil Corporation")])
         assert "Exxon Mobil" in m
         assert m["Exxon Mobil"] == "XOM"
+
+
+class TestIndustryKeywordMatching:
+    def test_oil_sanctions_matches_oil_industry(self):
+        industries = match_industry_keywords(
+            "US could lift sanctions on more Russian oil", None
+        )
+        assert "Oil & Gas Integrated" in industries
+        assert "Oil & Gas E&P" in industries  # via "sanctions" keyword
+
+    def test_no_match_returns_empty(self):
+        industries = match_industry_keywords("Weather forecast for tomorrow", None)
+        assert len(industries) == 0
+
+    def test_tariff_cross_cutting(self):
+        industries = match_industry_keywords(
+            "New tariff on Chinese imports announced", None
+        )
+        assert "Semiconductors" in industries
+        assert "Retail" in industries
+        assert "Consumer Electronics" in industries
+
+    def test_interest_rate_matches_financials(self):
+        industries = match_industry_keywords(
+            "Fed signals interest rate cut in upcoming meeting", None
+        )
+        assert "Banks" in industries
+        assert "Capital Markets" in industries
+        assert "Insurance" in industries
+
+    def test_body_text_included(self):
+        industries = match_industry_keywords(
+            "Market update", "Crude oil prices surge after OPEC cut"
+        )
+        assert "Oil & Gas Integrated" in industries
+        assert "Oil & Gas E&P" in industries
+
+    def test_case_insensitive(self):
+        industries = match_industry_keywords(
+            "SEMICONDUCTOR SHORTAGE IMPACTS PRODUCTION", None
+        )
+        assert "Semiconductors" in industries
+
+    def test_specific_phrase_before_generic(self):
+        """'crude oil' should match Oil & Gas E&P, not just 'oil' → Integrated."""
+        industries = match_industry_keywords(
+            "Crude oil exploration ramps up in Texas", None
+        )
+        assert "Oil & Gas E&P" in industries
+
+    def test_multiple_themes_combined(self):
+        industries = match_industry_keywords(
+            "China tariff on semiconductor chips disrupts supply chain", None
+        )
+        assert "Semiconductors" in industries
+        assert "Consumer Electronics" in industries
+        assert "Retail" in industries
+
+    def test_ev_keywords(self):
+        industries = match_industry_keywords(
+            "Electric vehicle sales surge as battery costs drop", None
+        )
+        assert "EV & Auto" in industries
+
+    def test_cybersecurity_keywords(self):
+        industries = match_industry_keywords(
+            "Major data breach exposes millions of customer records", None
+        )
+        assert "Cybersecurity" in industries
