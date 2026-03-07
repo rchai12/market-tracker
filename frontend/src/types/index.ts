@@ -43,6 +43,7 @@ export interface SentimentScore {
   processed_at: string;
   article_title?: string;
   article_source?: string;
+  article_source_url?: string;
 }
 
 export interface SentimentSummary {

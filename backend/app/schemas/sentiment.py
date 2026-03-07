@@ -19,6 +19,7 @@ class SentimentScoreResponse(BaseModel):
     processed_at: datetime
     article_title: str | None = None
     article_source: str | None = None
+    article_source_url: str | None = None
 
     model_config = {"from_attributes": True}
 
