@@ -14,7 +14,14 @@ from app.core.security import (
 )
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.schemas.auth import RefreshRequest, TokenResponse, UserRegister, UserResponse
+from app.schemas.auth import (
+    PasswordChange,
+    ProfileUpdate,
+    RefreshRequest,
+    TokenResponse,
+    UserRegister,
+    UserResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -97,3 +104,52 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
     return UserResponse.model_validate(user)
+
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    body: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.username is None and body.email is None:
+        return UserResponse.model_validate(user)
+
+    # Check uniqueness
+    conditions = []
+    if body.username and body.username != user.username:
+        conditions.append(User.username == body.username)
+    if body.email and body.email != user.email:
+        conditions.append(User.email == body.email)
+
+    if conditions:
+        from sqlalchemy import or_
+
+        result = await db.execute(
+            select(User).where(or_(*conditions)).where(User.id != user.id)
+        )
+        if result.scalar_one_or_none():
+            raise ConflictError("Email or username already taken")
+
+    if body.username is not None:
+        user.username = body.username
+    if body.email is not None:
+        user.email = body.email
+
+    await db.flush()
+    await db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+@router.put("/password")
+async def change_password(
+    body: PasswordChange,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(body.current_password, user.password_hash):
+        raise UnauthorizedError("Current password is incorrect")
+
+    user.password_hash = hash_password(body.new_password)
+    await db.flush()
+    return {"message": "Password updated"}

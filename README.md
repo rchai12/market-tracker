@@ -14,8 +14,12 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Signal Feedback Loop**: Outcome evaluation (1/3/5-day windows), adaptive weight optimization, accuracy tracking
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
 - **Web Dashboard**: React app with TradingView charts, indicator overlays (SMA, Bollinger), RSI/MACD sub-charts, sentiment timelines, signal feeds, accuracy metrics, and watchlists
+- **Stock Search**: Type-ahead search bar in header with debounced dropdown for quick stock navigation
+- **Admin Dashboard**: Frontend UI for admin tasks (scrape triggers, maintenance, DB stats) — no CLI required
+- **Mobile Responsive**: Collapsible sidebar drawer on small screens with hamburger toggle
+- **Code Splitting**: Lazy-loaded route pages via React.lazy + Suspense for faster initial load
 - **Data Maintenance**: Automated retention (article compression, log cleanup, weak signal purge), materialized views
-- **JWT Authentication**: Secure user accounts with watchlists and alert preferences
+- **JWT Authentication**: Secure user accounts with profile editing, password management, watchlists, and alert preferences
 
 ## Architecture
 
@@ -111,9 +115,9 @@ backend/           FastAPI + Celery + SQLAlchemy
     maintenance/   Data retention (compression, cleanup, purge) + matview refresh
   worker/utils/    Rate limiter, text cleaner, ticker extractor, technical indicators, backtester engine
 frontend/          React + TypeScript
-  src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, etc.)
-  src/components/  UI components (layout, charts, sentiment, signals, backtests, dashboard, common)
-  src/api/         API client modules
+  src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Admin, Settings)
+  src/components/  UI components (layout + search, charts, sentiment, signals, backtests, dashboard, common)
+  src/api/         API client modules (auth, stocks, signals, sentiment, alerts, backtests, admin)
 nginx/             Reverse proxy config
 scripts/           Setup and seed scripts (tickers + historical data)
 deploy/            VM deployment configs

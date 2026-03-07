@@ -1,6 +1,7 @@
 import { NavLink, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listSectors } from "../../api/stocks";
+import { useAuthStore } from "../../store/authStore";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: "grid" },
@@ -12,9 +13,10 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: "settings" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavClick }: { onNavClick?: () => void }) {
   const [searchParams] = useSearchParams();
   const activeSector = searchParams.get("sector");
+  const user = useAuthStore((s) => s.user);
 
   const { data: sectors } = useQuery({
     queryKey: ["sectors"],
@@ -23,7 +25,7 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen p-4">
+    <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen p-4 flex flex-col">
       <div className="mb-8">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">
           Stock Predictor
@@ -39,6 +41,7 @@ export default function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.to === "/"}
+            onClick={onNavClick}
             className={({ isActive }) =>
               `flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -52,7 +55,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
+      <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 flex-1">
         <p className="text-xs text-gray-500 dark:text-gray-400 px-3 mb-2">
           Sectors
         </p>
@@ -60,6 +63,7 @@ export default function Sidebar() {
           <NavLink
             to="/signals"
             end
+            onClick={onNavClick}
             className={`block px-3 py-1.5 text-sm rounded-lg transition-colors ${
               !activeSector
                 ? "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -72,6 +76,7 @@ export default function Sidebar() {
             <NavLink
               key={sector}
               to={`/signals?sector=${encodeURIComponent(sector)}`}
+              onClick={onNavClick}
               className={`block px-3 py-1.5 text-sm rounded-lg transition-colors ${
                 activeSector === sector
                   ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
@@ -83,6 +88,24 @@ export default function Sidebar() {
           ))}
         </div>
       </div>
+
+      {user?.is_admin && (
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+          <NavLink
+            to="/admin"
+            onClick={onNavClick}
+            className={({ isActive }) =>
+              `flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                  : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`
+            }
+          >
+            Admin
+          </NavLink>
+        </div>
+      )}
     </aside>
   );
 }

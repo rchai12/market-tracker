@@ -37,6 +37,8 @@ Single-item endpoints return the object directly.
 | POST | `/auth/login` | No | **Done** | Login (OAuth2 form, username field = email) |
 | POST | `/auth/refresh` | No | **Done** | Refresh access token |
 | GET | `/auth/me` | Yes | **Done** | Get current user profile |
+| PUT | `/auth/profile` | Yes | **Done** | Update username and/or email |
+| PUT | `/auth/password` | Yes | **Done** | Change password |
 
 ### POST /auth/register
 ```json
@@ -65,6 +67,33 @@ username=user@example.com&password=secret
 
 // Response — same as login
 ```
+
+### PUT /auth/profile
+```json
+// Request (all fields optional, at least one required)
+{ "username": "newname", "email": "new@example.com" }
+
+// Response
+{ "id": 1, "email": "new@example.com", "username": "newname", "is_active": true, "is_admin": false }
+```
+
+Validation:
+- Username: 3-50 characters (same rules as registration)
+- Email: valid email format
+- Both must be unique across all users (409 if taken)
+
+### PUT /auth/password
+```json
+// Request
+{ "current_password": "oldSecret1", "new_password": "newSecret1" }
+
+// Response
+{ "message": "Password updated" }
+```
+
+Validation:
+- `current_password` must match existing password (401 if incorrect)
+- `new_password`: min 8 chars, at least one uppercase, one lowercase, one digit
 
 ## Stocks
 
@@ -425,6 +454,8 @@ Query params: `?status=completed&page=1&per_page=20`
 | POST | `/admin/seed-history` | Admin | **Done** | Trigger historical market data backfill (Celery task) |
 | POST | `/admin/scrape-now` | Admin | **Done** | Trigger immediate scrape orchestration (Celery task) |
 | POST | `/admin/maintenance` | Admin | **Done** | Trigger data maintenance (compression, cleanup, purge) |
+| POST | `/admin/evaluate-outcomes` | Admin | **Done** | Trigger signal outcome evaluation (Celery task) |
+| POST | `/admin/compute-weights` | Admin | **Done** | Trigger adaptive weight computation (Celery task) |
 | GET | `/admin/db-stats` | Admin | **Done** | Database stats (row counts, table sizes) |
 
 ### POST /admin/seed-history

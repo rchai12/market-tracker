@@ -41,3 +41,25 @@ export async function refreshToken(refreshToken: string): Promise<TokenResponse>
   });
   return data;
 }
+
+export async function updateProfile(payload: {
+  username?: string;
+  email?: string;
+}): Promise<TokenResponse["user"]> {
+  const { data } = await apiClient.put<TokenResponse["user"]>(
+    "/auth/profile",
+    payload
+  );
+  return data;
+}
+
+export async function changePassword(payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ message: string }> {
+  const { data } = await apiClient.put<{ message: string }>(
+    "/auth/password",
+    payload
+  );
+  return data;
+}

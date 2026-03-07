@@ -4,10 +4,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 12 (backtesting engine) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
+**Phase 13 (polish & UX) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
 
 ### What's implemented
-- FastAPI backend with JWT auth (register/login/refresh/me)
+- FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
 - Stock listing with sector filter, search, pagination
 - Sectors API: dynamic sector list from DB (`/api/stocks/sectors`)
 - 6 stock sectors: Energy, Financials, Technology, Communication Services, Consumer Discretionary, Market ETFs (~86 tickers)
@@ -27,13 +27,16 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Alert API: config CRUD, alert history, test alert endpoint
 - Admin API: trigger scrape, historical seed, maintenance, DB stats
 - React frontend with AppLayout (sidebar + header), login/register, dark mode (default dark, persists on refresh)
+- Mobile responsive sidebar: collapsible drawer on small screens with hamburger toggle
 - Dynamic sidebar with sector links fetched from API, clickable to filtered signals view
+- Stock search: type-ahead search bar in header with debounced dropdown, navigates to stock detail
 - TradingView Lightweight Charts: candlestick price chart + volume histogram + indicator overlays (SMA, Bollinger Bands) + RSI/MACD sub-charts
 - Sentiment UI: SentimentBadge, SentimentChart, SentimentPage (clickable sector cards + trending tickers)
 - Signal UI: SignalCard (full card clickable → stock detail), SignalsPage (filtered grid with sector dropdown), AlertsPage (config CRUD + history)
 - StockDetailPage with price/volume charts, indicator toggles (SMA, Bollinger, RSI, MACD), sentiment chart, signal history, signal accuracy, watchlist toggle
 - Dashboard: signals feed (10 latest moderate+), clickable sector sentiment heatmap, top movers (bullish/bearish), article activity chart
-- Settings page: profile display, dark mode toggle, notification info
+- Settings page: profile editing (username/email), password change, dark mode toggle, notification info
+- Admin page: task triggers (scrape, seed, maintenance, outcomes, weights), database stats table
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
 - SQLAlchemy models for all 15 tables
@@ -69,10 +72,11 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest metrics: total/annualized return, Sharpe ratio, max drawdown, win rate, avg win/loss, best/worst trade
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade)
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength), result cards, equity curve chart, metrics grid, trade log table
+- Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
 - Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, backtester, maintenance, password validation, secret key (213 tests)
 
 ### What's next
-- Phase 13: TBD
+- Phase 14: TBD
 
 ## Architecture
 
@@ -99,11 +103,11 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   alembic/         Database migrations
   tests/           pytest test suite (213 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
-  src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests)
-  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
+  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
-  src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Login, Register, etc.)
-  src/store/       Zustand state stores (auth, theme)
+  src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Admin, Login, Register, Settings)
+  src/store/       Zustand state stores (auth, theme, sidebar)
   src/types/       TypeScript interfaces
   src/utils/       Shared utilities (formatTimeAgo, humanizeSource)
 nginx/             Reverse proxy config (SSL/TLS template with envsubst)
@@ -181,8 +185,8 @@ cd /opt/stock-predictor/backend
 
 ### TypeScript (frontend/)
 - React 19 + TypeScript strict mode
-- Vite for build tooling
-- Zustand for client state (auth with persist, theme with persist)
+- Vite for build tooling with automatic code splitting (React.lazy + Suspense)
+- Zustand for client state (auth with persist, theme with persist, sidebar)
 - TanStack Query for server state (caching, pagination)
 - Tailwind CSS for styling with dark mode (`class` strategy)
 - TradingView Lightweight Charts for financial charts
@@ -222,7 +226,7 @@ cd /opt/stock-predictor/backend
 | `backend/app/core/middleware.py` | RequestLoggingMiddleware — request timing + correlation IDs |
 | `backend/app/api/health.py` | Health endpoint with DB + Redis checks, `?detail=true` |
 | `backend/app/api/router.py` | Aggregates all sub-routers under `/api` |
-| `backend/app/api/auth.py` | Register, login, refresh, me endpoints |
+| `backend/app/api/auth.py` | Register, login, refresh, me, profile update, password change |
 | `backend/app/api/stocks.py` | Stock list (paginated, filterable) and detail |
 | `backend/app/api/watchlist.py` | Watchlist CRUD |
 | `backend/app/api/market_data.py` | Daily + intraday OHLCV + indicators endpoints |
@@ -256,8 +260,10 @@ cd /opt/stock-predictor/backend
 | `scripts/restore.sh` | Database restore from backup |
 | `.github/workflows/ci.yml` | CI pipeline: lint, test, Docker build |
 | `docker-compose.yml` | All Docker VM services (hardened with resource limits, health checks, Flower) |
-| `frontend/src/App.tsx` | React Router with protected routes + AppLayout |
-| `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist |
+| `frontend/src/App.tsx` | React Router with lazy-loaded routes, protected + admin routes |
+| `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist (includes is_admin) |
+| `frontend/src/components/layout/SearchBar.tsx` | Stock search with debounced dropdown |
+| `frontend/src/pages/AdminPage.tsx` | Admin dashboard: task triggers + DB stats |
 
 ## API Endpoints (implemented)
 
@@ -268,6 +274,8 @@ cd /opt/stock-predictor/backend
 | POST | `/api/auth/login` | No | Done |
 | POST | `/api/auth/refresh` | No | Done |
 | GET | `/api/auth/me` | Yes | Done |
+| PUT | `/api/auth/profile` | Yes | Done |
+| PUT | `/api/auth/password` | Yes | Done |
 | GET | `/api/stocks` | Yes | Done |
 | GET | `/api/stocks/sectors` | Yes | Done |
 | GET | `/api/stocks/{ticker}` | Yes | Done |
@@ -302,6 +310,8 @@ cd /opt/stock-predictor/backend
 | POST | `/api/admin/seed-history` | Admin | Done |
 | POST | `/api/admin/scrape-now` | Admin | Done |
 | POST | `/api/admin/maintenance` | Admin | Done |
+| POST | `/api/admin/evaluate-outcomes` | Admin | Done |
+| POST | `/api/admin/compute-weights` | Admin | Done |
 | GET | `/api/admin/db-stats` | Admin | Done |
 
 ## Data Pipeline
