@@ -120,7 +120,8 @@
        │ (Dashboard, │
        │  Charts,    │
        │  Indicators,│
-       │  Accuracy)  │
+       │  Accuracy,  │
+       │  Backtest)  │
        └─────────────┘
 ```
 
@@ -131,6 +132,7 @@
 ```
 users ──< watchlist_items >── stocks
 users ──< alert_configs
+users ──< backtests
 stocks ──< article_stocks >── articles
 stocks ──< market_data_daily
 stocks ──< market_data_intraday
@@ -140,6 +142,9 @@ signals ──< alert_logs
 signals ──< signal_outcomes
 stocks >── sectors
 sectors ──< signal_weights
+backtests ──< backtest_trades
+backtests >── stocks (nullable)
+backtests >── sectors (nullable)
 ```
 
 ### Tables
@@ -161,6 +166,8 @@ sectors ──< signal_weights
 | alert_logs | Sent alert history | signal_id, user_id, channel, success |
 | watchlist_items | User watchlists | user_id, stock_id |
 | scrape_logs | Scraper execution logs | source, articles_found, articles_new, errors |
+| backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON) |
+| backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct |
 
 ## Signal Scoring Algorithm
 
@@ -285,6 +292,59 @@ After signals are generated, `evaluate_signal_outcomes` checks signals that have
 2. Components that predicted direction more accurately get higher weights
 3. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0
 4. Results stored in `signal_weights` table (upserted per sector + global fallback)
+
+## Backtesting Engine
+
+The backtesting engine replays signal generation over historical OHLCV data to validate trading strategies. It runs as a Celery task on the `signals` queue.
+
+### Two Modes
+
+| Mode | Components | Data Range |
+|------|-----------|------------|
+| **Technical** | Price momentum, volume anomaly, RSI, trend (4 components, renormalized) | Full historical (~30+ years) |
+| **Full** | All 6 components including sentiment momentum + volume | Limited to period since sentiment scraping began |
+
+### Technical Mode Weights (renormalized to sum to 1.0)
+
+```
+composite = 0.30 * price_momentum + 0.20 * volume_anomaly
+          + 0.30 * rsi_score       + 0.20 * trend_score
+```
+
+### Engine Flow
+
+```
+1. Warmup period: 60 days (for SMA50 calculation)
+2. For each trading day after warmup:
+   a. Compute OHLCV signal components from historical slices
+   b. If "full" mode: compute sentiment components from pre-fetched data
+   c. Weighted sum → composite score → classify direction + strength
+   d. Trading logic:
+      - No position + bullish + meets min strength → BUY (invest all cash)
+      - In position + bearish + meets min strength → SELL (liquidate)
+   e. Record equity point (cash + position market value)
+3. Force-close any open position at end
+4. Compute performance metrics from equity curve + trade log
+```
+
+### Performance Metrics
+
+| Metric | Calculation |
+|--------|-------------|
+| Total return | `(final_equity - starting_capital) / starting_capital × 100` |
+| Annualized return | `((final/start)^(252/trading_days) - 1) × 100` |
+| Sharpe ratio | `mean(daily_returns) / std(daily_returns) × sqrt(252)` |
+| Max drawdown | Largest peak-to-trough decline in equity curve |
+| Win rate | % of completed round-trip trades with positive return |
+
+### Sector Backtests
+
+When targeting a sector, capital is divided equally across tickers. Each ticker runs independently, then results are aggregated: equity curves summed per date, trade logs merged, metrics computed on the combined curve.
+
+### Storage
+
+- Equity curve stored as JSON text in the `backtests` table (~100KB for 10 years). Written once, consumed whole for charting.
+- Individual trades stored in `backtest_trades` with CASCADE delete on the parent backtest.
 
 ## Network Security
 

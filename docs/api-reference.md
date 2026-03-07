@@ -325,6 +325,89 @@ Query params: `?window_days=5&sector=energy&days=90`
 | POST | `/watchlist` | Yes | **Done** | Add ticker to watchlist `{ "ticker": "XOM" }` |
 | DELETE | `/watchlist/{ticker}` | Yes | **Done** | Remove from watchlist (204) |
 
+## Backtests
+
+| Method | Path | Auth | Status | Description |
+|--------|------|------|--------|-------------|
+| POST | `/backtests` | Yes | **Done** | Create and queue a backtest (201) |
+| GET | `/backtests` | Yes | **Done** | List user's backtests (paginated, filterable by status) |
+| GET | `/backtests/{id}` | Yes | **Done** | Backtest detail with equity curve and trade log |
+| DELETE | `/backtests/{id}` | Yes | **Done** | Delete own backtest (204, cascades trades) |
+
+### POST /backtests
+```json
+// Request
+{
+  "ticker": "AAPL",
+  "start_date": "2020-01-01",
+  "end_date": "2024-12-31",
+  "starting_capital": 10000,
+  "mode": "technical",
+  "min_signal_strength": "moderate"
+}
+
+// Or for sector backtest:
+{
+  "sector_name": "Technology",
+  "start_date": "2020-01-01",
+  "end_date": "2024-12-31",
+  "mode": "full",
+  "min_signal_strength": "strong"
+}
+
+// Response (201)
+{
+  "id": 1, "user_id": 1, "ticker": "AAPL", "sector_name": null,
+  "mode": "technical", "status": "pending",
+  "start_date": "2020-01-01", "end_date": "2024-12-31",
+  "starting_capital": 10000.0, "min_signal_strength": "moderate",
+  "total_return_pct": null, "annualized_return_pct": null,
+  "sharpe_ratio": null, "max_drawdown_pct": null,
+  "win_rate_pct": null, "total_trades": null,
+  "created_at": "2025-06-15T10:00:00Z", "completed_at": null
+}
+```
+
+Validation:
+- Exactly one of `ticker` or `sector_name` required
+- `start_date` must be before `end_date`, neither can be in the future
+- `starting_capital`: $100–$1,000,000 (default $10,000)
+- `mode`: `"technical"` (OHLCV only) or `"full"` (+ sentiment)
+- `min_signal_strength`: `"moderate"` or `"strong"`
+
+### GET /backtests
+
+Query params: `?status=completed&page=1&per_page=20`
+
+### GET /backtests/{id}
+```json
+// Response
+{
+  "id": 1, "ticker": "AAPL", "sector_name": null,
+  "mode": "technical", "status": "completed",
+  "total_return_pct": 42.5, "annualized_return_pct": 8.2,
+  "sharpe_ratio": 1.15, "max_drawdown_pct": -12.3,
+  "win_rate_pct": 58.0, "total_trades": 24,
+  "avg_win_pct": 5.2, "avg_loss_pct": -3.1,
+  "best_trade_pct": 15.4, "worst_trade_pct": -8.7,
+  "final_equity": 14250.0,
+  "equity_curve": [
+    { "date": "2020-03-01", "equity": 10000.0 },
+    { "date": "2020-03-02", "equity": 10050.0 }
+  ],
+  "trades": [
+    {
+      "id": 1, "ticker": "AAPL", "action": "buy",
+      "trade_date": "2020-04-15", "price": 65.5, "shares": 152,
+      "position_value": 9956.0, "portfolio_equity": 10000.0,
+      "signal_score": 0.48, "signal_direction": "bullish",
+      "signal_strength": "moderate", "return_pct": null
+    }
+  ],
+  "created_at": "...", "completed_at": "..."
+}
+```
+
 ## Dashboard
 
 | Method | Path | Auth | Status | Description |
@@ -355,6 +438,14 @@ Query params: `?window_days=5&sector=energy&days=90`
 ```
 // Response
 { "task_id": "def-456", "status": "queued" }
+```
+
+### POST /admin/backtest trigger (via Celery)
+
+Backtests are queued automatically when created via `POST /backtests`. The Celery task `worker.tasks.signals.backtest_task.run_backtest_task` runs on the `signals` queue. Manual trigger:
+
+```bash
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.backtest_task.run_backtest_task --args='[1]' --queue signals
 ```
 
 ### POST /admin/maintenance

@@ -5,6 +5,7 @@ import { listSectors } from "../../api/stocks";
 const navItems = [
   { to: "/", label: "Dashboard", icon: "grid" },
   { to: "/signals", label: "Signals", icon: "zap" },
+  { to: "/backtest", label: "Backtest", icon: "rewind" },
   { to: "/sentiment", label: "Sentiment", icon: "activity" },
   { to: "/watchlist", label: "Watchlist", icon: "star" },
   { to: "/alerts", label: "Alerts", icon: "bell" },

@@ -257,6 +257,9 @@ cd /opt/stock-predictor/backend
 
 # Trigger adaptive weight computation
 .venv/bin/celery -A worker.celery_app call worker.tasks.signals.weight_optimizer.compute_adaptive_weights --queue signals
+
+# Trigger a backtest manually (pass backtest ID)
+.venv/bin/celery -A worker.celery_app call worker.tasks.signals.backtest_task.run_backtest_task --args='[1]' --queue signals
 ```
 
 ## Backup

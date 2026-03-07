@@ -10,6 +10,7 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Sentiment Analysis**: FinBERT model scores every article as bullish/bearish/neutral
 - **Signal Generation**: 6-component composite scoring (sentiment momentum, article volume, price momentum, volume anomaly, RSI, trend) with adaptive per-sector weights
 - **Technical Indicators**: RSI (14), SMA (20/50), EMA, MACD (12/26/9), Bollinger Bands — computed on-the-fly from stored OHLCV data
+- **Backtesting Engine**: Replay signal generation over historical data with equity curves, trade logs, and performance metrics (Sharpe, drawdown, win rate). Technical mode (OHLCV only, full history) and full mode (+ sentiment)
 - **Signal Feedback Loop**: Outcome evaluation (1/3/5-day windows), adaptive weight optimization, accuracy tracking
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
 - **Web Dashboard**: React app with TradingView charts, indicator overlays (SMA, Bollinger), RSI/MACD sub-charts, sentiment timelines, signal feeds, accuracy metrics, and watchlists
@@ -100,18 +101,18 @@ make lint
 
 ```
 backend/           FastAPI + Celery + SQLAlchemy
-  app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, admin)
-  app/models/      SQLAlchemy ORM models (13 tables)
+  app/api/         Route handlers (auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, backtests, admin)
+  app/models/      SQLAlchemy ORM models (15 tables)
   app/schemas/     Pydantic schemas
   worker/tasks/    Celery tasks (scraping, sentiment, signals, maintenance)
     scraping/      7 scrapers + FeedScraper base + orchestrator + market data
     sentiment/     FinBERT analyzer (singleton) + sentiment processing task
-    signals/       Signal generator (6-component scoring) + alert dispatcher + outcome evaluator + weight optimizer
+    signals/       Signal generator (6-component scoring) + alert dispatcher + outcome evaluator + weight optimizer + backtest task
     maintenance/   Data retention (compression, cleanup, purge) + matview refresh
-  worker/utils/    Rate limiter, text cleaner, ticker extractor, technical indicators (RSI, SMA, EMA, MACD, Bollinger)
+  worker/utils/    Rate limiter, text cleaner, ticker extractor, technical indicators, backtester engine
 frontend/          React + TypeScript
-  src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, etc.)
-  src/components/  UI components (layout, charts, sentiment, signals, dashboard, common)
+  src/pages/       Route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, etc.)
+  src/components/  UI components (layout, charts, sentiment, signals, backtests, dashboard, common)
   src/api/         API client modules
 nginx/             Reverse proxy config
 scripts/           Setup and seed scripts (tickers + historical data)

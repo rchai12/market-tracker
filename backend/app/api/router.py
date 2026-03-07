@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.admin import router as admin_router
 from app.api.alerts import router as alerts_router
+from app.api.backtests import router as backtests_router
 from app.api.articles import router as articles_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
@@ -22,4 +23,5 @@ router.include_router(articles_router)
 router.include_router(sentiment_router)
 router.include_router(signals_router)
 router.include_router(alerts_router)
+router.include_router(backtests_router)
 router.include_router(admin_router)

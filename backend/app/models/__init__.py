@@ -1,5 +1,6 @@
 from app.models.alert import AlertConfig, AlertLog
 from app.models.article import Article, ArticleStock
+from app.models.backtest import Backtest, BacktestTrade
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
 from app.models.scrape_log import ScrapeLog
 from app.models.sector import Sector
@@ -16,6 +17,8 @@ __all__ = [
     "AlertLog",
     "Article",
     "ArticleStock",
+    "Backtest",
+    "BacktestTrade",
     "MarketDataDaily",
     "MarketDataIntraday",
     "ScrapeLog",

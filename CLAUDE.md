@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 11 (technical indicators) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
+**Phase 12 (backtesting engine) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me)
@@ -36,7 +36,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Settings page: profile display, dark mode toggle, notification info
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
-- SQLAlchemy models for all 13 tables
+- SQLAlchemy models for all 15 tables
 - Docker Compose with resource limits, health checks, non-root users, tini init
 - Nginx reverse proxy with SSL/TLS (Let's Encrypt), HSTS, CSP, security headers
 - Nginx auth rate limiting: 5 req/min per IP on `/api/auth/` (brute-force protection)
@@ -64,10 +64,15 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Signal feedback loop: outcome evaluation (1/3/5-day windows), adaptive per-sector weight optimization, accuracy metrics API
 - Technical indicators: RSI (Wilder's 14-period), SMA (20/50), EMA, MACD (12/26/9), Bollinger Bands — pure-Python computation module
 - Indicators API: on-the-fly computation from stored OHLCV data (no extra DB table)
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, maintenance, password validation, secret key (166 tests)
+- Backtesting engine: replay signal generation over historical OHLCV data (technical mode) or OHLCV + sentiment (full mode)
+- Backtest modes: "technical" (OHLCV-only, full 30+ year range) and "full" (all 6 components, limited to sentiment data availability)
+- Backtest metrics: total/annualized return, Sharpe ratio, max drawdown, win rate, avg win/loss, best/worst trade
+- Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade)
+- Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength), result cards, equity curve chart, metrics grid, trade log table
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, backtester, maintenance, password validation, secret key (213 tests)
 
 ### What's next
-- Phase 12: TBD
+- Phase 13: TBD
 
 ## Architecture
 
@@ -81,23 +86,23 @@ Two Oracle Cloud free-tier ARM VMs:
 ```
 backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
-    api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, admin (+ health)
+    api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, backtests, admin (+ health)
     core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions
-    models/        SQLAlchemy ORM models (13 tables)
-    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, common)
+    models/        SQLAlchemy ORM models (15 tables)
+    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, backtest, common)
 
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
     beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights)
-    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, dispatcher, outcome evaluator, weight optimizer), maintenance/ (retention + matview refresh)
-    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper, technical_indicators
+    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, dispatcher, outcome evaluator, weight optimizer, backtest), maintenance/ (retention + matview refresh)
+    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper, technical_indicators, backtester
   alembic/         Database migrations
-  tests/           pytest test suite (166 tests)
+  tests/           pytest test suite (213 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
-  src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts)
-  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests)
+  src/components/  Layout, Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
-  src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Alerts, Login, Register, etc.)
+  src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Login, Register, etc.)
   src/store/       Zustand state stores (auth, theme)
   src/types/       TypeScript interfaces
   src/utils/       Shared utilities (formatTimeAgo, humanizeSource)
@@ -238,6 +243,10 @@ cd /opt/stock-predictor/backend
 | `backend/worker/tasks/signals/outcome_evaluator.py` | Celery task: evaluate signal accuracy after 1/3/5 day windows |
 | `backend/worker/tasks/signals/weight_optimizer.py` | Celery task: compute per-sector adaptive weights from outcomes |
 | `backend/worker/utils/technical_indicators.py` | Pure computation: RSI, SMA, EMA, MACD, Bollinger Bands |
+| `backend/worker/utils/backtester.py` | Pure backtesting engine: signal replay, trading simulation, performance metrics |
+| `backend/worker/tasks/signals/backtest_task.py` | Celery task: fetch data, run backtester, store results |
+| `backend/app/api/backtests.py` | Backtest endpoints: create, list, detail, delete |
+| `backend/app/models/backtest.py` | Backtest + BacktestTrade ORM models |
 | `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker + company name extraction |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
@@ -286,6 +295,10 @@ cd /opt/stock-predictor/backend
 | DELETE | `/api/alerts/configs/{id}` | Yes | Done |
 | GET | `/api/alerts/history` | Yes | Done |
 | POST | `/api/alerts/test` | Yes | Done |
+| POST | `/api/backtests` | Yes | Done |
+| GET | `/api/backtests` | Yes | Done |
+| GET | `/api/backtests/{id}` | Yes | Done |
+| DELETE | `/api/backtests/{id}` | Yes | Done |
 | POST | `/api/admin/seed-history` | Admin | Done |
 | POST | `/api/admin/scrape-now` | Admin | Done |
 | POST | `/api/admin/maintenance` | Admin | Done |

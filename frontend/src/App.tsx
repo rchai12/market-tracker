@@ -8,6 +8,7 @@ import SignalsPage from "./pages/SignalsPage";
 import SentimentPage from "./pages/SentimentPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import AlertsPage from "./pages/AlertsPage";
+import BacktestPage from "./pages/BacktestPage";
 import SettingsPage from "./pages/SettingsPage";
 import StockDetailPage from "./pages/StockDetailPage";
 
@@ -31,6 +32,7 @@ function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/stocks/:ticker" element={<StockDetailPage />} />
         <Route path="/signals" element={<SignalsPage />} />
+        <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/sentiment" element={<SentimentPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
