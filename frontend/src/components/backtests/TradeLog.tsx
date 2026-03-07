@@ -4,6 +4,20 @@ interface TradeLogProps {
   trades: BacktestTrade[];
 }
 
+const EXIT_REASON_STYLES: Record<string, string> = {
+  signal: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+  stop_loss: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  take_profit: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  end_of_period: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400",
+};
+
+const EXIT_REASON_LABELS: Record<string, string> = {
+  signal: "Signal",
+  stop_loss: "Stop Loss",
+  take_profit: "Take Profit",
+  end_of_period: "End",
+};
+
 export default function TradeLog({ trades }: TradeLogProps) {
   if (trades.length === 0) {
     return (
@@ -24,7 +38,8 @@ export default function TradeLog({ trades }: TradeLogProps) {
             <th className="pb-2 pr-4 text-right">Price</th>
             <th className="pb-2 pr-4 text-right">Shares</th>
             <th className="pb-2 pr-4 text-right">Signal</th>
-            <th className="pb-2 text-right">Return</th>
+            <th className="pb-2 pr-4 text-right">Return</th>
+            <th className="pb-2">Reason</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -52,7 +67,7 @@ export default function TradeLog({ trades }: TradeLogProps) {
                   {trade.signal_score.toFixed(3)}
                 </span>
               </td>
-              <td className="py-2 text-right">
+              <td className="py-2 pr-4 text-right">
                 {trade.return_pct !== null ? (
                   <span
                     className={`font-medium ${
@@ -63,6 +78,19 @@ export default function TradeLog({ trades }: TradeLogProps) {
                   >
                     {trade.return_pct >= 0 ? "+" : ""}
                     {trade.return_pct.toFixed(2)}%
+                  </span>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+              </td>
+              <td className="py-2">
+                {trade.exit_reason && trade.action === "sell" ? (
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      EXIT_REASON_STYLES[trade.exit_reason] || EXIT_REASON_STYLES.signal
+                    }`}
+                  >
+                    {EXIT_REASON_LABELS[trade.exit_reason] || trade.exit_reason}
                   </span>
                 ) : (
                   <span className="text-gray-400">—</span>

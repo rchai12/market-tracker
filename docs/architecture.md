@@ -166,8 +166,8 @@ backtests >── sectors (nullable)
 | alert_logs | Sent alert history | signal_id, user_id, channel, success |
 | watchlist_items | User watchlists | user_id, stock_id |
 | scrape_logs | Scraper execution logs | source, articles_found, articles_new, errors |
-| backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON) |
-| backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct |
+| backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON), commission/slippage/position_size/stop_loss/take_profit, benchmark_ticker, benchmark metrics (alpha/beta), benchmark_equity_curve (JSON) |
+| backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct, exit_reason |
 
 ## Signal Scoring Algorithm
 
@@ -319,13 +319,29 @@ composite = 0.30 * price_momentum + 0.20 * volume_anomaly
    a. Compute OHLCV signal components from historical slices
    b. If "full" mode: compute sentiment components from pre-fetched data
    c. Weighted sum → composite score → classify direction + strength
-   d. Trading logic:
-      - No position + bullish + meets min strength → BUY (invest all cash)
-      - In position + bearish + meets min strength → SELL (liquidate)
-   e. Record equity point (cash + position market value)
-3. Force-close any open position at end
+   d. Check stop-loss / take-profit (if configured, before signal logic):
+      - If price dropped ≥ stop_loss_pct from entry → SELL (exit_reason="stop_loss")
+      - If price rose ≥ take_profit_pct from entry → SELL (exit_reason="take_profit")
+   e. Trading logic:
+      - No position + bullish + meets min strength → BUY (invest position_size_pct of cash)
+        - Apply slippage on entry price, deduct commission from allocation
+      - In position + bearish + meets min strength → SELL (exit_reason="signal")
+        - Apply slippage on exit price, deduct commission from proceeds
+   f. Record equity point (cash + position market value)
+3. Force-close any open position at end (exit_reason="end_of_period")
 4. Compute performance metrics from equity curve + trade log
+5. Fetch benchmark (SPY or configured ticker) OHLCV, compute alpha/beta
 ```
+
+### Transaction Costs
+
+| Parameter | Default (API) | Range | Effect |
+|-----------|--------------|-------|--------|
+| `commission_pct` | 0.1% | 0–5% | Deducted on both buy (from allocation) and sell (from proceeds) |
+| `slippage_pct` | 0.05% | 0–5% | Price adjusted unfavorably: buy at `close × (1 + slippage)`, sell at `close × (1 - slippage)` |
+| `position_size_pct` | 100% | 10–100% | Fraction of cash allocated per trade; remaining cash stays uninvested |
+| `stop_loss_pct` | null | 0–50% | Auto-exit if position drops by this % from entry price |
+| `take_profit_pct` | null | 0–500% | Auto-exit if position rises by this % from entry price |
 
 ### Performance Metrics
 
@@ -336,6 +352,16 @@ composite = 0.30 * price_momentum + 0.20 * volume_anomaly
 | Sharpe ratio | `mean(daily_returns) / std(daily_returns) × sqrt(252)` |
 | Max drawdown | Largest peak-to-trough decline in equity curve |
 | Win rate | % of completed round-trip trades with positive return |
+| Alpha | Strategy annualized return − benchmark annualized return |
+| Beta | `Cov(strategy_daily, benchmark_daily) / Var(benchmark_daily)` |
+
+### Benchmark Comparison
+
+After the main backtest completes, the task fetches OHLCV for the benchmark ticker (default SPY) and computes:
+- Benchmark equity curve normalized to starting capital
+- Total and annualized benchmark returns
+- Alpha (excess annualized return over benchmark)
+- Beta (systematic risk measure from daily return covariance)
 
 ### Sector Backtests
 
@@ -344,7 +370,13 @@ When targeting a sector, capital is divided equally across tickers. Each ticker 
 ### Storage
 
 - Equity curve stored as JSON text in the `backtests` table (~100KB for 10 years). Written once, consumed whole for charting.
+- Benchmark equity curve stored as JSON text alongside strategy curve.
 - Individual trades stored in `backtest_trades` with CASCADE delete on the parent backtest.
+- Each sell trade records `exit_reason`: `signal`, `stop_loss`, `take_profit`, or `end_of_period`.
+
+### CSV Export
+
+`GET /backtests/{id}/export?type=trades` or `?type=equity_curve` returns a streaming CSV download.
 
 ## Network Security
 

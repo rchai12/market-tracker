@@ -20,6 +20,13 @@ class Backtest(Base):
     starting_capital: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=10000)
     min_signal_strength: Mapped[str] = mapped_column(String(20), nullable=False, default="moderate")
 
+    # v2 config fields
+    commission_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    slippage_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    position_size_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    stop_loss_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    take_profit_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+
     # Result metrics (populated on completion)
     total_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     annualized_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
@@ -35,6 +42,14 @@ class Backtest(Base):
 
     # Equity curve as JSON (written once on completion)
     equity_curve: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Benchmark comparison (populated on completion)
+    benchmark_ticker: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    benchmark_total_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    benchmark_annualized_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    alpha: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    beta: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    benchmark_equity_curve: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -66,5 +81,6 @@ class BacktestTrade(Base):
     signal_direction: Mapped[str] = mapped_column(String(20), nullable=False)
     signal_strength: Mapped[str] = mapped_column(String(20), nullable=False)
     return_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     backtest = relationship("Backtest", back_populates="trades")

@@ -6,12 +6,16 @@ import { getChartThemeOptions } from "../../utils/chartConfig";
 interface EquityCurveChartProps {
   data: EquityPoint[];
   startingCapital: number;
+  benchmarkData?: EquityPoint[] | null;
+  benchmarkLabel?: string;
   height?: number;
 }
 
 export default function EquityCurveChart({
   data,
   startingCapital,
+  benchmarkData,
+  benchmarkLabel = "SPY",
   height = 300,
 }: EquityCurveChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +36,7 @@ export default function EquityCurveChart({
     const equitySeries = chart.addLineSeries({
       color: "#22c55e",
       lineWidth: 2,
-      title: "Equity",
+      title: "Strategy",
     });
 
     equitySeries.setData(
@@ -49,6 +53,20 @@ export default function EquityCurveChart({
       title: "",
     });
 
+    // Benchmark overlay
+    if (benchmarkData && benchmarkData.length > 0) {
+      const benchSeries = chart.addLineSeries({
+        color: "#6366f1",
+        lineWidth: 2,
+        lineStyle: 2,
+        title: benchmarkLabel,
+      });
+
+      benchSeries.setData(
+        benchmarkData.map((d) => ({ time: d.date as string, value: d.equity }))
+      );
+    }
+
     chartRef.current = chart;
     chart.timeScale().fitContent();
 
@@ -63,7 +81,7 @@ export default function EquityCurveChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, startingCapital, height]);
+  }, [data, startingCapital, benchmarkData, benchmarkLabel, height]);
 
   return (
     <div

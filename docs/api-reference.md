@@ -360,8 +360,9 @@ Query params: `?window_days=5&sector=energy&days=90`
 |--------|------|------|--------|-------------|
 | POST | `/backtests` | Yes | **Done** | Create and queue a backtest (201) |
 | GET | `/backtests` | Yes | **Done** | List user's backtests (paginated, filterable by status) |
-| GET | `/backtests/{id}` | Yes | **Done** | Backtest detail with equity curve and trade log |
+| GET | `/backtests/{id}` | Yes | **Done** | Backtest detail with equity curve, trades, and benchmark |
 | DELETE | `/backtests/{id}` | Yes | **Done** | Delete own backtest (204, cascades trades) |
+| GET | `/backtests/{id}/export` | Yes | **Done** | Export trades or equity curve as CSV |
 
 ### POST /backtests
 ```json
@@ -372,7 +373,13 @@ Query params: `?window_days=5&sector=energy&days=90`
   "end_date": "2024-12-31",
   "starting_capital": 10000,
   "mode": "technical",
-  "min_signal_strength": "moderate"
+  "min_signal_strength": "moderate",
+  "commission_pct": 0.001,
+  "slippage_pct": 0.0005,
+  "position_size_pct": 100.0,
+  "stop_loss_pct": 5.0,
+  "take_profit_pct": 20.0,
+  "benchmark_ticker": "SPY"
 }
 
 // Or for sector backtest:
@@ -390,9 +397,14 @@ Query params: `?window_days=5&sector=energy&days=90`
   "mode": "technical", "status": "pending",
   "start_date": "2020-01-01", "end_date": "2024-12-31",
   "starting_capital": 10000.0, "min_signal_strength": "moderate",
+  "commission_pct": 0.001, "slippage_pct": 0.0005,
+  "position_size_pct": 100.0, "stop_loss_pct": 5.0, "take_profit_pct": 20.0,
+  "benchmark_ticker": "SPY",
   "total_return_pct": null, "annualized_return_pct": null,
   "sharpe_ratio": null, "max_drawdown_pct": null,
   "win_rate_pct": null, "total_trades": null,
+  "benchmark_total_return_pct": null, "benchmark_annualized_return_pct": null,
+  "alpha": null, "beta": null,
   "created_at": "2025-06-15T10:00:00Z", "completed_at": null
 }
 ```
@@ -403,6 +415,12 @@ Validation:
 - `starting_capital`: $100–$1,000,000 (default $10,000)
 - `mode`: `"technical"` (OHLCV only) or `"full"` (+ sentiment)
 - `min_signal_strength`: `"moderate"` or `"strong"`
+- `commission_pct`: 0–5% (default 0.1%)
+- `slippage_pct`: 0–5% (default 0.05%)
+- `position_size_pct`: 10–100% (default 100%)
+- `stop_loss_pct`: 0–50% or null (default null)
+- `take_profit_pct`: 0–500% or null (default null)
+- `benchmark_ticker`: any valid ticker (default SPY)
 
 ### GET /backtests
 
@@ -414,15 +432,24 @@ Query params: `?status=completed&page=1&per_page=20`
 {
   "id": 1, "ticker": "AAPL", "sector_name": null,
   "mode": "technical", "status": "completed",
+  "commission_pct": 0.001, "slippage_pct": 0.0005,
+  "position_size_pct": 100.0, "stop_loss_pct": 5.0, "take_profit_pct": 20.0,
+  "benchmark_ticker": "SPY",
   "total_return_pct": 42.5, "annualized_return_pct": 8.2,
   "sharpe_ratio": 1.15, "max_drawdown_pct": -12.3,
   "win_rate_pct": 58.0, "total_trades": 24,
   "avg_win_pct": 5.2, "avg_loss_pct": -3.1,
   "best_trade_pct": 15.4, "worst_trade_pct": -8.7,
   "final_equity": 14250.0,
+  "benchmark_total_return_pct": 35.2, "benchmark_annualized_return_pct": 6.8,
+  "alpha": 1.4, "beta": 0.92,
   "equity_curve": [
     { "date": "2020-03-01", "equity": 10000.0 },
     { "date": "2020-03-02", "equity": 10050.0 }
+  ],
+  "benchmark_equity_curve": [
+    { "date": "2020-03-01", "equity": 10000.0 },
+    { "date": "2020-03-02", "equity": 10020.0 }
   ],
   "trades": [
     {
@@ -430,12 +457,29 @@ Query params: `?status=completed&page=1&per_page=20`
       "trade_date": "2020-04-15", "price": 65.5, "shares": 152,
       "position_value": 9956.0, "portfolio_equity": 10000.0,
       "signal_score": 0.48, "signal_direction": "bullish",
-      "signal_strength": "moderate", "return_pct": null
+      "signal_strength": "moderate", "return_pct": null,
+      "exit_reason": null
+    },
+    {
+      "id": 2, "ticker": "AAPL", "action": "sell",
+      "trade_date": "2020-05-20", "price": 72.3, "shares": 152,
+      "position_value": 10990.0, "portfolio_equity": 10990.0,
+      "signal_score": -0.45, "signal_direction": "bearish",
+      "signal_strength": "moderate", "return_pct": 10.2,
+      "exit_reason": "signal"
     }
   ],
   "created_at": "...", "completed_at": "..."
 }
 ```
+
+Exit reasons: `"signal"` (bearish signal triggered sell), `"stop_loss"`, `"take_profit"`, `"end_of_period"` (force-close at backtest end).
+
+### GET /backtests/{id}/export
+
+Query params: `?type=trades` or `?type=equity_curve`
+
+Returns CSV file as attachment download.
 
 ## Dashboard
 

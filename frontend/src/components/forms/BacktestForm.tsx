@@ -19,6 +19,13 @@ export default function BacktestForm({ onSubmit, isSubmitting }: BacktestFormPro
   const [mode, setMode] = useState<"technical" | "full">("technical");
   const [capital, setCapital] = useState("10000");
   const [strength, setStrength] = useState<"moderate" | "strong">("moderate");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [commission, setCommission] = useState("0.1");
+  const [slippage, setSlippage] = useState("0.05");
+  const [positionSize, setPositionSize] = useState("100");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [benchmark, setBenchmark] = useState("SPY");
 
   const { data: sectors } = useQuery({
     queryKey: ["sectors"],
@@ -34,6 +41,12 @@ export default function BacktestForm({ onSubmit, isSubmitting }: BacktestFormPro
       starting_capital: parseFloat(capital) || 10000,
       mode,
       min_signal_strength: strength,
+      commission_pct: (parseFloat(commission) || 0) / 100,
+      slippage_pct: (parseFloat(slippage) || 0) / 100,
+      position_size_pct: parseFloat(positionSize) || 100,
+      stop_loss_pct: stopLoss ? parseFloat(stopLoss) : null,
+      take_profit_pct: takeProfit ? parseFloat(takeProfit) : null,
+      benchmark_ticker: benchmark || undefined,
     };
     if (targetType === "stock") {
       config.ticker = ticker.toUpperCase();
@@ -174,6 +187,102 @@ export default function BacktestForm({ onSubmit, isSubmitting }: BacktestFormPro
             <option value="strong">Strong only</option>
           </select>
         </div>
+      </div>
+
+      {/* Advanced Settings */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${showAdvanced ? "rotate-90" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          Advanced Settings
+        </button>
+
+        {showAdvanced && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <div>
+              <label className={labelClass}>Commission (%)</label>
+              <input
+                type="number"
+                value={commission}
+                onChange={(e) => setCommission(e.target.value)}
+                min={0}
+                max={5}
+                step={0.01}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Slippage (%)</label>
+              <input
+                type="number"
+                value={slippage}
+                onChange={(e) => setSlippage(e.target.value)}
+                min={0}
+                max={5}
+                step={0.01}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Position Size (%)</label>
+              <input
+                type="number"
+                value={positionSize}
+                onChange={(e) => setPositionSize(e.target.value)}
+                min={10}
+                max={100}
+                step={5}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Stop Loss (%)</label>
+              <input
+                type="number"
+                value={stopLoss}
+                onChange={(e) => setStopLoss(e.target.value)}
+                min={0}
+                max={50}
+                step={0.5}
+                placeholder="e.g. 5"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Take Profit (%)</label>
+              <input
+                type="number"
+                value={takeProfit}
+                onChange={(e) => setTakeProfit(e.target.value)}
+                min={0}
+                max={500}
+                step={1}
+                placeholder="e.g. 20"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Benchmark</label>
+              <input
+                type="text"
+                value={benchmark}
+                onChange={(e) => setBenchmark(e.target.value.toUpperCase())}
+                placeholder="SPY"
+                className={inputClass}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end">

@@ -5,6 +5,7 @@ import {
   listBacktests,
   getBacktest,
   deleteBacktest,
+  exportBacktest,
 } from "../api/backtests";
 import type { BacktestConfig } from "../types";
 import BacktestForm from "../components/forms/BacktestForm";
@@ -12,11 +13,14 @@ import BacktestResultCard from "../components/backtests/BacktestResultCard";
 import MetricsSummary from "../components/backtests/MetricsSummary";
 import TradeLog from "../components/backtests/TradeLog";
 import EquityCurveChart from "../components/charts/EquityCurveChart";
+import BacktestCompare from "../components/backtests/BacktestCompare";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
 
 export default function BacktestPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(true);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<number[]>([]);
   const queryClient = useQueryClient();
 
   // List backtests
@@ -24,7 +28,6 @@ export default function BacktestPage() {
     queryKey: ["backtests"],
     queryFn: () => listBacktests({ per_page: 50 }),
     refetchInterval: (query) => {
-      // Poll while any backtest is pending/running
       const data = query.state.data;
       if (
         data?.data.some(
@@ -41,7 +44,7 @@ export default function BacktestPage() {
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ["backtest", selectedId],
     queryFn: () => getBacktest(selectedId!),
-    enabled: selectedId !== null,
+    enabled: selectedId !== null && !compareMode,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data && (data.status === "pending" || data.status === "running")) {
@@ -49,6 +52,18 @@ export default function BacktestPage() {
       }
       return false;
     },
+  });
+
+  // Compare queries
+  const { data: compare1 } = useQuery({
+    queryKey: ["backtest", compareIds[0]],
+    queryFn: () => getBacktest(compareIds[0]!),
+    enabled: compareIds.length === 2,
+  });
+  const { data: compare2 } = useQuery({
+    queryKey: ["backtest", compareIds[1]],
+    queryFn: () => getBacktest(compareIds[1]!),
+    enabled: compareIds.length === 2,
   });
 
   // Create mutation
@@ -74,22 +89,71 @@ export default function BacktestPage() {
 
   const backtests = backtestsData?.data ?? [];
 
+  const handleCardClick = (id: number) => {
+    if (compareMode) {
+      setCompareIds((prev) => {
+        if (prev.includes(id)) return prev.filter((x) => x !== id);
+        if (prev.length < 2) return [...prev, id];
+        return [prev[1]!, id];
+      });
+    } else {
+      setSelectedId(id);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Backtesting
         </h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          {showForm ? "Hide Form" : "New Backtest"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setCompareMode(!compareMode);
+              setCompareIds([]);
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              compareMode
+                ? "bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-500 dark:text-indigo-400"
+                : "border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+            }`}
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            {showForm ? "Hide Form" : "New Backtest"}
+          </button>
+        </div>
       </div>
 
+      {/* Compare mode banner */}
+      {compareMode && (
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3 flex items-center justify-between">
+          <span className="text-sm text-indigo-700 dark:text-indigo-300">
+            {compareIds.length === 0
+              ? "Select two completed backtests to compare"
+              : compareIds.length === 1
+                ? "Select one more backtest"
+                : "Comparing two backtests"}
+          </span>
+          <button
+            onClick={() => {
+              setCompareMode(false);
+              setCompareIds([]);
+            }}
+            className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* Configuration form */}
-      {showForm && (
+      {showForm && !compareMode && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             Configure Backtest
@@ -123,17 +187,33 @@ export default function BacktestPage() {
               <BacktestResultCard
                 key={bt.id}
                 backtest={bt}
-                onSelect={setSelectedId}
+                onSelect={handleCardClick}
                 onDelete={(id) => deleteMutation.mutate(id)}
-                isSelected={selectedId === bt.id}
+                isSelected={
+                  compareMode
+                    ? compareIds.includes(bt.id)
+                    : selectedId === bt.id
+                }
               />
             ))}
           </div>
         )}
       </div>
 
+      {/* Compare view */}
+      {compareMode && compareIds.length === 2 && compare1 && compare2 && (
+        <BacktestCompare
+          backtest1={compare1}
+          backtest2={compare2}
+          onClose={() => {
+            setCompareMode(false);
+            setCompareIds([]);
+          }}
+        />
+      )}
+
       {/* Detail view */}
-      {selectedId !== null && (
+      {!compareMode && selectedId !== null && (
         <div className="space-y-4">
           {detailLoading ? (
             <LoadingSkeleton variant="chart" />
@@ -170,21 +250,39 @@ export default function BacktestPage() {
                   {/* Equity curve */}
                   {detail.equity_curve.length > 0 && (
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                        Equity Curve
-                      </h2>
+                      <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          Equity Curve
+                        </h2>
+                        <button
+                          onClick={() => exportBacktest(selectedId!, "equity_curve")}
+                          className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          Export CSV
+                        </button>
+                      </div>
                       <EquityCurveChart
                         data={detail.equity_curve}
                         startingCapital={detail.starting_capital}
+                        benchmarkData={detail.benchmark_equity_curve}
+                        benchmarkLabel={detail.benchmark_ticker || "SPY"}
                       />
                     </div>
                   )}
 
                   {/* Trade log */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                      Trade Log ({detail.trades.length} trades)
-                    </h2>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Trade Log ({detail.trades.length} trades)
+                      </h2>
+                      <button
+                        onClick={() => exportBacktest(selectedId!, "trades")}
+                        className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Export CSV
+                      </button>
+                    </div>
                     <TradeLog trades={detail.trades} />
                   </div>
                 </>

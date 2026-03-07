@@ -1,8 +1,11 @@
 """Backtest API endpoints."""
 
+import csv
+import io
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -23,6 +26,10 @@ from app.schemas.backtest import (
 from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
+
+
+def _float_or_none(v) -> float | None:
+    return float(v) if v is not None else None
 
 
 @router.post("", response_model=BacktestResponse, status_code=201)
@@ -66,6 +73,12 @@ async def create_backtest(
         end_date=body.end_date,
         starting_capital=body.starting_capital,
         min_signal_strength=body.min_signal_strength,
+        commission_pct=body.commission_pct,
+        slippage_pct=body.slippage_pct,
+        position_size_pct=body.position_size_pct,
+        stop_loss_pct=body.stop_loss_pct,
+        take_profit_pct=body.take_profit_pct,
+        benchmark_ticker=body.benchmark_ticker,
     )
     db.add(bt)
     await db.commit()
@@ -133,12 +146,10 @@ async def get_backtest(
         raise HTTPException(status_code=404, detail="Backtest not found")
 
     # Parse equity curve JSON
-    equity_curve = []
-    if bt.equity_curve:
-        try:
-            equity_curve = [EquityPointResponse(**p) for p in json.loads(bt.equity_curve)]
-        except (json.JSONDecodeError, TypeError):
-            equity_curve = []
+    equity_curve = _parse_equity_curve(bt.equity_curve)
+
+    # Parse benchmark equity curve JSON
+    benchmark_equity_curve = _parse_equity_curve(bt.benchmark_equity_curve)
 
     # Sort trades by date
     trades = sorted(bt.trades, key=lambda t: t.trade_date)
@@ -146,32 +157,74 @@ async def get_backtest(
     ticker = bt.stock.ticker if bt.stock else None
     sector_name = bt.sector.name if bt.sector else None
 
+    resp = _to_response(bt, ticker=ticker, sector_name=sector_name)
     return BacktestDetailResponse(
-        id=bt.id,
-        ticker=ticker,
-        sector_name=sector_name,
-        mode=bt.mode,
-        status=bt.status,
-        start_date=bt.start_date,
-        end_date=bt.end_date,
-        starting_capital=float(bt.starting_capital),
-        min_signal_strength=bt.min_signal_strength,
-        total_return_pct=float(bt.total_return_pct) if bt.total_return_pct is not None else None,
-        annualized_return_pct=float(bt.annualized_return_pct) if bt.annualized_return_pct is not None else None,
-        sharpe_ratio=float(bt.sharpe_ratio) if bt.sharpe_ratio is not None else None,
-        max_drawdown_pct=float(bt.max_drawdown_pct) if bt.max_drawdown_pct is not None else None,
-        win_rate_pct=float(bt.win_rate_pct) if bt.win_rate_pct is not None else None,
-        total_trades=bt.total_trades,
-        avg_win_pct=float(bt.avg_win_pct) if bt.avg_win_pct is not None else None,
-        avg_loss_pct=float(bt.avg_loss_pct) if bt.avg_loss_pct is not None else None,
-        best_trade_pct=float(bt.best_trade_pct) if bt.best_trade_pct is not None else None,
-        worst_trade_pct=float(bt.worst_trade_pct) if bt.worst_trade_pct is not None else None,
-        final_equity=float(bt.final_equity) if bt.final_equity is not None else None,
-        error_message=bt.error_message,
-        created_at=bt.created_at,
-        completed_at=bt.completed_at,
+        **resp.model_dump(),
         equity_curve=equity_curve,
         trades=[BacktestTradeResponse.model_validate(t) for t in trades],
+        benchmark_equity_curve=benchmark_equity_curve if benchmark_equity_curve else None,
+    )
+
+
+@router.get("/{backtest_id}/export")
+async def export_backtest(
+    backtest_id: int,
+    type: str = Query(..., pattern="^(trades|equity_curve)$"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export backtest data as CSV."""
+    result = await db.execute(
+        select(Backtest)
+        .where(Backtest.id == backtest_id)
+        .where(Backtest.user_id == user.id)
+        .options(joinedload(Backtest.trades))
+    )
+    bt = result.unique().scalar_one_or_none()
+
+    if not bt:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+    if bt.status != "completed":
+        raise HTTPException(status_code=400, detail="Backtest is not completed")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    if type == "trades":
+        writer.writerow([
+            "Date", "Ticker", "Action", "Price", "Shares",
+            "Position Value", "Portfolio Equity", "Signal Score",
+            "Signal Direction", "Signal Strength", "Return %", "Exit Reason",
+        ])
+        for trade in sorted(bt.trades, key=lambda t: t.trade_date):
+            writer.writerow([
+                trade.trade_date.strftime("%Y-%m-%d"),
+                trade.ticker, trade.action,
+                f"{float(trade.price):.4f}",
+                f"{float(trade.shares):.6f}",
+                f"{float(trade.position_value):.2f}",
+                f"{float(trade.portfolio_equity):.2f}",
+                f"{float(trade.signal_score):.5f}",
+                trade.signal_direction, trade.signal_strength,
+                f"{float(trade.return_pct):.4f}" if trade.return_pct is not None else "",
+                trade.exit_reason or "",
+            ])
+        filename = f"backtest_{backtest_id}_trades.csv"
+    else:
+        writer.writerow(["Date", "Equity"])
+        if bt.equity_curve:
+            try:
+                for point in json.loads(bt.equity_curve):
+                    writer.writerow([point["date"], f"{point['equity']:.2f}"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        filename = f"backtest_{backtest_id}_equity_curve.csv"
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -196,6 +249,15 @@ async def delete_backtest(
     await db.commit()
 
 
+def _parse_equity_curve(raw: str | None) -> list[EquityPointResponse]:
+    if not raw:
+        return []
+    try:
+        return [EquityPointResponse(**p) for p in json.loads(raw)]
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
 def _to_response(bt: Backtest, ticker: str | None = None, sector_name: str | None = None) -> BacktestResponse:
     """Convert a Backtest ORM object to a BacktestResponse."""
     if ticker is None and bt.stock:
@@ -213,17 +275,27 @@ def _to_response(bt: Backtest, ticker: str | None = None, sector_name: str | Non
         end_date=bt.end_date,
         starting_capital=float(bt.starting_capital),
         min_signal_strength=bt.min_signal_strength,
-        total_return_pct=float(bt.total_return_pct) if bt.total_return_pct is not None else None,
-        annualized_return_pct=float(bt.annualized_return_pct) if bt.annualized_return_pct is not None else None,
-        sharpe_ratio=float(bt.sharpe_ratio) if bt.sharpe_ratio is not None else None,
-        max_drawdown_pct=float(bt.max_drawdown_pct) if bt.max_drawdown_pct is not None else None,
-        win_rate_pct=float(bt.win_rate_pct) if bt.win_rate_pct is not None else None,
+        commission_pct=_float_or_none(bt.commission_pct),
+        slippage_pct=_float_or_none(bt.slippage_pct),
+        position_size_pct=_float_or_none(bt.position_size_pct),
+        stop_loss_pct=_float_or_none(bt.stop_loss_pct),
+        take_profit_pct=_float_or_none(bt.take_profit_pct),
+        benchmark_ticker=bt.benchmark_ticker,
+        total_return_pct=_float_or_none(bt.total_return_pct),
+        annualized_return_pct=_float_or_none(bt.annualized_return_pct),
+        sharpe_ratio=_float_or_none(bt.sharpe_ratio),
+        max_drawdown_pct=_float_or_none(bt.max_drawdown_pct),
+        win_rate_pct=_float_or_none(bt.win_rate_pct),
         total_trades=bt.total_trades,
-        avg_win_pct=float(bt.avg_win_pct) if bt.avg_win_pct is not None else None,
-        avg_loss_pct=float(bt.avg_loss_pct) if bt.avg_loss_pct is not None else None,
-        best_trade_pct=float(bt.best_trade_pct) if bt.best_trade_pct is not None else None,
-        worst_trade_pct=float(bt.worst_trade_pct) if bt.worst_trade_pct is not None else None,
-        final_equity=float(bt.final_equity) if bt.final_equity is not None else None,
+        avg_win_pct=_float_or_none(bt.avg_win_pct),
+        avg_loss_pct=_float_or_none(bt.avg_loss_pct),
+        best_trade_pct=_float_or_none(bt.best_trade_pct),
+        worst_trade_pct=_float_or_none(bt.worst_trade_pct),
+        final_equity=_float_or_none(bt.final_equity),
+        benchmark_total_return_pct=_float_or_none(bt.benchmark_total_return_pct),
+        benchmark_annualized_return_pct=_float_or_none(bt.benchmark_annualized_return_pct),
+        alpha=_float_or_none(bt.alpha),
+        beta=_float_or_none(bt.beta),
         error_message=bt.error_message,
         created_at=bt.created_at,
         completed_at=bt.completed_at,

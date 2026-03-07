@@ -78,6 +78,11 @@ class BacktestConfig:
     starting_capital: float = 10000.0
     min_signal_strength: str = "moderate"  # "moderate" or "strong"
     weights: dict | None = None  # Override weights, or None for defaults
+    commission_pct: float = 0.0  # 0 for backward compat; API defaults to 0.001
+    slippage_pct: float = 0.0  # 0 for backward compat; API defaults to 0.0005
+    position_size_pct: float = 100.0  # 100% = all-in (current behavior)
+    stop_loss_pct: float | None = None  # e.g. 5.0 = exit if price drops 5%
+    take_profit_pct: float | None = None  # e.g. 20.0 = exit if price rises 20%
 
 
 @dataclass
@@ -93,6 +98,7 @@ class TradeRecord:
     signal_direction: str
     signal_strength: str
     return_pct: float | None = None  # Set on sell trades
+    exit_reason: str | None = None  # "signal", "stop_loss", "take_profit", "end_of_period"
 
 
 @dataclass
@@ -383,18 +389,73 @@ def run_backtest(
         strength = classify_strength(composite)
         strength_val = min_strength_order.get(strength, 0)
 
+        # Check stop-loss / take-profit before signal logic
+        if position is not None:
+            pct_change = (
+                (today.close - position["entry_price"]) / position["entry_price"] * 100
+                if position["entry_price"] > 0
+                else 0.0
+            )
+            trigger_exit = False
+            exit_reason = None
+
+            if config.stop_loss_pct is not None and pct_change <= -config.stop_loss_pct:
+                trigger_exit = True
+                exit_reason = "stop_loss"
+            elif config.take_profit_pct is not None and pct_change >= config.take_profit_pct:
+                trigger_exit = True
+                exit_reason = "take_profit"
+
+            if trigger_exit:
+                effective_price = today.close * (1 - config.slippage_pct)
+                gross_proceeds = position["shares"] * effective_price
+                commission = gross_proceeds * config.commission_pct
+                net_proceeds = gross_proceeds - commission
+                rtn = (
+                    ((net_proceeds - position["shares"] * position["entry_price"])
+                     / (position["shares"] * position["entry_price"]) * 100)
+                    if position["entry_price"] > 0
+                    else 0.0
+                )
+                cash += net_proceeds
+                equity = cash + 0.0  # position is about to be closed
+                trades.append(
+                    TradeRecord(
+                        ticker=ticker,
+                        action="sell",
+                        trade_date=today.date,
+                        price=today.close,
+                        shares=position["shares"],
+                        position_value=position["shares"] * today.close,
+                        portfolio_equity=equity,
+                        signal_score=round(composite, 5),
+                        signal_direction=exit_reason,
+                        signal_strength=exit_reason,
+                        return_pct=round(rtn, 4),
+                        exit_reason=exit_reason,
+                    )
+                )
+                position = None
+                equity_curve.append(EquityPoint(date=today.date, equity=equity))
+                continue
+
         # Trading logic
         if position is None and direction == "bullish" and strength_val >= min_strength_val:
-            # BUY: invest all cash
-            if today.close > 0:
-                shares = cash / today.close
+            # BUY: invest position_size_pct of cash
+            if today.close > 0 and cash > 0:
+                allocate = cash * (config.position_size_pct / 100.0)
+                effective_price = today.close * (1 + config.slippage_pct)
+                commission = allocate * config.commission_pct
+                investable = allocate - commission
+                shares = investable / effective_price
                 position = {
                     "shares": shares,
-                    "entry_price": today.close,
+                    "entry_price": effective_price,
                     "entry_date": today.date,
                 }
+                cash -= allocate
                 position_value = shares * today.close
-                equity = position_value
+                equity = cash + position_value
                 trades.append(
                     TradeRecord(
                         ticker=ticker,
@@ -409,17 +470,20 @@ def run_backtest(
                         signal_strength=strength,
                     )
                 )
-                cash = 0.0
 
         elif position is not None and direction == "bearish" and strength_val >= min_strength_val:
             # SELL: liquidate position
-            sell_value = position["shares"] * today.close
+            effective_price = today.close * (1 - config.slippage_pct)
+            gross_proceeds = position["shares"] * effective_price
+            commission = gross_proceeds * config.commission_pct
+            net_proceeds = gross_proceeds - commission
             return_pct = (
-                ((today.close - position["entry_price"]) / position["entry_price"] * 100)
+                ((net_proceeds - position["shares"] * position["entry_price"])
+                 / (position["shares"] * position["entry_price"]) * 100)
                 if position["entry_price"] > 0
                 else 0.0
             )
-            cash = sell_value
+            cash += net_proceeds
             equity = cash
             trades.append(
                 TradeRecord(
@@ -428,12 +492,13 @@ def run_backtest(
                     trade_date=today.date,
                     price=today.close,
                     shares=position["shares"],
-                    position_value=sell_value,
+                    position_value=position["shares"] * today.close,
                     portfolio_equity=equity,
                     signal_score=round(composite, 5),
                     signal_direction=direction,
                     signal_strength=strength,
                     return_pct=round(return_pct, 4),
+                    exit_reason="signal",
                 )
             )
             position = None
@@ -445,13 +510,17 @@ def run_backtest(
     # Force-close any open position at end
     if position is not None and len(ohlcv) > 0:
         last_price = ohlcv[-1].close
-        sell_value = position["shares"] * last_price
+        effective_price = last_price * (1 - config.slippage_pct)
+        gross_proceeds = position["shares"] * effective_price
+        commission = gross_proceeds * config.commission_pct
+        net_proceeds = gross_proceeds - commission
         return_pct = (
-            ((last_price - position["entry_price"]) / position["entry_price"] * 100)
+            ((net_proceeds - position["shares"] * position["entry_price"])
+             / (position["shares"] * position["entry_price"]) * 100)
             if position["entry_price"] > 0
             else 0.0
         )
-        cash = sell_value
+        cash += net_proceeds
         trades.append(
             TradeRecord(
                 ticker=ticker,
@@ -459,12 +528,13 @@ def run_backtest(
                 trade_date=ohlcv[-1].date,
                 price=last_price,
                 shares=position["shares"],
-                position_value=sell_value,
+                position_value=position["shares"] * last_price,
                 portfolio_equity=cash,
                 signal_score=0.0,
                 signal_direction="close",
                 signal_strength="close",
                 return_pct=round(return_pct, 4),
+                exit_reason="end_of_period",
             )
         )
         # Update last equity point
@@ -710,6 +780,128 @@ def aggregate_backtest_results(
         equity_curve=combined_curve,
         trades=all_trades,
         **metrics,
+    )
+
+
+# ── Benchmark comparison ──
+
+
+@dataclass
+class BenchmarkResult:
+    total_return_pct: float
+    annualized_return_pct: float
+    alpha: float
+    beta: float | None
+    equity_curve: list[EquityPoint]
+
+
+def compute_benchmark(
+    benchmark_ohlcv: list[OHLCVRow],
+    backtest_equity_curve: list[EquityPoint],
+    starting_capital: float,
+) -> BenchmarkResult | None:
+    """Compute benchmark returns, alpha, and beta.
+
+    Args:
+        benchmark_ohlcv: OHLCV for benchmark (e.g. SPY), oldest first.
+        backtest_equity_curve: The strategy's equity curve.
+        starting_capital: Starting capital for normalization.
+
+    Returns:
+        BenchmarkResult or None if insufficient data.
+    """
+    if not benchmark_ohlcv or len(backtest_equity_curve) < 2:
+        return None
+
+    # Build date→close map for benchmark
+    bench_prices: dict[date, float] = {row.date: row.close for row in benchmark_ohlcv}
+
+    # Filter to dates in backtest equity curve
+    curve_dates = [p.date for p in backtest_equity_curve]
+    start_date = curve_dates[0]
+    end_date = curve_dates[-1]
+
+    # Build benchmark equity curve normalized to starting_capital
+    # Find first available benchmark price on or after start_date
+    bench_start_price = None
+    for d in curve_dates:
+        if d in bench_prices and bench_prices[d] > 0:
+            bench_start_price = bench_prices[d]
+            break
+
+    if bench_start_price is None:
+        return None
+
+    bench_curve: list[EquityPoint] = []
+    for d in curve_dates:
+        if d in bench_prices and bench_prices[d] > 0:
+            normalized = (bench_prices[d] / bench_start_price) * starting_capital
+            bench_curve.append(EquityPoint(date=d, equity=round(normalized, 2)))
+
+    if len(bench_curve) < 2:
+        return None
+
+    # Compute benchmark returns
+    bench_final = bench_curve[-1].equity
+    bench_total_return = ((bench_final - starting_capital) / starting_capital) * 100
+    trading_days = len(bench_curve)
+    ratio = bench_final / starting_capital
+    if ratio > 0 and trading_days > 1:
+        bench_annual_return = (ratio ** (252 / trading_days) - 1) * 100
+    else:
+        bench_annual_return = -100.0
+
+    # Compute strategy annualized return for alpha
+    strategy_final = backtest_equity_curve[-1].equity
+    strategy_ratio = strategy_final / starting_capital
+    strategy_days = len(backtest_equity_curve)
+    if strategy_ratio > 0 and strategy_days > 1:
+        strategy_annual = (strategy_ratio ** (252 / strategy_days) - 1) * 100
+    else:
+        strategy_annual = -100.0
+
+    alpha = strategy_annual - bench_annual_return
+
+    # Compute beta: Cov(strategy, benchmark) / Var(benchmark) using daily returns
+    # Build aligned daily returns
+    strategy_by_date = {p.date: p.equity for p in backtest_equity_curve}
+    bench_by_date = {p.date: p.equity for p in bench_curve}
+    common_dates = sorted(set(strategy_by_date.keys()) & set(bench_by_date.keys()))
+
+    beta = None
+    if len(common_dates) >= 3:
+        strat_returns = []
+        bench_returns = []
+        for j in range(1, len(common_dates)):
+            prev = common_dates[j - 1]
+            curr = common_dates[j]
+            sp = strategy_by_date[prev]
+            sc = strategy_by_date[curr]
+            bp = bench_by_date[prev]
+            bc = bench_by_date[curr]
+            if sp > 0 and bp > 0:
+                strat_returns.append((sc - sp) / sp)
+                bench_returns.append((bc - bp) / bp)
+
+        if len(bench_returns) >= 2:
+            mean_s = sum(strat_returns) / len(strat_returns)
+            mean_b = sum(bench_returns) / len(bench_returns)
+            cov = sum(
+                (strat_returns[k] - mean_s) * (bench_returns[k] - mean_b)
+                for k in range(len(strat_returns))
+            ) / len(strat_returns)
+            var_b = sum(
+                (bench_returns[k] - mean_b) ** 2 for k in range(len(bench_returns))
+            ) / len(bench_returns)
+            if var_b > 0:
+                beta = round(cov / var_b, 4)
+
+    return BenchmarkResult(
+        total_return_pct=round(bench_total_return, 4),
+        annualized_return_pct=round(bench_annual_return, 4),
+        alpha=round(alpha, 4),
+        beta=beta,
+        equity_curve=bench_curve,
     )
 
 

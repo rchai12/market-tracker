@@ -15,6 +15,12 @@ class BacktestCreate(BaseModel):
     starting_capital: float = 10000.0
     mode: str = "technical"
     min_signal_strength: str = "moderate"
+    commission_pct: float = 0.001
+    slippage_pct: float = 0.0005
+    position_size_pct: float = 100.0
+    stop_loss_pct: float | None = None
+    take_profit_pct: float | None = None
+    benchmark_ticker: str | None = None
 
     @model_validator(mode="after")
     def validate_target(self):
@@ -60,6 +66,41 @@ class BacktestCreate(BaseModel):
             raise ValueError("min_signal_strength must be 'moderate' or 'strong'")
         return v
 
+    @field_validator("commission_pct")
+    @classmethod
+    def validate_commission(cls, v: float) -> float:
+        if v < 0 or v > 0.05:
+            raise ValueError("Commission must be between 0% and 5%")
+        return v
+
+    @field_validator("slippage_pct")
+    @classmethod
+    def validate_slippage(cls, v: float) -> float:
+        if v < 0 or v > 0.05:
+            raise ValueError("Slippage must be between 0% and 5%")
+        return v
+
+    @field_validator("position_size_pct")
+    @classmethod
+    def validate_position_size(cls, v: float) -> float:
+        if v < 10 or v > 100:
+            raise ValueError("Position size must be between 10% and 100%")
+        return v
+
+    @field_validator("stop_loss_pct")
+    @classmethod
+    def validate_stop_loss(cls, v: float | None) -> float | None:
+        if v is not None and (v <= 0 or v > 50):
+            raise ValueError("Stop loss must be between 0% and 50%")
+        return v
+
+    @field_validator("take_profit_pct")
+    @classmethod
+    def validate_take_profit(cls, v: float | None) -> float | None:
+        if v is not None and (v <= 0 or v > 500):
+            raise ValueError("Take profit must be between 0% and 500%")
+        return v
+
 
 class EquityPointResponse(BaseModel):
     date: str
@@ -79,6 +120,7 @@ class BacktestTradeResponse(BaseModel):
     signal_direction: str
     signal_strength: str
     return_pct: float | None
+    exit_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -93,6 +135,12 @@ class BacktestResponse(BaseModel):
     end_date: datetime
     starting_capital: float
     min_signal_strength: str
+    commission_pct: float | None = None
+    slippage_pct: float | None = None
+    position_size_pct: float | None = None
+    stop_loss_pct: float | None = None
+    take_profit_pct: float | None = None
+    benchmark_ticker: str | None = None
     total_return_pct: float | None
     annualized_return_pct: float | None
     sharpe_ratio: float | None
@@ -104,6 +152,10 @@ class BacktestResponse(BaseModel):
     best_trade_pct: float | None
     worst_trade_pct: float | None
     final_equity: float | None
+    benchmark_total_return_pct: float | None = None
+    benchmark_annualized_return_pct: float | None = None
+    alpha: float | None = None
+    beta: float | None = None
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None
@@ -114,6 +166,7 @@ class BacktestResponse(BaseModel):
 class BacktestDetailResponse(BacktestResponse):
     equity_curve: list[EquityPointResponse]
     trades: list[BacktestTradeResponse]
+    benchmark_equity_curve: list[EquityPointResponse] | None = None
 
 
 class PaginatedBacktests(BaseModel):

@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 13 (polish & UX) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
+**Phase 14 (backtesting v2) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -70,13 +70,19 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtesting engine: replay signal generation over historical OHLCV data (technical mode) or OHLCV + sentiment (full mode)
 - Backtest modes: "technical" (OHLCV-only, full 30+ year range) and "full" (all 6 components, limited to sentiment data availability)
 - Backtest metrics: total/annualized return, Sharpe ratio, max drawdown, win rate, avg win/loss, best/worst trade
-- Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade)
-- Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength), result cards, equity curve chart, metrics grid, trade log table
+- Backtest transaction costs: configurable commission % + slippage % on buy/sell
+- Backtest position sizing: invest configurable % of cash (10-100%) per trade
+- Backtest risk management: stop-loss and take-profit exit rules with configurable thresholds
+- Backtest benchmark comparison: auto-compare vs SPY (or custom ticker) with alpha, beta, benchmark equity curve overlay
+- Backtest comparison view: side-by-side metrics + overlaid normalized equity curves for two backtests
+- Backtest CSV export: download equity curve or trade log as CSV
+- Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
+- Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, backtester, maintenance, password validation, secret key (213 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), maintenance, password validation, secret key (233 tests)
 
 ### What's next
-- Phase 14: TBD
+- Phase 15: TBD
 
 ## Architecture
 
@@ -104,7 +110,7 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   tests/           pytest test suite (213 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
-  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Sentiment (SentimentBadge), Signals (SignalCard, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Admin, Login, Register, Settings)
   src/store/       Zustand state stores (auth, theme, sidebar)
@@ -249,13 +255,14 @@ cd /opt/stock-predictor/backend
 | `backend/worker/utils/technical_indicators.py` | Pure computation: RSI, SMA, EMA, MACD, Bollinger Bands |
 | `backend/worker/utils/backtester.py` | Pure backtesting engine: signal replay, trading simulation, performance metrics |
 | `backend/worker/tasks/signals/backtest_task.py` | Celery task: fetch data, run backtester, store results |
-| `backend/app/api/backtests.py` | Backtest endpoints: create, list, detail, delete |
+| `backend/app/api/backtests.py` | Backtest endpoints: create, list, detail, delete, CSV export |
 | `backend/app/models/backtest.py` | Backtest + BacktestTrade ORM models |
 | `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker + company name extraction |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
 | `backend/scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
 | `backend/alembic/versions/001_initial_schema.py` | Initial migration: all 13 tables |
+| `backend/alembic/versions/002_backtesting_v2.py` | Backtest v2: transaction costs, position sizing, stop-loss/take-profit, benchmark columns |
 | `scripts/backup.sh` | Database backup with configurable retention |
 | `scripts/restore.sh` | Database restore from backup |
 | `.github/workflows/ci.yml` | CI pipeline: lint, test, Docker build |
@@ -307,6 +314,7 @@ cd /opt/stock-predictor/backend
 | GET | `/api/backtests` | Yes | Done |
 | GET | `/api/backtests/{id}` | Yes | Done |
 | DELETE | `/api/backtests/{id}` | Yes | Done |
+| GET | `/api/backtests/{id}/export` | Yes | Done |
 | POST | `/api/admin/seed-history` | Admin | Done |
 | POST | `/api/admin/scrape-now` | Admin | Done |
 | POST | `/api/admin/maintenance` | Admin | Done |

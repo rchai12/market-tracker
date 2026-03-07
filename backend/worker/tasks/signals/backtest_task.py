@@ -21,9 +21,11 @@ from worker.utils.async_task import run_async
 from worker.utils.backtester import (
     BacktestConfig,
     BacktestResult,
+    BenchmarkResult,
     OHLCVRow,
     SentimentRow,
     aggregate_backtest_results,
+    compute_benchmark,
     run_backtest,
 )
 
@@ -83,10 +85,17 @@ async def _run_backtest_async(backtest_id: int, celery_task_id: str | None) -> d
             else:
                 raise ValueError("Backtest must have stock_id or sector_id")
 
+            per_ticker_capital = float(bt.starting_capital) / len(tickers) if len(tickers) > 1 else float(bt.starting_capital)
+
             config = BacktestConfig(
                 mode=bt.mode,
-                starting_capital=float(bt.starting_capital) / len(tickers) if len(tickers) > 1 else float(bt.starting_capital),
+                starting_capital=per_ticker_capital,
                 min_signal_strength=bt.min_signal_strength,
+                commission_pct=float(bt.commission_pct) if bt.commission_pct is not None else 0.0,
+                slippage_pct=float(bt.slippage_pct) if bt.slippage_pct is not None else 0.0,
+                position_size_pct=float(bt.position_size_pct) if bt.position_size_pct is not None else 100.0,
+                stop_loss_pct=float(bt.stop_loss_pct) if bt.stop_loss_pct is not None else None,
+                take_profit_pct=float(bt.take_profit_pct) if bt.take_profit_pct is not None else None,
             )
 
             # Fetch start with warmup buffer
@@ -129,6 +138,26 @@ async def _run_backtest_async(backtest_id: int, celery_task_id: str | None) -> d
                 [{"date": str(p.date), "equity": round(p.equity, 2)} for p in final.equity_curve]
             )
 
+            # Benchmark comparison
+            if final.equity_curve:
+                benchmark_ticker_str = bt.benchmark_ticker or "SPY"
+                bench_result = await session.execute(
+                    select(Stock).where(Stock.ticker == benchmark_ticker_str)
+                )
+                bench_stock = bench_result.scalar_one_or_none()
+                if bench_stock:
+                    bench_ohlcv = await _fetch_ohlcv(session, bench_stock.id, fetch_start, bt.end_date)
+                    benchmark = compute_benchmark(bench_ohlcv, final.equity_curve, float(bt.starting_capital))
+                    if benchmark:
+                        bt.benchmark_ticker = benchmark_ticker_str
+                        bt.benchmark_total_return_pct = benchmark.total_return_pct
+                        bt.benchmark_annualized_return_pct = benchmark.annualized_return_pct
+                        bt.alpha = benchmark.alpha
+                        bt.beta = benchmark.beta
+                        bt.benchmark_equity_curve = json.dumps(
+                            [{"date": str(p.date), "equity": round(p.equity, 2)} for p in benchmark.equity_curve]
+                        )
+
             # Bulk-insert trade records
             for trade in final.trades:
                 session.add(
@@ -145,6 +174,7 @@ async def _run_backtest_async(backtest_id: int, celery_task_id: str | None) -> d
                         signal_direction=trade.signal_direction,
                         signal_strength=trade.signal_strength,
                         return_pct=trade.return_pct,
+                        exit_reason=trade.exit_reason,
                     )
                 )
 

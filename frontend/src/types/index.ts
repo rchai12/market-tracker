@@ -169,6 +169,12 @@ export interface BacktestConfig {
   starting_capital?: number;
   mode?: "technical" | "full";
   min_signal_strength?: "moderate" | "strong";
+  commission_pct?: number;
+  slippage_pct?: number;
+  position_size_pct?: number;
+  stop_loss_pct?: number | null;
+  take_profit_pct?: number | null;
+  benchmark_ticker?: string;
 }
 
 export interface BacktestSummary {
@@ -181,6 +187,12 @@ export interface BacktestSummary {
   end_date: string;
   starting_capital: number;
   min_signal_strength: string;
+  commission_pct: number | null;
+  slippage_pct: number | null;
+  position_size_pct: number | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  benchmark_ticker: string | null;
   total_return_pct: number | null;
   annualized_return_pct: number | null;
   sharpe_ratio: number | null;
@@ -192,6 +204,10 @@ export interface BacktestSummary {
   best_trade_pct: number | null;
   worst_trade_pct: number | null;
   final_equity: number | null;
+  benchmark_total_return_pct: number | null;
+  benchmark_annualized_return_pct: number | null;
+  alpha: number | null;
+  beta: number | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
@@ -215,11 +231,13 @@ export interface BacktestTrade {
   signal_direction: string;
   signal_strength: string;
   return_pct: number | null;
+  exit_reason: string | null;
 }
 
 export interface BacktestDetail extends BacktestSummary {
   equity_curve: EquityPoint[];
   trades: BacktestTrade[];
+  benchmark_equity_curve: EquityPoint[] | null;
 }
 
 export interface PaginatedResponse<T> {

@@ -30,3 +30,21 @@ export async function getBacktest(id: number): Promise<BacktestDetail> {
 export async function deleteBacktest(id: number): Promise<void> {
   await apiClient.delete(`/backtests/${id}`);
 }
+
+export async function exportBacktest(
+  id: number,
+  type: "trades" | "equity_curve"
+): Promise<void> {
+  const response = await apiClient.get(`/backtests/${id}/export`, {
+    params: { type },
+    responseType: "blob",
+  });
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `backtest_${id}_${type}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
