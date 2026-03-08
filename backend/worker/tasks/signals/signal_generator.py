@@ -85,6 +85,9 @@ async def _generate_signals_async() -> dict:
         # Pre-load adaptive weights (sector_id -> weights dict)
         weights_map = await _load_all_weights(session)
 
+        # Pre-load ML models if enabled
+        ml_models_map = await _load_ml_models(session) if settings.ml_ensemble_enabled else {}
+
         logger.info(f"Generating signals for {len(stocks)} active stocks")
 
         for stock in stocks:
@@ -102,6 +105,11 @@ async def _generate_signals_async() -> dict:
                     stock.ticker, score_data, direction, strength
                 )
 
+                # ML ensemble inference (if enabled and model available)
+                ml_result = _compute_ml_score(
+                    score_data, ml_models_map, stock.sector_id, direction
+                ) if ml_models_map else None
+
                 signal = Signal(
                     stock_id=stock.id,
                     direction=direction,
@@ -115,6 +123,9 @@ async def _generate_signals_async() -> dict:
                     trend_score=round(score_data["trend_score"], 5),
                     article_count=score_data["article_count"],
                     reasoning=reasoning,
+                    ml_score=round(ml_result.ml_score, 5) if ml_result else None,
+                    ml_direction=ml_result.ml_direction if ml_result else None,
+                    ml_confidence=round(ml_result.ml_confidence, 4) if ml_result else None,
                     generated_at=now,
                     window_start=window_start,
                     window_end=window_end,
@@ -303,3 +314,44 @@ def _build_reasoning(
         parts.append(f"Technical trend is {trend_desc} ({trend_val:.3f})")
 
     return ". ".join(parts) + "."
+
+
+async def _load_ml_models(session: AsyncSession) -> dict:
+    """Load active ML model metadata into sector_id -> model_path dict."""
+    from app.models.ml_model import MLModel
+
+    result = await session.execute(
+        select(MLModel).where(MLModel.is_active == True)  # noqa: E712
+    )
+    rows = result.scalars().all()
+    return {row.sector_id: row.model_path for row in rows}
+
+
+def _compute_ml_score(
+    score_data: dict,
+    ml_models_map: dict,
+    sector_id: int | None,
+    rule_direction: str,
+):
+    """Look up sector or global model, run inference."""
+    from worker.utils.ml_trainer import predict
+
+    model_path = ml_models_map.get(sector_id) or ml_models_map.get(None)
+    if not model_path:
+        return None
+
+    features = [
+        score_data["sentiment_momentum"],
+        score_data["sentiment_volume"],
+        score_data["price_momentum"],
+        score_data["volume_anomaly"],
+        score_data["rsi_score"],
+        score_data["trend_score"],
+    ]
+
+    return predict(
+        model_path,
+        features,
+        rule_direction,
+        confidence_threshold=settings.ml_confidence_threshold,
+    )

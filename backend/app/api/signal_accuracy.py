@@ -181,6 +181,56 @@ async def get_accuracy_distribution(
     )
 
 
+@router.get("/accuracy/ml", response_model=list[SignalAccuracyResponse])
+async def get_ml_accuracy(
+    window_days: int = Query(5, description="Evaluation window: 1, 3, or 5"),
+    sector: str | None = Query(None),
+    days: int = Query(90, ge=7, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get ML signal accuracy metrics for A/B comparison with rule-based."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    query = (
+        select(
+            Signal.ml_direction.label("direction"),
+            SignalOutcome.is_correct,
+            SignalOutcome.price_change_pct,
+        )
+        .join(Signal, SignalOutcome.signal_id == Signal.id)
+        .join(Stock, Signal.stock_id == Stock.id)
+        .where(SignalOutcome.window_days == window_days)
+        .where(SignalOutcome.evaluated_at >= cutoff)
+        .where(Signal.ml_direction.in_(["bullish", "bearish"]))
+    )
+
+    scope = "ml:global"
+    if sector:
+        query = query.join(Sector, Stock.sector_id == Sector.id).where(func.lower(Sector.name) == sector.lower())
+        scope = f"ml:sector:{sector}"
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    if not rows:
+        return []
+
+    # Recompute correctness based on ML direction vs actual price change
+    ml_rows = []
+    for row in rows:
+        price_change = float(row.price_change_pct)
+        ml_dir = row.direction
+        ml_correct = (ml_dir == "bullish" and price_change > 0) or (ml_dir == "bearish" and price_change < 0)
+        ml_rows.append(type("Row", (), {
+            "direction": ml_dir,
+            "is_correct": ml_correct,
+            "price_change_pct": row.price_change_pct,
+        })())
+
+    return [_compute_accuracy(ml_rows, scope, window_days)]
+
+
 @router.get("/accuracy/{ticker}", response_model=list[SignalAccuracyResponse])
 async def get_ticker_accuracy(
     ticker: str,

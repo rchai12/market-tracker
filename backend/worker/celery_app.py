@@ -53,6 +53,7 @@ celery_app.conf.include = [
     "worker.tasks.signals.outcome_evaluator",
     "worker.tasks.signals.weight_optimizer",
     "worker.tasks.signals.backtest_task",
+    "worker.tasks.signals.ml_trainer_task",
     "worker.tasks.maintenance.tasks",
 ]
 

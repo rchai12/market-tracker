@@ -59,6 +59,21 @@ export default function SignalCard({ signal, onDetailClick }: SignalCardProps) {
             {signal.reasoning}
           </p>
         )}
+
+        {signal.ml_score != null && (
+          <div className="flex items-center gap-2 text-xs mt-1 py-1.5 px-2 bg-purple-50 dark:bg-purple-900/20 rounded">
+            <span className="text-purple-600 dark:text-purple-400 font-medium">ML</span>
+            <span className={`font-mono ${signal.ml_direction === "bullish" ? "text-emerald-600 dark:text-emerald-400" : signal.ml_direction === "bearish" ? "text-red-600 dark:text-red-400" : "text-gray-500"}`}>
+              {signal.ml_score > 0 ? "+" : ""}{signal.ml_score.toFixed(3)}
+            </span>
+            {signal.ml_confidence != null && (
+              <span className="text-gray-400">({(signal.ml_confidence * 100).toFixed(0)}%)</span>
+            )}
+            {signal.ml_direction && signal.ml_direction !== signal.direction && (
+              <span className="text-amber-500 dark:text-amber-400 text-[10px] font-medium">DISAGREES</span>
+            )}
+          </div>
+        )}
       </Link>
 
       <div className="flex items-center justify-between mt-1">

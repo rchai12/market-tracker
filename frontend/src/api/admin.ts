@@ -48,3 +48,24 @@ export async function getDbStats(): Promise<DbStatsResponse> {
   const { data } = await apiClient.get<DbStatsResponse>("/admin/db-stats");
   return data;
 }
+
+export interface MLModelStatus {
+  sector_name: string | null;
+  model_version: number;
+  training_samples: number;
+  validation_accuracy: number | null;
+  validation_f1: number | null;
+  is_active: boolean;
+  trained_at: string | null;
+  feature_importances: Record<string, number> | null;
+}
+
+export async function triggerMLTraining(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/train-ml-models");
+  return data;
+}
+
+export async function getMLModelStatus(): Promise<MLModelStatus[]> {
+  const { data } = await apiClient.get<MLModelStatus[]>("/admin/ml-models");
+  return data;
+}

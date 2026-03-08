@@ -273,6 +273,7 @@ Query params: `?days=3&limit=10` (defaults)
 | GET | `/signals/accuracy` | Yes | **Done** | Global or sector signal accuracy metrics |
 | GET | `/signals/accuracy/trend` | Yes | **Done** | Accuracy over time in weekly/monthly buckets |
 | GET | `/signals/accuracy/distribution` | Yes | **Done** | Accuracy breakdown by strength and direction |
+| GET | `/signals/accuracy/ml` | Yes | **Done** | ML signal accuracy metrics (A/B comparison with rule-based) |
 | GET | `/signals/accuracy/{ticker}` | Yes | **Done** | Per-ticker accuracy across 1/3/5 day windows |
 | GET | `/signals/detail/{signal_id}` | Yes | **Done** | Full signal detail with outcomes and linked articles |
 | GET | `/signals/weights` | Yes | **Done** | Active signal weights (per-sector and global fallback) |
@@ -292,6 +293,7 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
     "price_score": 0.15, "volume_score": 0.10,
     "rsi_score": 0.22, "trend_score": 0.18,
     "article_count": 8, "reasoning": "XOM: moderate bullish signal (score: 0.420)...",
+    "ml_score": 0.312, "ml_direction": "bullish", "ml_confidence": 0.68,
     "generated_at": "2025-06-15T10:30:00Z",
     "window_start": "2025-06-15T09:30:00Z", "window_end": "2025-06-15T10:30:00Z"
   }
@@ -576,6 +578,8 @@ Returns CSV file as attachment download.
 | POST | `/admin/compute-weights` | Admin | **Done** | Trigger adaptive weight computation (Celery task) |
 | POST | `/admin/backfill-event-categories` | Admin | **Done** | Classify articles without event_category |
 | POST | `/admin/backfill-duplicate-groups` | Admin | **Done** | Detect duplicate articles (last N days) |
+| POST | `/admin/train-ml-models` | Admin | **Done** | Trigger ML model training (Celery task) |
+| GET | `/admin/ml-models` | Admin | **Done** | ML model status per sector (version, accuracy, F1, importances) |
 | GET | `/admin/db-stats` | Admin | **Done** | Database stats (row counts, table sizes) |
 
 ### POST /admin/seed-history

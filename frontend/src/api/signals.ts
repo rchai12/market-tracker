@@ -92,3 +92,12 @@ export async function getSignalWeights(): Promise<SignalWeights[]> {
   const { data } = await apiClient.get("/signals/weights");
   return data;
 }
+
+export async function getMLAccuracy(params?: {
+  window_days?: number;
+  sector?: string;
+  days?: number;
+}): Promise<SignalAccuracy[]> {
+  const { data } = await apiClient.get("/signals/accuracy/ml", { params });
+  return data;
+}

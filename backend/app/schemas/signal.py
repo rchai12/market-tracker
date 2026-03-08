@@ -23,6 +23,9 @@ class SignalResponse(BaseModel):
     trend_score: float | None
     article_count: int
     reasoning: str | None
+    ml_score: float | None = None
+    ml_direction: str | None = None
+    ml_confidence: float | None = None
     generated_at: datetime
     window_start: datetime
     window_end: datetime

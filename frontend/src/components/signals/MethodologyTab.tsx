@@ -1,4 +1,5 @@
 import WeightsTable from "./WeightsTable";
+import MLModelStatusTable from "./MLModelStatusTable";
 import Card from "../common/Card";
 
 export default function MethodologyTab() {
@@ -52,6 +53,19 @@ export default function MethodologyTab() {
           Weights that deviate from defaults are highlighted.
         </p>
         <WeightsTable />
+      </Card>
+
+      {/* ML Ensemble */}
+      <Card padding="md">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          ML Signal Ensemble
+        </h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          A LightGBM classifier runs alongside the rule-based scoring. It learns from
+          historical signal outcomes which component score patterns lead to correct
+          predictions. Both scores are computed for every signal, enabling A/B comparison.
+        </p>
+        <MLModelStatusTable />
       </Card>
     </div>
   );

@@ -42,4 +42,9 @@ beat_schedule = {
         "task": "worker.tasks.signals.weight_optimizer.compute_adaptive_weights",
         "schedule": crontab(hour=4, minute=0),
     },
+    # ML model training - daily at 4:30 AM (after weight optimizer at 4 AM)
+    "train-ml-models": {
+        "task": "worker.tasks.signals.ml_trainer_task.train_ml_models",
+        "schedule": crontab(hour=4, minute=30),
+    },
 }

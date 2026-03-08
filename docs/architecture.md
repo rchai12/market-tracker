@@ -37,12 +37,13 @@
 │  │                        │  │  - :45 eval outcomes   │   │
 │  │                        │  │  - 3AM maintenance     │   │
 │  │                        │  │  - 4AM adapt weights   │   │
+│  │                        │  │  - 4:30AM ML training  │   │
 │  └──────────────────────┘  └────────────────────────┘   │
 │                                                          │
-│  ┌──────────────────────┐                               │
-│  │   FinBERT Model      │                               │
-│  │   (~1.5GB in memory) │                               │
-│  └──────────────────────┘                               │
+│  ┌──────────────────────┐  ┌────────────────────────┐   │
+│  │   FinBERT Model      │  │  LightGBM Models       │   │
+│  │   (~1.5GB in memory) │  │  (~50KB per sector)    │   │
+│  └──────────────────────┘  └────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -99,8 +100,8 @@
               └───────────┬────────────┘
                           │
                    ┌──────▼──────┐
-                   │   Signal    │
-                   │  Generator  │
+                   │   Signal    │  (+ ML inference via LightGBM
+                   │  Generator  │   if ML_ENSEMBLE_ENABLED)
                    └──────┬──────┘
                           │
               ┌───────────┼───────────┐
@@ -150,6 +151,7 @@ signals ──< alert_logs
 signals ──< signal_outcomes
 stocks >── sectors
 sectors ──< signal_weights
+sectors ──< ml_models
 backtests ──< backtest_trades
 backtests >── stocks (nullable)
 backtests >── sectors (nullable)
@@ -167,7 +169,7 @@ backtests >── sectors (nullable)
 | articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, duplicate_group_id |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
-| signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning |
+| signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning, ml_score, ml_direction, ml_confidence |
 | signal_outcomes | Signal accuracy evaluation | signal_id, window_days, is_correct, price_change_pct |
 | signal_weights | Adaptive component weights (per-sector) | sector_id, sentiment_momentum, rsi, trend, accuracy_pct |
 | alert_configs | User alert preferences | user_id, stock_id, min_strength, channel |
@@ -176,6 +178,7 @@ backtests >── sectors (nullable)
 | scrape_logs | Scraper execution logs | source, articles_found, articles_new, errors |
 | backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON), commission/slippage/position_size/stop_loss/take_profit, benchmark_ticker, benchmark metrics (alpha/beta), benchmark_equity_curve (JSON) |
 | backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct, exit_reason |
+| ml_models | ML model registry (one active per sector) | sector_id, model_version, training_samples, validation_accuracy, validation_f1, model_path, feature_importances |
 
 ## Signal Scoring Algorithm
 
@@ -300,6 +303,25 @@ After signals are generated, `evaluate_signal_outcomes` checks signals that have
 2. Components that predicted direction more accurately get higher weights
 3. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0
 4. Results stored in `signal_weights` table (upserted per sector + global fallback)
+
+## ML Signal Ensemble
+
+LightGBM binary classifiers trained per-sector (+ global fallback) to predict signal correctness. Disabled by default (`ML_ENSEMBLE_ENABLED=true` to activate).
+
+**Training (4:30 AM daily):**
+1. Query `SignalOutcome` + `Signal` for 6 component scores + `is_correct` label
+2. Per-sector: chronological train/val split (80/20), minimum 100 samples
+3. Train LightGBM with conservative params (`num_leaves=15`, `num_threads=1`) for ARM compatibility
+4. Store model file to disk, upsert `ml_models` row with validation metrics + feature importances
+5. Train global fallback model from all sectors combined
+
+**Inference (inline in signal generation):**
+1. Load active model for stock's sector (or global fallback) from module-level cache
+2. Predict P(correct) from 6 component scores (< 0.1ms)
+3. High confidence correct → agree with rule-based direction; high confidence wrong → disagree; near 0.5 → neutral
+4. Store `ml_score` (signed [-1,1]), `ml_direction`, `ml_confidence` on the Signal
+
+**Resource footprint:** ~50MB peak during training, ~20-50KB model files, < 0.1ms inference. Negligible on 2 ARM core / 12GB VM.
 
 ## Backtesting Engine
 

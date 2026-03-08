@@ -1,11 +1,15 @@
 """Admin-only endpoints for system management."""
 
+import json
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.dependencies import get_current_admin, get_db
 from app.models.user import User
+from app.schemas.ml_model import MLModelStatusResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -87,6 +91,47 @@ async def trigger_backfill_duplicate_groups(
 
     task = backfill_duplicate_groups.delay(days)
     return {"task_id": task.id, "days": days, "status": "queued"}
+
+
+@router.post("/train-ml-models")
+async def trigger_ml_training(
+    _admin: User = Depends(get_current_admin),
+):
+    """Trigger ML model training as a background Celery task."""
+    from worker.tasks.signals.ml_trainer_task import train_ml_models
+
+    task = train_ml_models.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.get("/ml-models", response_model=list[MLModelStatusResponse])
+async def get_ml_model_status(
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get status of all trained ML models."""
+    from app.models.ml_model import MLModel
+
+    result = await db.execute(
+        select(MLModel)
+        .options(joinedload(MLModel.sector))
+        .order_by(MLModel.sector_id.asc().nullsfirst())
+    )
+    models = result.unique().scalars().all()
+
+    return [
+        MLModelStatusResponse(
+            sector_name=m.sector.name if m.sector else None,
+            model_version=m.model_version,
+            training_samples=m.training_samples,
+            validation_accuracy=float(m.validation_accuracy) if m.validation_accuracy else None,
+            validation_f1=float(m.validation_f1) if m.validation_f1 else None,
+            is_active=m.is_active,
+            trained_at=m.trained_at,
+            feature_importances=json.loads(m.feature_importances) if m.feature_importances else None,
+        )
+        for m in models
+    ]
 
 
 @router.get("/db-stats")

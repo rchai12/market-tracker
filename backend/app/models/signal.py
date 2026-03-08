@@ -23,6 +23,9 @@ class Signal(Base):
     article_count: Mapped[int] = mapped_column(Integer, default=0)
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ml_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
+    ml_direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ml_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

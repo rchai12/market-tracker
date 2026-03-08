@@ -14,6 +14,9 @@ export interface Signal {
   trend_score: number | null;
   article_count: number;
   reasoning: string | null;
+  ml_score: number | null;
+  ml_direction: "bullish" | "bearish" | "neutral" | null;
+  ml_confidence: number | null;
   generated_at: string;
   window_start: string;
   window_end: string;

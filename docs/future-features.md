@@ -16,6 +16,7 @@ Context document for planned features and improvements. Each section captures th
 | 14 | Realistic backtesting | Transaction costs, position sizing, stop-loss/take-profit, benchmark comparison, CSV export |
 | 15 | Signal intelligence | Component breakdown, accuracy analytics (trend/distribution), signal detail panel, methodology tab |
 | 16 | Enhanced news intelligence | Event classification (10 categories), fuzzy duplicate detection, source credibility weighting |
+| 17 | ML signal ensemble | LightGBM binary classifier per-sector, A/B comparison with rule-based, admin training trigger, ML accuracy dashboard |
 
 ---
 
@@ -55,7 +56,9 @@ Context document for planned features and improvements. Each section captures th
 
 Implemented: rule-based event classification (10 categories, ~100 keywords), fuzzy duplicate detection via rapidfuzz token_set_ratio, source credibility weighting in signal scoring. Named entity extraction deferred.
 
-### Real-time Data Streaming
+### ~~Real-time Data Streaming~~ (Unfeasible)
+
+> **Not viable on current Oracle Cloud free-tier infrastructure.** Persistent WebSocket connections for 86 tickers would create constant network load (vs current bursty hourly batch), competing with the Compute VM's 2 ARM cores already running Celery + FinBERT. Free-tier bandwidth throttling and egress limits make real-time streaming impractical. A middle ground (reducing batch interval to 15-30 min) would work within existing constraints without architectural changes.
 
 **Motivation:** Move from hourly batch processing to real-time for faster signal generation.
 
@@ -83,7 +86,9 @@ Implemented: rule-based event classification (10 categories, ~100 keywords), fuz
 - How to weight timeframe confluence in composite score
 - Whether this replaces or augments the current single-timeframe approach
 
-### Social Sentiment Integration
+### ~~Social Sentiment Integration~~ (Deferred)
+
+> **Deprioritized due to signal noise.** Social platforms (StockTwits, Twitter/X) are heavily polluted by bots, spam, and pump-and-dump campaigns. Twitter/X API is $100/month minimum for read access. StockTwits is free but noisy — user-tagged sentiment is unreliable compared to FinBERT on curated news. Adding low-quality social data risks degrading signal accuracy rather than improving it. Reddit (already scraped, filtered by score >= 10) provides the best signal-to-noise ratio for retail sentiment.
 
 **Motivation:** Reddit scraping is limited. Twitter/X, StockTwits, and other social platforms carry significant retail sentiment.
 
@@ -123,21 +128,9 @@ Implemented: rule-based event classification (10 categories, ~100 keywords), fuz
 - Whether to integrate into composite score or display separately
 - Historical options data availability
 
-### Machine Learning Signal Ensemble
+### ~~Machine Learning Signal Ensemble~~ (Done — Phase 17)
 
-**Motivation:** Replace hand-tuned composite scoring with learned models.
-
-**Approach:**
-- Train gradient boosted model (XGBoost/LightGBM) on historical features → price direction
-- Features: all current signal components + technical indicators + sentiment features
-- Per-sector or per-stock models depending on data availability
-- A/B test ML model vs current rule-based scoring
-
-**Key decisions:**
-- Training data requirements (need sufficient outcome-evaluated signals)
-- Model retraining frequency (daily, weekly, on-demand)
-- How to handle model drift and feature importance monitoring
-- Whether to replace or supplement the current adaptive weight system
+Implemented: LightGBM binary classifier trained per-sector (+ global fallback) on 6 component scores from SignalOutcome data. Runs alongside rule-based scoring for A/B comparison — does NOT replace composite scores. Admin-triggered training with automatic daily retraining at 4:30 AM. ML score, direction, and confidence stored on every signal. Frontend shows ML badge on signal cards, A/B accuracy comparison, and ML model status table with feature importances.
 
 ---
 

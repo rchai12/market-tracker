@@ -36,6 +36,8 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     # NLP
     "rapidfuzz>=3.0.0",
+    # ML ensemble
+    "lightgbm>=4.0.0",
     # Utilities
     "python-dateutil>=2.9.0",
     "email-validator>=2.2.0",

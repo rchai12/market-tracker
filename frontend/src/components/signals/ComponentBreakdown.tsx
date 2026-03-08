@@ -53,6 +53,43 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
           </div>
         );
       })}
+
+      {signal.ml_score != null && (() => {
+        const value = signal.ml_score;
+        const pct = Math.abs(value) * 100;
+        const isPositive = value >= 0;
+        return (
+          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1.5">
+              ML Ensemble
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="w-20 text-gray-600 dark:text-gray-400 shrink-0">ML Score</span>
+              <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded-full relative overflow-hidden">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-1/2" />
+                  <div className="w-px h-full bg-gray-300 dark:bg-gray-600" />
+                  <div className="w-1/2" />
+                </div>
+                {isPositive ? (
+                  <div
+                    className="absolute top-0 h-full bg-purple-500 dark:bg-purple-400 rounded-r-full"
+                    style={{ left: "50%", width: `${Math.min(pct, 100) / 2}%` }}
+                  />
+                ) : (
+                  <div
+                    className="absolute top-0 h-full bg-purple-500 dark:bg-purple-400 rounded-l-full"
+                    style={{ right: "50%", width: `${Math.min(pct, 100) / 2}%` }}
+                  />
+                )}
+              </div>
+              <span className={`w-12 text-right font-mono ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                {value > 0 ? "+" : ""}{value.toFixed(3)}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

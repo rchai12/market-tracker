@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # Duplicate detection
     duplicate_similarity_threshold: float = 85.0
 
+    # ML ensemble
+    ml_ensemble_enabled: bool = False
+    ml_min_training_samples: int = 100
+    ml_validation_split: float = 0.2
+    ml_model_dir: str = "/opt/stock-predictor/backend/ml_models"
+    ml_retrain_interval_days: int = 7
+    ml_confidence_threshold: float = 0.55
+
     # Signal feedback loop
     feedback_enabled: bool = True
     feedback_evaluation_windows: str = "1,3,5"
