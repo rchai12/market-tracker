@@ -18,6 +18,7 @@ Context document for planned features and improvements. Each section captures th
 | 16 | Enhanced news intelligence | Event classification (10 categories), fuzzy duplicate detection, source credibility weighting |
 | 17 | ML signal ensemble | LightGBM binary classifier per-sector, A/B comparison with rule-based, admin training trigger, ML accuracy dashboard |
 | 18 | Options flow | yfinance options chain data, CBOE P/C ratio, 7th signal component (options score), P/C ratio & IV skew display |
+| 19 | Infrastructure | Redis caching (5 endpoints), dead letter queue, API key auth, admin audit logging, health alerts (Discord), slow query detection |
 
 ---
 
@@ -128,25 +129,26 @@ Implemented: LightGBM binary classifier trained per-sector (+ global fallback) o
 ## Infrastructure Improvements
 
 ### Performance
-- Frontend code splitting (bundle > 500KB currently)
-- Redis caching for expensive queries (sector summaries, trending stocks)
+- ~~Frontend code splitting (bundle > 500KB currently)~~ (Done — Phase 13)
+- ~~Redis caching for expensive queries (sector summaries, trending stocks)~~ (Done — Phase 19)
 - Database connection pooling tuning under load
 - CDN for static frontend assets
 
 ### Reliability
-- Database replication (read replica for heavy queries)
-- Worker autoscaling based on queue depth
-- Dead letter queue for failed tasks
-- Health check alerts (PagerDuty/Slack when services go down)
+- Database replication (read replica for heavy queries) — not feasible on free-tier
+- Worker autoscaling based on queue depth — only 2 ARM cores, no headroom
+- ~~Dead letter queue for failed tasks~~ (Done — Phase 19)
+- ~~Health check alerts (PagerDuty/Slack when services go down)~~ (Done — Phase 19, Discord webhook)
 
 ### Observability
-- Prometheus metrics export (request latency, task duration, queue depth)
-- Grafana dashboards for system monitoring
-- Distributed tracing (OpenTelemetry) across API → Celery → DB
-- Error tracking (Sentry integration)
+- Prometheus metrics export (request latency, task duration, queue depth) — too heavy for free-tier
+- Grafana dashboards for system monitoring — too heavy for free-tier
+- Distributed tracing (OpenTelemetry) across API → Celery → DB — overkill for 2-VM setup
+- Error tracking (Sentry integration) — structured logs + dead letter queue covers the gap
+- ~~Slow query detection~~ (Done — Phase 19, SQLAlchemy event listeners)
 
 ### Security
-- API key support (for programmatic access alongside JWT)
-- OAuth2 social login (Google, GitHub)
-- Two-factor authentication
-- Audit logging for admin actions
+- ~~API key support (for programmatic access alongside JWT)~~ (Done — Phase 19)
+- OAuth2 social login (Google, GitHub) — complex UX, low ROI
+- Two-factor authentication — complex UX, low ROI
+- ~~Audit logging for admin actions~~ (Done — Phase 19)

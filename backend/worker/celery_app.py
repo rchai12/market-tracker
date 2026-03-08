@@ -1,5 +1,7 @@
+import traceback as tb_module
+
 from celery import Celery
-from celery.signals import worker_process_init
+from celery.signals import task_failure, worker_process_init
 
 from app.config import settings
 
@@ -37,6 +39,25 @@ def init_worker_logging(**_kwargs):
 
     setup_logging(settings.log_level)
 
+@task_failure.connect
+def on_task_failure(sender=None, task_id=None, exception=None, args=None, kwargs=None, traceback=None, **kw):
+    """Record task failures to the dead letter queue when retries are exhausted."""
+    if sender and hasattr(sender, "request"):
+        max_retries = getattr(sender, "max_retries", 0) or 0
+        current_retries = sender.request.retries or 0
+        if current_retries >= max_retries:
+            from worker.utils.celery_helpers import record_task_failure
+
+            tb_str = "".join(tb_module.format_exception(type(exception), exception, traceback)) if traceback else None
+            record_task_failure(
+                task_name=sender.name,
+                args=args,
+                kwargs=kwargs,
+                exception=exception,
+                traceback_str=tb_str,
+            )
+
+
 celery_app.conf.include = [
     "worker.tasks.scraping.orchestrate",
     "worker.tasks.scraping.market_data",
@@ -56,6 +77,7 @@ celery_app.conf.include = [
     "worker.tasks.signals.backtest_task",
     "worker.tasks.signals.ml_trainer_task",
     "worker.tasks.maintenance.tasks",
+    "worker.tasks.maintenance.health_check",
 ]
 
 # Import beat schedule

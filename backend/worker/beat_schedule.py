@@ -1,6 +1,11 @@
 from celery.schedules import crontab
 
 beat_schedule = {
+    # Health check - every 5 minutes
+    "health-check": {
+        "task": "worker.tasks.maintenance.health_check",
+        "schedule": crontab(minute="*/5"),
+    },
     # Hourly scraping - runs at :00 every hour
     "scrape-all-sources": {
         "task": "worker.tasks.scraping.orchestrate_scraping",

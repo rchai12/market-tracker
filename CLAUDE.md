@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 18 (options flow) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
+**Phase 19 (infrastructure) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Phase 19 added infrastructure improvements: Redis caching layer (5 endpoints cached with TTL + Celery invalidation), dead letter queue (Celery task_failure signal → task_failures table + admin retry), API key authentication (SHA-256 hashed keys, dual JWT/API-key auth), admin audit logging (all admin POST actions recorded), health alert notifications (DB/Redis/queue checks every 5min → Discord webhook), slow query detection (SQLAlchemy event listeners). Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -30,7 +30,13 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed, signal detail with outcomes + linked articles, accuracy trend + distribution endpoints
 - Alert dispatch: Discord webhooks + SMTP email, per-user AlertConfig matching, AlertLog history
 - Alert API: config CRUD, alert history, test alert endpoint
-- Admin API: trigger scrape, historical seed, maintenance, DB stats
+- Redis caching layer: `@cached()` decorator factory on 5 endpoints (sector summary, trending, indicators, signal weights, DB stats), deterministic cache keys, SCAN-based invalidation, automatic cache-busting in Celery tasks after data updates
+- Dead letter queue: Celery `task_failure` signal captures all exhausted-retry failures → `task_failures` table, admin retry endpoint re-queues via `send_task()`
+- API key authentication: `sp_` + 32 hex chars (SHA-256 hashed), dual auth in `get_current_user` (API key OR JWT), max 5 keys per user, soft-revoke, optional expiry
+- Admin audit logging: `record_audit()` helper on all admin POST actions, `audit_logs` table with user/action/resource/IP
+- Health alert notifications: Celery task every 5 min checks DB/Redis/queue depth, Discord webhook with 15-min throttle
+- Slow query detection: SQLAlchemy `before_cursor_execute`/`after_cursor_execute` event listeners, configurable threshold (default 500ms)
+- Admin API: trigger scrape, historical seed, maintenance, DB stats, task failures (list + retry), audit log
 - React frontend with AppLayout (sidebar + header), login/register, dark mode (default dark, persists on refresh)
 - Mobile responsive sidebar: collapsible drawer on small screens with hamburger toggle
 - Dynamic sidebar with sector links fetched from API, clickable to filtered signals view
@@ -40,11 +46,11 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Signal UI: expandable SignalCard with component breakdown bars, SignalsPage with 3 tabs (Signals/Accuracy/Methodology), signal detail panel with outcomes + linked articles, AlertsPage (config CRUD + history)
 - StockDetailPage with price/volume charts, indicator toggles (SMA, Bollinger, RSI, MACD), sentiment chart, signal history, signal accuracy, watchlist toggle
 - Dashboard: signals feed (10 latest moderate+), clickable sector sentiment heatmap, top movers (bullish/bearish), article activity chart
-- Settings page: profile editing (username/email), password change, dark mode toggle, notification info
-- Admin page: task triggers (scrape, seed, maintenance, outcomes, weights, options fetch, ML training), database stats table, ML model status
+- Settings page: profile editing (username/email), password change, dark mode toggle, notification info, API key management (create/list/revoke)
+- Admin page: task triggers (scrape, seed, maintenance, outcomes, weights, options fetch, ML training), database stats table, ML model status, task failures list with retry, audit log
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
-- SQLAlchemy models for all 18 tables
+- SQLAlchemy models for all 21 tables
 - Docker Compose with resource limits, health checks, non-root users, tini init
 - Nginx reverse proxy with SSL/TLS (Let's Encrypt), HSTS, CSP, security headers
 - Nginx auth rate limiting: 5 req/min per IP on `/api/auth/` (brute-force protection)
@@ -60,7 +66,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Celery task reliability: `task_acks_late`, `task_reject_on_worker_lost`
 - Celery graceful shutdown with systemd TimeoutStopSec
 - asyncpg connection safety: engine.dispose() in run_async() to prevent cross-loop issues
-- Alembic initial migration (13 tables)
+- Alembic migrations (13 initial + 6 feature migrations)
 - Database backup/restore scripts with retention
 - Flower (Celery monitoring) on :5555 (SSH tunnel access)
 - GitHub Actions CI: lint, test, Docker build
@@ -84,10 +90,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), password validation, secret key (371 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), cache (key builder, decorator, invalidation), dead letter (failure recording, signal handler), API keys (generation, hashing), audit logging, slow query detection, password validation, secret key (415 tests)
 
 ### What's next
-- Phase 19: TBD
+- Phase 20: TBD
 
 ## Architecture
 
@@ -101,18 +107,18 @@ Two Oracle Cloud free-tier ARM VMs:
 ```
 backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
-    api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, backtests, admin (+ health)
-    core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions
-    models/        SQLAlchemy ORM models (18 tables)
-    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, backtest, ml_model, options, common)
+    api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, backtests, admin, api_keys (+ health)
+    core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions, cache, audit, slow query
+    models/        SQLAlchemy ORM models (21 tables)
+    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, backtest, ml_model, options, admin, api_key, common)
 
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
-    beat_schedule  Cron schedule (:00 scrape, :05 market data, :10 options, :12 CBOE, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights, 4:30AM ML training)
-    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest), maintenance/ (retention + matview refresh)
+    beat_schedule  Cron schedule (*/5 health, :00 scrape, :05 market data, :10 options, :12 CBOE, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights, 4:30AM ML training)
+    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest), maintenance/ (retention + matview refresh + health_check)
     utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/
   alembic/         Database migrations
-  tests/           pytest test suite (371 tests)
+  tests/           pytest test suite (415 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
   src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Articles (EventCategoryBadge, SourceCredibilityIndicator), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, MLModelStatusTable, AccuracyBadge, SignalsTab, AccuracyTab, MethodologyTab), StockDetail (StockPriceSection, StockSentimentSignals, StockOptionsSection, StockAccuracySection, StockArticlesSection), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card, QueryGuard)
@@ -229,10 +235,13 @@ cd /opt/stock-predictor/backend
 | File | Purpose |
 |------|---------|
 | `backend/app/config.py` | Central config — all env vars loaded here via pydantic-settings |
-| `backend/app/database.py` | SQLAlchemy async engine, session factory, Base |
+| `backend/app/database.py` | SQLAlchemy async engine, session factory, Base, lazy sync session for Celery signals |
 | `backend/app/main.py` | FastAPI app factory, CORS, lifespan |
-| `backend/app/dependencies.py` | `get_db`, `get_current_user`, `get_current_admin`, `get_stock_by_ticker` |
-| `backend/app/core/security.py` | JWT create/verify, bcrypt password hashing |
+| `backend/app/dependencies.py` | `get_db`, `get_current_user` (dual JWT + API key auth), `get_current_admin`, `get_stock_by_ticker` |
+| `backend/app/core/security.py` | JWT create/verify, bcrypt password hashing, API key generation/hashing |
+| `backend/app/core/cache.py` | Redis caching: init/close pool, get/set cached, invalidate pattern, `@cached()` decorator |
+| `backend/app/core/audit.py` | Audit log helper: `record_audit()` for admin actions |
+| `backend/app/core/slow_query.py` | SQLAlchemy slow query event listeners |
 | `backend/app/core/logging_config.py` | JSONFormatter, setup_logging(), request_id_var ContextVar |
 | `backend/app/core/middleware.py` | RequestLoggingMiddleware — request timing + correlation IDs |
 | `backend/app/api/health.py` | Health endpoint with DB + Redis checks, `?detail=true` |
@@ -245,10 +254,12 @@ cd /opt/stock-predictor/backend
 | `backend/app/api/sentiment.py` | Sentiment endpoints: timeline, articles, sectors, trending |
 | `backend/app/api/signals.py` | Signal endpoints: list (filtered), per-ticker history, latest feed, accuracy (summary/trend/distribution), detail (outcomes + linked articles), weights |
 | `backend/app/api/alerts.py` | Alert endpoints: config CRUD, history, test alert |
-| `backend/app/api/admin.py` | Admin: trigger scrape, seed historical, maintenance trigger, DB stats, ML training + model status |
-| `backend/worker/celery_app.py` | Celery instance, task routing, explicit task include |
+| `backend/app/api/admin.py` | Admin: trigger scrape, seed historical, maintenance trigger, DB stats, ML training + model status, task failures (list + retry), audit log |
+| `backend/app/api/api_keys.py` | API key CRUD: create (max 5/user), list, revoke |
+| `backend/worker/celery_app.py` | Celery instance, task routing, explicit task include, task_failure signal handler |
 | `backend/worker/tasks/maintenance/retention.py` | Reusable batched delete/nullify utilities for data retention |
-| `backend/worker/tasks/maintenance/tasks.py` | Maintenance tasks: article compression, log cleanup, matview refresh |
+| `backend/worker/tasks/maintenance/tasks.py` | Maintenance tasks: article compression, log cleanup, matview refresh, task failure + audit log retention |
+| `backend/worker/tasks/maintenance/health_check.py` | Health check task: DB/Redis/queue depth checks, Discord webhook alerts with throttling |
 | `backend/worker/beat_schedule.py` | Cron schedule for all tasks (scrape, market, sentiment, signals, maintenance) |
 | `backend/worker/tasks/scraping/orchestrate.py` | Fan-out all 7 scrapers via Celery group → chain sentiment |
 | `backend/worker/tasks/sentiment/finbert_analyzer.py` | Singleton FinBERT model: batch inference, chunking, lazy-loaded |
@@ -264,7 +275,7 @@ cd /opt/stock-predictor/backend
 | `backend/app/schemas/ml_model.py` | ML model status Pydantic schema |
 | `backend/worker/utils/technical_indicators.py` | Pure computation: RSI, SMA, EMA, MACD, Bollinger Bands |
 | `backend/worker/utils/backtester/` | Backtesting engine package: trade execution, metrics, signals, benchmark modules |
-| `backend/worker/utils/celery_helpers.py` | `@async_task` decorator factory for Celery tasks (reduces boilerplate) |
+| `backend/worker/utils/celery_helpers.py` | `@async_task` decorator factory, `record_task_failure()` dead letter helper |
 | `backend/worker/utils/event_classifier.py` | Rule-based event classification (10 categories, keyword matching) |
 | `backend/worker/utils/duplicate_detector.py` | Fuzzy title matching via rapidfuzz for cross-source dedup |
 | `backend/worker/tasks/signals/backtest_task.py` | Celery task: fetch data, run backtester, store results |
@@ -275,6 +286,11 @@ cd /opt/stock-predictor/backend
 | `backend/worker/tasks/scraping/options_data.py` | Options chain fetch (yfinance) + CBOE P/C ratio tasks |
 | `backend/app/models/options_activity.py` | Per-ticker options snapshot ORM (daily aggregates) |
 | `backend/app/models/cboe_put_call.py` | Market-wide CBOE put/call ratio ORM |
+| `backend/app/models/task_failure.py` | Dead letter queue ORM (failed Celery tasks) |
+| `backend/app/models/api_key.py` | API key ORM (SHA-256 hashed, per-user) |
+| `backend/app/models/audit_log.py` | Admin audit log ORM |
+| `backend/app/schemas/admin.py` | TaskFailure + AuditLog response schemas |
+| `backend/app/schemas/api_key.py` | API key create/response schemas |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
 | `backend/scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
 | `backend/alembic/versions/001_initial_schema.py` | Initial migration: all 13 tables |
@@ -282,6 +298,7 @@ cd /opt/stock-predictor/backend
 | `backend/alembic/versions/003_signal_intelligence.py` | Signal intelligence: add sentiment_volume_score column |
 | `backend/alembic/versions/005_ml_ensemble.py` | ML ensemble: add ml_score/ml_direction/ml_confidence columns + ml_models table |
 | `backend/alembic/versions/006_options_flow.py` | Options flow: options_activity + cboe_put_call_ratio tables, options_score/options columns |
+| `backend/alembic/versions/007_infrastructure.py` | Infrastructure: task_failures + api_keys + audit_logs tables |
 | `scripts/backup.sh` | Database backup with configurable retention |
 | `scripts/restore.sh` | Database restore from backup |
 | `.github/workflows/ci.yml` | CI pipeline: lint, test, Docker build |
@@ -289,7 +306,7 @@ cd /opt/stock-predictor/backend
 | `frontend/src/App.tsx` | React Router with lazy-loaded routes, protected + admin routes |
 | `frontend/src/store/authStore.ts` | Zustand auth state with localStorage persist (includes is_admin) |
 | `frontend/src/components/layout/SearchBar.tsx` | Stock search with debounced dropdown |
-| `frontend/src/pages/AdminPage.tsx` | Admin dashboard: task triggers + DB stats |
+| `frontend/src/pages/AdminPage.tsx` | Admin dashboard: task triggers + DB stats + task failures + audit log |
 
 ## API Endpoints (implemented)
 
@@ -302,6 +319,9 @@ cd /opt/stock-predictor/backend
 | GET | `/api/auth/me` | Yes | Done |
 | PUT | `/api/auth/profile` | Yes | Done |
 | PUT | `/api/auth/password` | Yes | Done |
+| POST | `/api/auth/api-keys` | Yes | Done |
+| GET | `/api/auth/api-keys` | Yes | Done |
+| DELETE | `/api/auth/api-keys/{id}` | Yes | Done |
 | GET | `/api/stocks` | Yes | Done |
 | GET | `/api/stocks/sectors` | Yes | Done |
 | GET | `/api/stocks/{ticker}` | Yes | Done |
@@ -351,6 +371,9 @@ cd /opt/stock-predictor/backend
 | POST | `/api/admin/fetch-options` | Admin | Done |
 | GET | `/api/market-data/{ticker}/options` | Yes | Done |
 | GET | `/api/market-data/cboe/put-call-ratio` | Yes | Done |
+| GET | `/api/admin/task-failures` | Admin | Done |
+| POST | `/api/admin/task-failures/{id}/retry` | Admin | Done |
+| GET | `/api/admin/audit-log` | Admin | Done |
 | GET | `/api/admin/db-stats` | Admin | Done |
 
 ## Data Pipeline
@@ -359,19 +382,22 @@ cd /opt/stock-predictor/backend
 Initialization:
   make seed-all → seed 6 sectors (~86 tickers) + backfill full historical OHLCV (max available, ~30+ years)
 
+Every 5 minutes:
+  */5  → health check (DB + Redis connectivity, queue depth) → Discord webhook alert if unhealthy
+
 Hourly (Celery Beat on Compute VM):
   :00 → fan-out 7 scrapers → store articles + extract tickers (symbol + company name matching) → chain FinBERT sentiment
-  :05 → fetch market data via yfinance (5-day window, weekdays only)
+  :05 → fetch market data via yfinance (5-day window, weekdays only) → invalidate market-data cache
   :10 → fetch options chain data via yfinance (weekdays only, if OPTIONS_FLOW_ENABLED)
   :12 → fetch CBOE put/call ratio (weekdays only, if OPTIONS_FLOW_ENABLED)
   :15 → sentiment catch-up (process any unprocessed articles)
-  :30 → generate composite signals (+ ML inference if enabled) → dispatch alerts (Discord + email) for moderate+ signals
+  :30 → generate composite signals (+ ML inference if enabled) → dispatch alerts → invalidate signals/sentiment cache
   :35 → refresh materialized views (daily sentiment)
 
   :45 → evaluate signal outcomes (1/3/5-day windows)
 
 Daily:
-  3:00 AM → data maintenance (compress old articles, clean logs, purge weak signals)
+  3:00 AM → data maintenance (compress old articles, clean logs, purge weak signals, clean task failures 30d, clean audit logs 90d) → invalidate admin cache
   4:00 AM → compute adaptive signal weights (per-sector optimization from outcomes)
   4:30 AM → train ML models (per-sector LightGBM from outcomes, if ML_ENSEMBLE_ENABLED)
 ```

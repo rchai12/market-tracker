@@ -1,14 +1,17 @@
-"""Celery task decorator factory to reduce boilerplate.
+"""Celery task decorator factory and failure recording helpers.
 
 Standard async Celery tasks follow a repetitive pattern:
   1. @celery_app.task(bind=True, name=..., max_retries=..., default_retry_delay=...)
   2. def task(self, ...): try: return run_async(...) except: logger.error(...); self.retry(...)
 
-This module provides ``async_task`` which combines both into a single decorator.
+This module provides ``async_task`` which combines both into a single decorator,
+and ``record_task_failure`` for the dead letter queue.
 """
 
 import functools
+import json
 import logging
+import traceback as tb_module
 
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
@@ -59,3 +62,40 @@ def async_task(
         return wrapper
 
     return decorator
+
+
+def record_task_failure(
+    task_name: str,
+    args: tuple | None = None,
+    kwargs: dict | None = None,
+    exception: BaseException | None = None,
+    traceback_str: str | None = None,
+) -> None:
+    """Record a task failure to the task_failures table (dead letter queue).
+
+    Called from the Celery ``task_failure`` signal when retries are exhausted.
+    Uses a synchronous DB connection to avoid async complications in signal handlers.
+    """
+    try:
+        from app.database import sync_session_factory
+        from app.models.task_failure import TaskFailure
+
+        exc_type = type(exception).__name__ if exception else None
+        exc_msg = str(exception)[:2000] if exception else None
+        tb_text = traceback_str[:5000] if traceback_str else None
+
+        with sync_session_factory() as session:
+            failure = TaskFailure(
+                task_name=task_name,
+                task_args=json.dumps(args, default=str)[:2000] if args else None,
+                task_kwargs=json.dumps(kwargs, default=str)[:2000] if kwargs else None,
+                exception_type=exc_type,
+                exception_message=exc_msg,
+                traceback=tb_text,
+                retries_exhausted=True,
+            )
+            session.add(failure)
+            session.commit()
+            logger.info("Recorded task failure for %s (id=%d)", task_name, failure.id)
+    except Exception:
+        logger.error("Failed to record task failure for %s", task_name, exc_info=True)

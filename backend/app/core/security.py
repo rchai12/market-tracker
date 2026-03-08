@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -38,3 +40,24 @@ def decode_token(token: str) -> dict | None:
         return payload
     except JWTError:
         return None
+
+
+# ── API Key helpers ─────────────────────────────────────────────────
+
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Generate a new API key.
+
+    Returns (raw_key, key_hash, key_prefix).
+    The raw_key is shown once to the user; only the hash is stored.
+    """
+    random_part = secrets.token_hex(32)
+    raw_key = f"sp_{random_part}"
+    key_hash = hash_api_key(raw_key)
+    key_prefix = raw_key[:12]
+    return raw_key, key_hash, key_prefix
+
+
+def hash_api_key(raw_key: str) -> str:
+    """SHA-256 hash of an API key for storage/lookup."""
+    return hashlib.sha256(raw_key.encode()).hexdigest()

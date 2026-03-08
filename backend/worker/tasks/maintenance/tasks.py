@@ -107,6 +107,36 @@ async def cleanup_options_data():
     return {"options_deleted": deleted, "cboe_deleted": deleted_cboe}
 
 
+@async_task("worker.tasks.maintenance.cleanup_task_failures", max_retries=1, retry_delay=120)
+async def cleanup_task_failures():
+    """Delete task_failures older than retention period."""
+    from app.models.task_failure import TaskFailure
+    from worker.tasks.maintenance.retention import delete_older_than
+
+    deleted = await delete_older_than(
+        model=TaskFailure,
+        timestamp_column=TaskFailure.failed_at,
+        days=settings.retention_task_failure_days,
+    )
+    logger.info("Task failure cleanup: deleted %d rows", deleted)
+    return {"deleted": deleted}
+
+
+@async_task("worker.tasks.maintenance.cleanup_audit_logs", max_retries=1, retry_delay=120)
+async def cleanup_audit_logs():
+    """Delete audit_logs older than retention period."""
+    from app.models.audit_log import AuditLog
+    from worker.tasks.maintenance.retention import delete_older_than
+
+    deleted = await delete_older_than(
+        model=AuditLog,
+        timestamp_column=AuditLog.created_at,
+        days=settings.retention_audit_log_days,
+    )
+    logger.info("Audit log cleanup: deleted %d rows", deleted)
+    return {"deleted": deleted}
+
+
 @celery_app.task(
     name="worker.tasks.maintenance.run_all_maintenance",
     bind=True,
@@ -127,12 +157,23 @@ def run_all_maintenance(self):
         ("alert_logs", cleanup_alert_logs),
         ("signals", cleanup_old_signals),
         ("options_data", cleanup_options_data),
+        ("task_failures", cleanup_task_failures),
+        ("audit_logs", cleanup_audit_logs),
     ]:
         try:
             results[name] = task_fn()
         except Exception as e:
             logger.error("Maintenance task %s failed: %s", name, e)
             results[name] = {"error": str(e)}
+
+    # Invalidate admin stats cache after maintenance
+    try:
+        from app.core.cache import invalidate_pattern
+        from worker.utils.async_task import run_async
+
+        run_async(invalidate_pattern("cache:admin:*"))
+    except Exception:
+        logger.debug("Cache invalidation skipped (pool not initialised)")
 
     logger.info("All maintenance complete: %s", results)
     return results

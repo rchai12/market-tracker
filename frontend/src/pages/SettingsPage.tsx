@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../store/authStore";
 import { useThemeStore } from "../store/themeStore";
-import { updateProfile, changePassword } from "../api/auth";
+import { updateProfile, changePassword, listApiKeys, createApiKey, revokeApiKey } from "../api/auth";
 import type { AxiosError } from "axios";
 import Card from "../components/common/Card";
 
@@ -198,6 +199,9 @@ export default function SettingsPage() {
         </div>
       </Card>
 
+      {/* API Keys */}
+      <ApiKeysSection />
+
       {/* Notifications */}
       <Card padding="md">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notifications</h2>
@@ -234,5 +238,123 @@ export default function SettingsPage() {
         </p>
       </Card>
     </div>
+  );
+}
+
+function ApiKeysSection() {
+  const queryClient = useQueryClient();
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: apiKeys } = useQuery({
+    queryKey: ["api-keys"],
+    queryFn: listApiKeys,
+    staleTime: 30_000,
+  });
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newKeyName.trim()) return;
+    setCreating(true);
+    setError(null);
+    setCreatedKey(null);
+    try {
+      const result = await createApiKey(newKeyName.trim());
+      setCreatedKey(result.key);
+      setNewKeyName("");
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+    } catch (err) {
+      const axErr = err as AxiosError<{ detail: string }>;
+      setError(axErr?.response?.data?.detail ?? "Failed to create key");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRevoke(keyId: number) {
+    try {
+      await revokeApiKey(keyId);
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+    } catch {
+      // silently fail
+    }
+  }
+
+  const inputClass =
+    "w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+
+  return (
+    <Card padding="md" className="mb-6">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">API Keys</h2>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Create API keys for programmatic access. Use the <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">X-API-Key</code> header.
+      </p>
+
+      {/* Create form */}
+      <form onSubmit={handleCreate} className="flex gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Key name (e.g. My Script)"
+          value={newKeyName}
+          onChange={(e) => setNewKeyName(e.target.value)}
+          maxLength={100}
+          className={inputClass}
+        />
+        <button
+          type="submit"
+          disabled={creating || !newKeyName.trim()}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors whitespace-nowrap"
+        >
+          {creating ? "..." : "Create"}
+        </button>
+      </form>
+
+      {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+
+      {createdKey && (
+        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <p className="text-sm text-green-800 dark:text-green-200 mb-1 font-medium">
+            API key created! Copy it now — it won't be shown again.
+          </p>
+          <code className="text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded block font-mono break-all">
+            {createdKey}
+          </code>
+        </div>
+      )}
+
+      {/* Key list */}
+      {apiKeys && apiKeys.length > 0 ? (
+        <div className="space-y-2">
+          {apiKeys.map((k) => (
+            <div key={k.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700/50">
+              <div>
+                <span className="text-sm text-gray-900 dark:text-white font-medium">{k.name}</span>
+                <span className="text-xs text-gray-400 ml-2 font-mono">{k.key_prefix}...</span>
+                {!k.is_active && (
+                  <span className="text-xs text-red-500 ml-2">Revoked</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400">
+                  {k.last_used_at ? `Used ${new Date(k.last_used_at).toLocaleDateString()}` : "Never used"}
+                </span>
+                {k.is_active && (
+                  <button
+                    onClick={() => handleRevoke(k.id)}
+                    className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                  >
+                    Revoke
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400 dark:text-gray-500">No API keys created yet.</p>
+      )}
+    </Card>
   );
 }

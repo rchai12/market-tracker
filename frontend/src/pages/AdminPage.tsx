@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerScrape,
   triggerSeedHistory,
@@ -9,6 +9,9 @@ import {
   triggerMLTraining,
   triggerOptionsFetch,
   getDbStats,
+  getTaskFailures,
+  retryFailedTask,
+  getAuditLog,
 } from "../api/admin";
 import type { TaskResponse } from "../api/admin";
 import type { AxiosError } from "axios";
@@ -66,11 +69,26 @@ function TaskButton({
 
 export default function AdminPage() {
   const [seedPeriod, setSeedPeriod] = useState("max");
+  const [failurePage, setFailurePage] = useState(1);
+  const [auditPage, setAuditPage] = useState(1);
+  const queryClient = useQueryClient();
 
   const { data: dbStats, isLoading: statsLoading } = useQuery({
     queryKey: ["admin-db-stats"],
     queryFn: getDbStats,
     staleTime: 60_000,
+  });
+
+  const { data: failures } = useQuery({
+    queryKey: ["admin-task-failures", failurePage],
+    queryFn: () => getTaskFailures(failurePage),
+    staleTime: 30_000,
+  });
+
+  const { data: auditLogs } = useQuery({
+    queryKey: ["admin-audit-log", auditPage],
+    queryFn: () => getAuditLog(auditPage),
+    staleTime: 30_000,
   });
 
   return (
@@ -107,6 +125,136 @@ export default function AdminPage() {
           <TaskButton label="Fetch Options Data" onTrigger={triggerOptionsFetch} />
           <TaskButton label="Train ML Models" onTrigger={triggerMLTraining} />
         </div>
+      </section>
+
+      {/* Task Failures */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Task Failures</h2>
+        <Card padding="none" className="overflow-hidden">
+          {failures && failures.data.length > 0 ? (
+            <>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Task</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Error</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Failed At</th>
+                    <th className="text-right px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {failures.data.map((f) => (
+                    <tr key={f.id} className="border-b border-gray-100 dark:border-gray-700/50">
+                      <td className="px-4 py-2 text-gray-900 dark:text-white font-mono text-xs">
+                        {f.task_name.split(".").pop()}
+                      </td>
+                      <td className="px-4 py-2 text-gray-700 dark:text-gray-300 text-xs max-w-xs truncate">
+                        {f.exception_type}: {f.exception_message?.slice(0, 80)}
+                      </td>
+                      <td className="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">
+                        {new Date(f.failed_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {f.retried_at ? (
+                          <span className="text-xs text-gray-400">Retried</span>
+                        ) : (
+                          <button
+                            onClick={async () => {
+                              await retryFailedTask(f.id);
+                              queryClient.invalidateQueries({ queryKey: ["admin-task-failures"] });
+                            }}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {failures.meta.total_pages > 1 && (
+                <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-between text-xs">
+                  <button
+                    onClick={() => setFailurePage((p) => Math.max(1, p - 1))}
+                    disabled={failurePage <= 1}
+                    className="text-blue-600 dark:text-blue-400 disabled:text-gray-400"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    Page {failures.meta.page} of {failures.meta.total_pages}
+                  </span>
+                  <button
+                    onClick={() => setFailurePage((p) => p + 1)}
+                    disabled={failurePage >= failures.meta.total_pages}
+                    className="text-blue-600 dark:text-blue-400 disabled:text-gray-400"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="p-6 text-sm text-gray-500 dark:text-gray-400">No task failures recorded</div>
+          )}
+        </Card>
+      </section>
+
+      {/* Audit Log */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Audit Log</h2>
+        <Card padding="none" className="overflow-hidden">
+          {auditLogs && auditLogs.data.length > 0 ? (
+            <>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Action</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Resource</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">IP</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.data.map((entry) => (
+                    <tr key={entry.id} className="border-b border-gray-100 dark:border-gray-700/50">
+                      <td className="px-4 py-2 text-gray-900 dark:text-white text-xs font-medium">{entry.action}</td>
+                      <td className="px-4 py-2 text-gray-700 dark:text-gray-300 text-xs font-mono">{entry.resource}</td>
+                      <td className="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs">{entry.ip_address ?? "—"}</td>
+                      <td className="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">
+                        {new Date(entry.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {auditLogs.meta.total_pages > 1 && (
+                <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-between text-xs">
+                  <button
+                    onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+                    disabled={auditPage <= 1}
+                    className="text-blue-600 dark:text-blue-400 disabled:text-gray-400"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    Page {auditLogs.meta.page} of {auditLogs.meta.total_pages}
+                  </span>
+                  <button
+                    onClick={() => setAuditPage((p) => p + 1)}
+                    disabled={auditPage >= auditLogs.meta.total_pages}
+                    className="text-blue-600 dark:text-blue-400 disabled:text-gray-400"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="p-6 text-sm text-gray-500 dark:text-gray-400">No audit entries</div>
+          )}
+        </Card>
       </section>
 
       {/* Database Stats */}

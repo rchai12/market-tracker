@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.cboe_put_call import CboePutCallRatio
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
@@ -61,6 +62,7 @@ async def get_daily_data(
 
 
 @router.get("/{ticker}/indicators", response_model=list[IndicatorDataResponse])
+@cached("market-data:indicators", ttl=3600)
 async def get_indicators(
     ticker: str,
     days: int = Query(365, ge=30, le=1000),

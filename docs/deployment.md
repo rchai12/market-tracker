@@ -35,6 +35,9 @@ Edit `.env` with real values:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 # Generate a secure password:
 python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+
+# Optional: Discord webhook for health alerts (DB/Redis/queue checks every 5 min)
+# HEALTH_ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
 ### 3. Create shared Docker network

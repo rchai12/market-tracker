@@ -29,11 +29,12 @@
 │  │  (concurrency=2)      │  │   (task scheduler)     │   │
 │  │                        │  │                        │   │
 │  │  Queues:               │  │  Schedules:            │   │
-│  │  - scraping            │  │  - :00 scrape all      │   │
-│  │  - sentiment           │  │  - :05 market data     │   │
-│  │  - signals             │  │  - :15 sentiment       │   │
-│  │  - maintenance         │  │  - :30 gen signals     │   │
-│  │  - default             │  │  - :35 matview refresh │   │
+│  │  - scraping            │  │  - */5 health check    │   │
+│  │  - sentiment           │  │  - :00 scrape all      │   │
+│  │  - signals             │  │  - :05 market data     │   │
+│  │  - maintenance         │  │  - :15 sentiment       │   │
+│  │  - default             │  │  - :30 gen signals     │   │
+│  │                        │  │  - :35 matview refresh │   │
 │  │                        │  │  - :45 eval outcomes   │   │
 │  │                        │  │  - 3AM maintenance     │   │
 │  │                        │  │  - 4AM adapt weights   │   │
@@ -142,6 +143,7 @@
 users ──< watchlist_items >── stocks
 users ──< alert_configs
 users ──< backtests
+users ──< api_keys
 stocks ──< article_stocks >── articles
 stocks ──< market_data_daily
 stocks ──< market_data_intraday
@@ -179,6 +181,9 @@ backtests >── sectors (nullable)
 | backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON), commission/slippage/position_size/stop_loss/take_profit, benchmark_ticker, benchmark metrics (alpha/beta), benchmark_equity_curve (JSON) |
 | backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct, exit_reason |
 | ml_models | ML model registry (one active per sector) | sector_id, model_version, training_samples, validation_accuracy, validation_f1, model_path, feature_importances |
+| task_failures | Dead letter queue for failed Celery tasks | task_name, task_args, exception_type, exception_message, traceback, failed_at, retried_at |
+| api_keys | API key authentication (per-user) | user_id, key_hash (SHA-256), key_prefix, name, is_active, last_used_at, expires_at |
+| audit_logs | Admin action audit trail | user_id, action, resource, detail (JSON), ip_address, created_at |
 
 ## Signal Scoring Algorithm
 

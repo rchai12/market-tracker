@@ -7,6 +7,7 @@ from sqlalchemy import case, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.article import Article, ArticleStock
 from app.models.sector import Sector
@@ -123,6 +124,7 @@ async def get_ticker_sentiment_articles(
 
 
 @router.get("/summary/sectors", response_model=list[SentimentSummary])
+@cached("sentiment:sectors", ttl=300)
 async def get_sector_sentiment_summary(
     days: int = Query(7, ge=1, le=90),
     _user: User = Depends(get_current_user),
@@ -172,6 +174,7 @@ async def get_sector_sentiment_summary(
 
 
 @router.get("/trending/stocks", response_model=list[SentimentSummary])
+@cached("sentiment:trending", ttl=600)
 async def get_trending_sentiment(
     days: int = Query(3, ge=1, le=30),
     limit: int = Query(10, ge=1, le=50),

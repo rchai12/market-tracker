@@ -1,5 +1,7 @@
 from app.models.alert import AlertConfig, AlertLog
+from app.models.api_key import ApiKey
 from app.models.article import Article, ArticleStock
+from app.models.audit_log import AuditLog
 from app.models.backtest import Backtest, BacktestTrade
 from app.models.cboe_put_call import CboePutCallRatio
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
@@ -12,13 +14,16 @@ from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
+from app.models.task_failure import TaskFailure
 from app.models.user import User
 from app.models.watchlist import WatchlistItem
 
 __all__ = [
     "AlertConfig",
     "AlertLog",
+    "ApiKey",
     "Article",
+    "AuditLog",
     "ArticleStock",
     "Backtest",
     "BacktestTrade",
@@ -34,6 +39,7 @@ __all__ = [
     "SignalOutcome",
     "SignalWeight",
     "Stock",
+    "TaskFailure",
     "User",
     "WatchlistItem",
 ]

@@ -150,6 +150,11 @@ async def _fetch_all_market_data_async(period: str = "5d") -> dict:
             logger.error(f"Failed to store data for {ticker}: {e}")
             errors += 1
 
+    # Invalidate cached market data (indicators)
+    from app.core.cache import invalidate_pattern
+
+    await invalidate_pattern("cache:market-data:*")
+
     logger.info(f"Market data complete: {total_rows} rows stored, {errors} errors")
     return {"status": "complete", "rows": total_rows, "errors": errors}
 

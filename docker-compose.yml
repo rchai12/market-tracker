@@ -68,6 +68,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       ALERT_FROM_EMAIL: ${ALERT_FROM_EMAIL:-}
+      HEALTH_ALERT_WEBHOOK_URL: ${HEALTH_ALERT_WEBHOOK_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -63,3 +63,40 @@ export async function changePassword(payload: {
   );
   return data;
 }
+
+// ── API Keys ──
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+}
+
+export interface ApiKeyCreateResponse {
+  id: number;
+  name: string;
+  key: string;
+  key_prefix: string;
+  created_at: string;
+}
+
+export async function listApiKeys(): Promise<ApiKey[]> {
+  const { data } = await apiClient.get<ApiKey[]>("/auth/api-keys");
+  return data;
+}
+
+export async function createApiKey(name: string, expiresInDays?: number): Promise<ApiKeyCreateResponse> {
+  const { data } = await apiClient.post<ApiKeyCreateResponse>("/auth/api-keys", {
+    name,
+    expires_in_days: expiresInDays ?? null,
+  });
+  return data;
+}
+
+export async function revokeApiKey(keyId: number): Promise<void> {
+  await apiClient.delete(`/auth/api-keys/${keyId}`);
+}

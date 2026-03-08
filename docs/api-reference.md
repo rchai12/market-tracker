@@ -2,7 +2,7 @@
 
 Base URL: `/api`
 
-All protected endpoints require `Authorization: Bearer <token>` header.
+All protected endpoints require `Authorization: Bearer <token>` header or `X-API-Key: sp_...` header.
 
 Status legend: **Done** = implemented, **Planned** = not yet built.
 
@@ -39,6 +39,9 @@ Single-item endpoints return the object directly.
 | GET | `/auth/me` | Yes | **Done** | Get current user profile |
 | PUT | `/auth/profile` | Yes | **Done** | Update username and/or email |
 | PUT | `/auth/password` | Yes | **Done** | Change password |
+| POST | `/auth/api-keys` | Yes | **Done** | Create API key (max 5 per user) |
+| GET | `/auth/api-keys` | Yes | **Done** | List user's API keys |
+| DELETE | `/auth/api-keys/{id}` | Yes | **Done** | Revoke (deactivate) API key |
 
 ### POST /auth/register
 ```json
@@ -94,6 +97,27 @@ Validation:
 Validation:
 - `current_password` must match existing password (401 if incorrect)
 - `new_password`: min 8 chars, at least one uppercase, one lowercase, one digit
+
+### POST /auth/api-keys
+```json
+// Request
+{ "name": "My Script", "expires_in_days": 90 }
+
+// Response (201) — raw key shown ONCE
+{ "id": 1, "name": "My Script", "key": "sp_abc123...", "key_prefix": "sp_abc123...", "created_at": "..." }
+```
+
+### GET /auth/api-keys
+```json
+// Response
+[
+  { "id": 1, "name": "My Script", "key_prefix": "sp_abc123...", "is_active": true,
+    "created_at": "...", "last_used_at": "...", "expires_at": "..." }
+]
+```
+
+### DELETE /auth/api-keys/{id}
+Soft-deactivates the key (`is_active = false`). Returns 204.
 
 ## Stocks
 
@@ -580,6 +604,9 @@ Returns CSV file as attachment download.
 | POST | `/admin/backfill-duplicate-groups` | Admin | **Done** | Detect duplicate articles (last N days) |
 | POST | `/admin/train-ml-models` | Admin | **Done** | Trigger ML model training (Celery task) |
 | GET | `/admin/ml-models` | Admin | **Done** | ML model status per sector (version, accuracy, F1, importances) |
+| GET | `/admin/task-failures` | Admin | **Done** | Dead letter queue (paginated, filterable by task_name) |
+| POST | `/admin/task-failures/{id}/retry` | Admin | **Done** | Re-queue a failed task |
+| GET | `/admin/audit-log` | Admin | **Done** | Admin audit log (paginated, filterable by action) |
 | GET | `/admin/db-stats` | Admin | **Done** | Database stats (row counts, table sizes) |
 
 ### POST /admin/seed-history
@@ -607,6 +634,47 @@ Backtests are queued automatically when created via `POST /backtests`. The Celer
 ```
 // Response
 { "task_id": "ghi-789", "status": "queued" }
+```
+
+### GET /admin/task-failures
+
+Query params: `?task_name=worker.tasks.scraping&page=1&per_page=20`
+
+```json
+{
+  "data": [
+    {
+      "id": 1, "task_name": "worker.tasks.scraping.yahoo_finance",
+      "exception_type": "ConnectionError", "exception_message": "Connection refused",
+      "failed_at": "2025-06-15T10:00:00Z", "retries_exhausted": true,
+      "retried_at": null, "retry_task_id": null
+    }
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 5, "total_pages": 1 }
+}
+```
+
+### POST /admin/task-failures/{id}/retry
+```json
+// Response
+{ "task_id": "new-abc-123", "status": "queued" }
+```
+
+### GET /admin/audit-log
+
+Query params: `?action=trigger_scrape&page=1&per_page=20`
+
+```json
+{
+  "data": [
+    {
+      "id": 1, "user_id": 1, "action": "trigger_scrape",
+      "resource": "admin/scrape-now", "detail": null,
+      "ip_address": "192.168.1.1", "created_at": "2025-06-15T10:00:00Z"
+    }
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 50, "total_pages": 3 }
+}
 ```
 
 ### GET /admin/db-stats

@@ -95,6 +95,21 @@ class Settings(BaseSettings):
     options_baseline_days: int = 20
     retention_options_days: int = 180
 
+    # Cache
+    cache_default_ttl: int = 300
+    cache_enabled: bool = True
+
+    # Slow query detection
+    slow_query_threshold_ms: int = 500
+
+    # Health alerts
+    health_alert_webhook_url: str = ""
+    health_alert_min_interval_minutes: int = 15
+
+    # Data retention (days) — infrastructure
+    retention_task_failure_days: int = 30
+    retention_audit_log_days: int = 90
+
     # Signal feedback loop
     feedback_enabled: bool = True
     feedback_evaluation_windows: str = "1,3,5"

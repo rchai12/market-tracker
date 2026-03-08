@@ -158,6 +158,12 @@ async def _generate_signals_async() -> dict:
 
         await session.commit()
 
+        # Invalidate cached signal and sentiment data
+        from app.core.cache import invalidate_pattern
+
+        await invalidate_pattern("cache:signals:*")
+        await invalidate_pattern("cache:sentiment:*")
+
     logger.info(
         f"Signal generation complete: {signals_created} signals, "
         f"{alerts_dispatched} alerts dispatched, {errors} errors"

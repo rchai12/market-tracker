@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.sector import Sector
 from app.models.signal import Signal
@@ -265,6 +266,7 @@ async def get_ticker_accuracy(
 
 
 @router.get("/weights", response_model=list[SignalWeightsResponse])
+@cached("signals:weights", ttl=3600)
 async def get_signal_weights(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
