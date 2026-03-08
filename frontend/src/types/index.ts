@@ -77,6 +77,7 @@ export interface Signal {
   strength: "strong" | "moderate" | "weak";
   composite_score: number;
   sentiment_score: number | null;
+  sentiment_volume_score: number | null;
   price_score: number | null;
   volume_score: number | null;
   rsi_score: number | null;
@@ -86,6 +87,50 @@ export interface Signal {
   generated_at: string;
   window_start: string;
   window_end: string;
+}
+
+export interface AccuracyTrendPoint {
+  period_start: string;
+  period_end: string;
+  total: number;
+  correct: number;
+  accuracy_pct: number;
+}
+
+export interface AccuracyBucket {
+  label: string;
+  total: number;
+  correct: number;
+  accuracy_pct: number;
+  avg_return_pct: number;
+}
+
+export interface AccuracyDistribution {
+  by_strength: AccuracyBucket[];
+  by_direction: AccuracyBucket[];
+}
+
+export interface SignalOutcome {
+  window_days: number;
+  price_change_pct: number;
+  is_correct: boolean;
+  evaluated_at: string;
+}
+
+export interface LinkedArticle {
+  id: number;
+  title: string;
+  source: string;
+  url: string | null;
+  published_at: string | null;
+  sentiment_label: string | null;
+  sentiment_score: number | null;
+}
+
+export interface SignalDetail {
+  signal: Signal;
+  outcomes: SignalOutcome[];
+  linked_articles: LinkedArticle[];
 }
 
 export interface AlertConfig {

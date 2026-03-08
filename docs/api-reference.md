@@ -258,7 +258,10 @@ Query params: `?days=3&limit=10` (defaults)
 | GET | `/signals` | Yes | **Done** | All signals (paginated, filterable by direction/strength/ticker/sector) |
 | GET | `/signals/latest` | Yes | **Done** | Most recent signals across all stocks (dashboard feed) |
 | GET | `/signals/accuracy` | Yes | **Done** | Global or sector signal accuracy metrics |
+| GET | `/signals/accuracy/trend` | Yes | **Done** | Accuracy over time in weekly/monthly buckets |
+| GET | `/signals/accuracy/distribution` | Yes | **Done** | Accuracy breakdown by strength and direction |
 | GET | `/signals/accuracy/{ticker}` | Yes | **Done** | Per-ticker accuracy across 1/3/5 day windows |
+| GET | `/signals/detail/{signal_id}` | Yes | **Done** | Full signal detail with outcomes and linked articles |
 | GET | `/signals/weights` | Yes | **Done** | Active signal weights (per-sector and global fallback) |
 | GET | `/signals/{ticker}` | Yes | **Done** | Signal history for a specific ticker |
 
@@ -272,7 +275,8 @@ Query params for `/signals/latest`: `?limit=20&min_strength=moderate`
   {
     "id": 1, "stock_id": 5, "ticker": "XOM", "company_name": "Exxon Mobil",
     "direction": "bullish", "strength": "moderate",
-    "composite_score": 0.42, "sentiment_score": 0.35, "price_score": 0.15, "volume_score": 0.10,
+    "composite_score": 0.42, "sentiment_score": 0.35, "sentiment_volume_score": 0.20,
+    "price_score": 0.15, "volume_score": 0.10,
     "rsi_score": 0.22, "trend_score": 0.18,
     "article_count": 8, "reasoning": "XOM: moderate bullish signal (score: 0.420)...",
     "generated_at": "2025-06-15T10:30:00Z",
@@ -300,6 +304,63 @@ Query params: `?window_days=5&sector=energy&days=90`
   }
 ]
 ```
+
+### GET /signals/accuracy/trend
+
+Query params: `?window_days=5&sector=energy&bucket=week&days=180`
+
+```json
+[
+  {
+    "period_start": "2025-01-01T00:00:00Z",
+    "period_end": "2025-01-08T00:00:00Z",
+    "total": 20,
+    "correct": 12,
+    "accuracy_pct": 60.0
+  }
+]
+```
+
+### GET /signals/accuracy/distribution
+
+Query params: `?window_days=5&days=90`
+
+```json
+{
+  "by_strength": [
+    { "label": "strong", "total": 10, "correct": 8, "accuracy_pct": 80.0, "avg_return_pct": 2.5 },
+    { "label": "moderate", "total": 30, "correct": 18, "accuracy_pct": 60.0, "avg_return_pct": 1.2 }
+  ],
+  "by_direction": [
+    { "label": "bullish", "total": 40, "correct": 24, "accuracy_pct": 60.0, "avg_return_pct": 1.5 },
+    { "label": "bearish", "total": 40, "correct": 20, "accuracy_pct": 50.0, "avg_return_pct": -0.5 }
+  ]
+}
+```
+
+### GET /signals/detail/{signal_id}
+
+Returns full signal data with outcomes and linked articles.
+
+```json
+{
+  "signal": { "id": 1, "ticker": "AAPL", "direction": "bullish", "..." : "..." },
+  "outcomes": [
+    { "window_days": 1, "price_change_pct": 0.01, "is_correct": true, "evaluated_at": "2025-01-16T10:00:00Z" },
+    { "window_days": 5, "price_change_pct": 0.03, "is_correct": true, "evaluated_at": "2025-01-20T10:00:00Z" }
+  ],
+  "linked_articles": [
+    {
+      "id": 42, "title": "Apple surges on earnings beat",
+      "source": "yahoo_finance", "url": "https://...",
+      "published_at": "2025-01-15T10:00:00Z",
+      "sentiment_label": "positive", "sentiment_score": 0.9
+    }
+  ]
+}
+```
+
+Articles are linked at query time via `SentimentScore.stock_id` + `processed_at` within the signal's `window_start`/`window_end`, limited to 50.
 
 ### GET /signals/weights
 ```json

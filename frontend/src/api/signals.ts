@@ -1,5 +1,13 @@
 import apiClient from "./client";
-import type { Signal, SignalAccuracy, SignalWeights, PaginatedResponse } from "../types";
+import type {
+  Signal,
+  SignalAccuracy,
+  SignalWeights,
+  AccuracyTrendPoint,
+  AccuracyDistribution,
+  SignalDetail,
+  PaginatedResponse,
+} from "../types";
 
 export async function getLatestSignals(
   limit: number = 20,
@@ -50,6 +58,33 @@ export async function getTickerAccuracy(
   const { data } = await apiClient.get(`/signals/accuracy/${ticker}`, {
     params: { days },
   });
+  return data;
+}
+
+export async function getAccuracyTrend(params?: {
+  window_days?: number;
+  sector?: string;
+  bucket?: string;
+  days?: number;
+}): Promise<AccuracyTrendPoint[]> {
+  const { data } = await apiClient.get("/signals/accuracy/trend", { params });
+  return data;
+}
+
+export async function getAccuracyDistribution(params?: {
+  window_days?: number;
+  days?: number;
+}): Promise<AccuracyDistribution> {
+  const { data } = await apiClient.get("/signals/accuracy/distribution", {
+    params,
+  });
+  return data;
+}
+
+export async function getSignalDetail(
+  signalId: number
+): Promise<SignalDetail> {
+  const { data } = await apiClient.get(`/signals/detail/${signalId}`);
   return data;
 }
 

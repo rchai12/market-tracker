@@ -1,19 +1,34 @@
 """Signal API endpoints."""
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
+from app.models.article import Article
 from app.models.sector import Sector
+from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from app.models.user import User
 from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
-from app.schemas.signal import PaginatedSignals, SignalAccuracyResponse, SignalResponse, SignalWeightsResponse
+from app.schemas.signal import (
+    AccuracyBucket,
+    AccuracyDistribution,
+    AccuracyTrendPoint,
+    LinkedArticle,
+    PaginatedSignals,
+    SignalAccuracyResponse,
+    SignalDetailResponse,
+    SignalOutcomeResponse,
+    SignalResponse,
+    SignalWeightsResponse,
+)
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -51,8 +66,6 @@ async def get_signal_accuracy(
     db: AsyncSession = Depends(get_db),
 ):
     """Get signal accuracy metrics, optionally filtered by sector."""
-    from datetime import datetime, timedelta, timezone
-
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     query = (
@@ -82,6 +95,124 @@ async def get_signal_accuracy(
     return [_compute_accuracy(rows, scope, window_days)]
 
 
+@router.get("/accuracy/trend", response_model=list[AccuracyTrendPoint])
+async def get_accuracy_trend(
+    window_days: int = Query(5, description="Evaluation window: 1, 3, or 5"),
+    sector: str | None = Query(None),
+    bucket: str = Query("week", description="Bucket size: week or month"),
+    days: int = Query(180, ge=30, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get accuracy trend over time in weekly or monthly buckets."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    query = (
+        select(
+            SignalOutcome.is_correct,
+            SignalOutcome.evaluated_at,
+        )
+        .join(Signal, SignalOutcome.signal_id == Signal.id)
+        .join(Stock, Signal.stock_id == Stock.id)
+        .where(SignalOutcome.window_days == window_days)
+        .where(SignalOutcome.evaluated_at >= cutoff)
+        .where(Signal.direction.in_(["bullish", "bearish"]))
+    )
+
+    if sector:
+        query = query.join(Sector, Stock.sector_id == Sector.id).where(func.lower(Sector.name) == sector.lower())
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    if not rows:
+        return []
+
+    # Group into buckets
+    bucket_days = 7 if bucket == "week" else 30
+    buckets: dict[datetime, dict] = {}
+
+    for row in rows:
+        evaluated = row.evaluated_at
+        # Normalize to bucket start
+        days_since_cutoff = (evaluated - cutoff).days
+        bucket_index = days_since_cutoff // bucket_days
+        bucket_start = cutoff + timedelta(days=bucket_index * bucket_days)
+        bucket_end = bucket_start + timedelta(days=bucket_days)
+
+        key = bucket_start
+        if key not in buckets:
+            buckets[key] = {"start": bucket_start, "end": bucket_end, "total": 0, "correct": 0}
+        buckets[key]["total"] += 1
+        if row.is_correct:
+            buckets[key]["correct"] += 1
+
+    return [
+        AccuracyTrendPoint(
+            period_start=b["start"],
+            period_end=b["end"],
+            total=b["total"],
+            correct=b["correct"],
+            accuracy_pct=round(b["correct"] / b["total"] * 100, 1) if b["total"] else 0,
+        )
+        for b in sorted(buckets.values(), key=lambda x: x["start"])
+    ]
+
+
+@router.get("/accuracy/distribution", response_model=AccuracyDistribution)
+async def get_accuracy_distribution(
+    window_days: int = Query(5, description="Evaluation window: 1, 3, or 5"),
+    days: int = Query(90, ge=7, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get accuracy breakdown by strength and direction."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    query = (
+        select(
+            Signal.direction,
+            Signal.strength,
+            SignalOutcome.is_correct,
+            SignalOutcome.price_change_pct,
+        )
+        .join(Signal, SignalOutcome.signal_id == Signal.id)
+        .where(SignalOutcome.window_days == window_days)
+        .where(SignalOutcome.evaluated_at >= cutoff)
+        .where(Signal.direction.in_(["bullish", "bearish"]))
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    def _build_buckets(rows_list: list, key_fn) -> list[AccuracyBucket]:
+        groups: dict[str, list] = {}
+        for r in rows_list:
+            key = key_fn(r)
+            groups.setdefault(key, []).append(r)
+
+        buckets = []
+        for label, group in sorted(groups.items()):
+            total = len(group)
+            correct = sum(1 for r in group if r.is_correct)
+            returns = [float(r.price_change_pct) for r in group]
+            buckets.append(
+                AccuracyBucket(
+                    label=label,
+                    total=total,
+                    correct=correct,
+                    accuracy_pct=round(correct / total * 100, 1) if total else 0,
+                    avg_return_pct=round(sum(returns) / len(returns) * 100, 3) if returns else 0,
+                )
+            )
+        return buckets
+
+    return AccuracyDistribution(
+        by_strength=_build_buckets(rows, lambda r: r.strength),
+        by_direction=_build_buckets(rows, lambda r: r.direction),
+    )
+
+
 @router.get("/accuracy/{ticker}", response_model=list[SignalAccuracyResponse])
 async def get_ticker_accuracy(
     ticker: str,
@@ -90,8 +221,6 @@ async def get_ticker_accuracy(
     db: AsyncSession = Depends(get_db),
 ):
     """Get accuracy metrics for a specific ticker across all windows."""
-    from datetime import datetime, timedelta, timezone
-
     stock = await get_stock_by_ticker(ticker, db)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
@@ -115,6 +244,75 @@ async def get_ticker_accuracy(
             results.append(_compute_accuracy(rows, f"ticker:{ticker.upper()}", window))
 
     return results
+
+
+@router.get("/detail/{signal_id}", response_model=SignalDetailResponse)
+async def get_signal_detail(
+    signal_id: int,
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full signal detail with outcomes and linked articles."""
+    result = await db.execute(
+        select(Signal)
+        .options(joinedload(Signal.stock), joinedload(Signal.outcomes))
+        .where(Signal.id == signal_id)
+    )
+    signal = result.unique().scalars().first()
+
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    # Build outcomes
+    outcomes = [
+        SignalOutcomeResponse(
+            window_days=o.window_days,
+            price_change_pct=float(o.price_change_pct),
+            is_correct=o.is_correct,
+            evaluated_at=o.evaluated_at,
+        )
+        for o in sorted(signal.outcomes, key=lambda o: o.window_days)
+    ]
+
+    # Find linked articles via sentiment_scores in signal's time window
+    article_query = (
+        select(
+            Article.id,
+            Article.title,
+            Article.source,
+            Article.source_url,
+            Article.published_at,
+            SentimentScore.label,
+            (SentimentScore.positive_score - SentimentScore.negative_score).label("net_sentiment"),
+        )
+        .join(SentimentScore, Article.id == SentimentScore.article_id)
+        .where(SentimentScore.stock_id == signal.stock_id)
+        .where(SentimentScore.processed_at >= signal.window_start)
+        .where(SentimentScore.processed_at <= signal.window_end)
+        .order_by(Article.published_at.desc().nullslast())
+        .limit(50)
+    )
+    article_result = await db.execute(article_query)
+    article_rows = article_result.all()
+
+    linked_articles = [
+        LinkedArticle(
+            id=row.id,
+            title=row.title,
+            source=row.source,
+            url=row.source_url,
+            published_at=row.published_at,
+            sentiment_label=row.label,
+            sentiment_score=round(float(row.net_sentiment), 4) if row.net_sentiment is not None else None,
+        )
+        for row in article_rows
+    ]
+
+    return SignalDetailResponse(
+        signal=_to_response(signal),
+        outcomes=outcomes,
+        linked_articles=linked_articles,
+    )
 
 
 @router.get("/weights", response_model=list[SignalWeightsResponse])
@@ -284,6 +482,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         strength=signal.strength,
         composite_score=float(signal.composite_score),
         sentiment_score=float(signal.sentiment_score) if signal.sentiment_score else None,
+        sentiment_volume_score=float(signal.sentiment_volume_score) if signal.sentiment_volume_score else None,
         price_score=float(signal.price_score) if signal.price_score else None,
         volume_score=float(signal.volume_score) if signal.volume_score else None,
         rsi_score=float(signal.rsi_score) if signal.rsi_score else None,

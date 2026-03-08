@@ -121,7 +121,9 @@
        │  Charts,    │
        │  Indicators,│
        │  Accuracy,  │
-       │  Backtest)  │
+       │  Backtest,  │
+       │  Signal     │
+       │  Intel)     │
        └─────────────┘
 ```
 
@@ -159,7 +161,7 @@ backtests >── sectors (nullable)
 | articles | Scraped news/filings | source, source_url, title, raw_text, is_processed |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
-| signals | Composite trading signals | stock_id, direction, strength, composite_score, rsi_score, trend_score, reasoning |
+| signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning |
 | signal_outcomes | Signal accuracy evaluation | signal_id, window_days, is_correct, price_change_pct |
 | signal_weights | Adaptive component weights (per-sector) | sector_id, sentiment_momentum, rsi, trend, accuracy_pct |
 | alert_configs | User alert preferences | user_id, stock_id, min_strength, channel |

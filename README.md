@@ -11,6 +11,7 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Signal Generation**: 6-component composite scoring (sentiment momentum, article volume, price momentum, volume anomaly, RSI, trend) with adaptive per-sector weights
 - **Technical Indicators**: RSI (14), SMA (20/50), EMA, MACD (12/26/9), Bollinger Bands — computed on-the-fly from stored OHLCV data
 - **Backtesting Engine**: Replay signal generation over historical data with equity curves, trade logs, and performance metrics (Sharpe, drawdown, win rate). Technical mode (OHLCV only, full history) and full mode (+ sentiment)
+- **Signal Intelligence**: Expandable signal cards with 6-component breakdown bars, signal detail panel with outcomes + linked articles, accuracy trend/distribution charts, methodology tab with adaptive weights table
 - **Signal Feedback Loop**: Outcome evaluation (1/3/5-day windows), adaptive weight optimization, accuracy tracking
 - **Real-time Alerts**: Discord webhook and email notifications when signals trigger
 - **Web Dashboard**: React app with TradingView charts, indicator overlays (SMA, Bollinger), RSI/MACD sub-charts, sentiment timelines, signal feeds, accuracy metrics, and watchlists

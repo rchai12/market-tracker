@@ -110,6 +110,7 @@ async def _generate_signals_async() -> dict:
                     strength=strength,
                     composite_score=round(composite, 5),
                     sentiment_score=round(score_data["sentiment_momentum"], 5),
+                    sentiment_volume_score=round(score_data["sentiment_volume"], 5),
                     price_score=round(score_data["price_momentum"], 5),
                     volume_score=round(score_data["volume_anomaly"], 5),
                     rsi_score=round(score_data["rsi_score"], 5),
