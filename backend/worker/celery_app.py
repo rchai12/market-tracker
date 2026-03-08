@@ -47,6 +47,7 @@ celery_app.conf.include = [
     "worker.tasks.scraping.marketwatch",
     "worker.tasks.scraping.reddit",
     "worker.tasks.scraping.fred",
+    "worker.tasks.scraping.options_data",
     "worker.tasks.sentiment.sentiment_task",
     "worker.tasks.signals.signal_generator",
     "worker.tasks.signals.alert_dispatcher",

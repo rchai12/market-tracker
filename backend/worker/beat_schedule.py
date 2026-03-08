@@ -11,6 +11,16 @@ beat_schedule = {
         "task": "worker.tasks.scraping.market_data.fetch_all_market_data",
         "schedule": crontab(minute=5, day_of_week="1-5"),
     },
+    # Options data - runs at :10, weekdays only (if enabled)
+    "fetch-options-data": {
+        "task": "worker.tasks.scraping.options_data.fetch_all_options_data",
+        "schedule": crontab(minute=10, day_of_week="1-5"),
+    },
+    # CBOE put/call ratio - runs at :12, weekdays only (if enabled)
+    "fetch-cboe-ratio": {
+        "task": "worker.tasks.scraping.options_data.fetch_cboe_ratio",
+        "schedule": crontab(minute=12, day_of_week="1-5"),
+    },
     # Sentiment catch-up - runs at :15 to process any missed articles
     # (primary sentiment runs chained after scraping at :00)
     "sentiment-catchup": {

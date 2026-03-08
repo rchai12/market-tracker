@@ -8,6 +8,7 @@ import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import StockPriceSection from "../components/stock-detail/StockPriceSection";
 import StockSentimentSignals from "../components/stock-detail/StockSentimentSignals";
 import StockAccuracySection from "../components/stock-detail/StockAccuracySection";
+import StockOptionsSection from "../components/stock-detail/StockOptionsSection";
 import StockArticlesSection from "../components/stock-detail/StockArticlesSection";
 
 export default function StockDetailPage() {
@@ -95,6 +96,7 @@ export default function StockDetailPage() {
 
       <StockPriceSection ticker={ticker!} />
       <StockSentimentSignals ticker={ticker!} />
+      <StockOptionsSection ticker={ticker!} />
       <StockAccuracySection ticker={ticker!} />
       <StockArticlesSection ticker={ticker!} />
     </div>

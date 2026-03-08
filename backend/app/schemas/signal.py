@@ -21,6 +21,7 @@ class SignalResponse(BaseModel):
     volume_score: float | None
     rsi_score: float | None
     trend_score: float | None
+    options_score: float | None = None
     article_count: int
     reasoning: str | None
     ml_score: float | None = None
@@ -58,6 +59,7 @@ class SignalWeightsResponse(BaseModel):
     volume_anomaly: float
     rsi: float
     trend: float
+    options: float
     sample_count: int
     accuracy_pct: float | None
     computed_at: datetime | None

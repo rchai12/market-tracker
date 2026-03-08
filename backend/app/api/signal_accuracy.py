@@ -286,6 +286,7 @@ async def get_signal_weights(
             volume_anomaly=float(w.volume_anomaly),
             rsi=float(w.rsi),
             trend=float(w.trend),
+            options=float(w.options),
             sample_count=w.sample_count,
             accuracy_pct=float(w.accuracy_pct) if w.accuracy_pct else None,
             computed_at=w.computed_at,

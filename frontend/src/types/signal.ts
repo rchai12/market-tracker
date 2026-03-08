@@ -12,6 +12,7 @@ export interface Signal {
   volume_score: number | null;
   rsi_score: number | null;
   trend_score: number | null;
+  options_score: number | null;
   article_count: number;
   reasoning: string | null;
   ml_score: number | null;
@@ -42,6 +43,7 @@ export interface SignalWeights {
   volume_anomaly: number;
   rsi: number;
   trend: number;
+  options: number;
   sample_count: number;
   accuracy_pct: number | null;
   computed_at: string | null;

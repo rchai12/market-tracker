@@ -11,6 +11,7 @@ const COMPONENTS = [
   { key: "volume_score", label: "Volume" },
   { key: "rsi_score", label: "RSI" },
   { key: "trend_score", label: "Trend" },
+  { key: "options_score", label: "Options" },
 ] as const;
 
 export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) {

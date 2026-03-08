@@ -11,13 +11,13 @@ export default function MethodologyTab() {
           Composite Signal Scoring
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Each stock is scored using 6 components that combine sentiment analysis with technical indicators.
-          The composite score determines signal direction and strength.
+          Each stock is scored using up to 7 components that combine sentiment analysis with technical indicators
+          and options flow data. The composite score determines signal direction and strength.
         </p>
         <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-800 dark:text-gray-200">
           composite = w1 * sentiment_momentum + w2 * sentiment_volume<br />
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w3 * price_momentum + w4 * volume_anomaly<br />
-          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w5 * rsi + w6 * trend
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w5 * rsi + w6 * trend + w7 * options
         </div>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div>
@@ -34,6 +34,7 @@ export default function MethodologyTab() {
               <li>Volume Anomaly: 10%</li>
               <li>RSI: 15%</li>
               <li>Trend: 10%</li>
+              <li>Options Flow: 8% (when enabled)</li>
             </ul>
           </div>
         </div>

@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     ml_retrain_interval_days: int = 7
     ml_confidence_threshold: float = 0.55
 
+    # Options flow
+    options_flow_enabled: bool = False
+    options_fetch_delay: float = 0.5
+    options_max_expirations: int = 3
+    options_min_volume: int = 50
+    options_baseline_days: int = 20
+    retention_options_days: int = 180
+
     # Signal feedback loop
     feedback_enabled: bool = True
     feedback_evaluation_windows: str = "1,3,5"

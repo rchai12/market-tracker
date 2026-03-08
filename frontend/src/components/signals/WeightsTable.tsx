@@ -11,6 +11,7 @@ const WEIGHT_COLUMNS = [
   { key: "volume_anomaly", label: "Volume" },
   { key: "rsi", label: "RSI" },
   { key: "trend", label: "Trend" },
+  { key: "options", label: "Options" },
 ] as const;
 
 const DEFAULT_WEIGHTS: Record<string, number> = {
@@ -20,6 +21,7 @@ const DEFAULT_WEIGHTS: Record<string, number> = {
   volume_anomaly: 0.10,
   rsi: 0.15,
   trend: 0.10,
+  options: 0.08,
 };
 
 function formatPct(val: number): string {

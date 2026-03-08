@@ -7,6 +7,7 @@ import {
   triggerOutcomeEval,
   triggerWeightCompute,
   triggerMLTraining,
+  triggerOptionsFetch,
   getDbStats,
 } from "../api/admin";
 import type { TaskResponse } from "../api/admin";
@@ -103,6 +104,7 @@ export default function AdminPage() {
           <TaskButton label="Maintenance" onTrigger={triggerMaintenance} />
           <TaskButton label="Evaluate Outcomes" onTrigger={triggerOutcomeEval} />
           <TaskButton label="Compute Weights" onTrigger={triggerWeightCompute} />
+          <TaskButton label="Fetch Options Data" onTrigger={triggerOptionsFetch} />
           <TaskButton label="Train ML Models" onTrigger={triggerMLTraining} />
         </div>
       </section>

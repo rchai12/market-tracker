@@ -5,11 +5,32 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
+from app.models.cboe_put_call import CboePutCallRatio
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
+from app.models.options_activity import OptionsActivity
 from app.models.user import User
 from app.schemas.market_data import IndicatorDataResponse, MarketDataDailyResponse, MarketDataIntradayResponse
+from app.schemas.options import CboePutCallResponse, OptionsActivityResponse
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
+
+
+# Static paths MUST come before {ticker} parameterized routes
+@router.get("/cboe/put-call-ratio", response_model=list[CboePutCallResponse])
+async def get_cboe_put_call_ratio(
+    days: int = Query(90, ge=1, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get market-wide CBOE put/call ratio history."""
+    since = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(CboePutCallRatio)
+        .where(CboePutCallRatio.date >= since)
+        .order_by(CboePutCallRatio.date.asc())
+    )
+    rows = result.scalars().all()
+    return [CboePutCallResponse.model_validate(row) for row in rows]
 
 
 @router.get("/{ticker}/daily", response_model=list[MarketDataDailyResponse])
@@ -122,3 +143,24 @@ async def get_intraday_data(
     rows = result.scalars().all()
 
     return [MarketDataIntradayResponse.model_validate(row) for row in reversed(rows)]
+
+
+@router.get("/{ticker}/options", response_model=list[OptionsActivityResponse])
+async def get_options_activity(
+    ticker: str,
+    days: int = Query(30, ge=1, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get options activity history for a ticker."""
+    stock = await get_stock_by_ticker(ticker, db)
+
+    since = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(OptionsActivity)
+        .where(OptionsActivity.stock_id == stock.id)
+        .where(OptionsActivity.date >= since)
+        .order_by(OptionsActivity.date.asc())
+    )
+    rows = result.scalars().all()
+    return [OptionsActivityResponse.model_validate(row) for row in rows]

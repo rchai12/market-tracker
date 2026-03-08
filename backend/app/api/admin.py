@@ -93,6 +93,17 @@ async def trigger_backfill_duplicate_groups(
     return {"task_id": task.id, "days": days, "status": "queued"}
 
 
+@router.post("/fetch-options")
+async def trigger_options_fetch(
+    _admin: User = Depends(get_current_admin),
+):
+    """Trigger options data fetch as a background Celery task."""
+    from worker.tasks.scraping.options_data import fetch_all_options_data
+
+    task = fetch_all_options_data.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.post("/train-ml-models")
 async def trigger_ml_training(
     _admin: User = Depends(get_current_admin),

@@ -18,6 +18,7 @@ class SignalWeight(Base):
     volume_anomaly: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.10)
     rsi: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.15)
     trend: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.10)
+    options: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.08)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     accuracy_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -17,6 +17,7 @@ Context document for planned features and improvements. Each section captures th
 | 15 | Signal intelligence | Component breakdown, accuracy analytics (trend/distribution), signal detail panel, methodology tab |
 | 16 | Enhanced news intelligence | Event classification (10 categories), fuzzy duplicate detection, source credibility weighting |
 | 17 | ML signal ensemble | LightGBM binary classifier per-sector, A/B comparison with rule-based, admin training trigger, ML accuracy dashboard |
+| 18 | Options flow | yfinance options chain data, CBOE P/C ratio, 7th signal component (options score), P/C ratio & IV skew display |
 
 ---
 
@@ -114,19 +115,9 @@ Implemented: rule-based event classification (10 categories, ~100 keywords), fuz
 - **Mobile responsive**: Current layout is desktop-focused
 - **Keyboard shortcuts**: Power-user navigation (j/k for next/prev stock, etc.)
 
-### Options Flow / Unusual Activity
+### ~~Options Flow / Unusual Activity~~ (Done — Phase 18)
 
-**Motivation:** Options activity is a leading indicator for stock moves.
-
-**Approach:**
-- Scrape unusual options activity from public sources (Finviz, Barchart)
-- Track put/call ratios, unusual volume, large block trades
-- Add as a signal component or separate indicator on stock detail page
-
-**Key decisions:**
-- Data source reliability and update frequency
-- Whether to integrate into composite score or display separately
-- Historical options data availability
+Implemented: yfinance options chain data (nearest 3 expirations per ticker), aggregated daily snapshots with put/call ratio, volume-weighted IV, ATM strike IV identification, and IV skew computation. CBOE market-wide put/call ratio from public CSV. 7th signal component (options score) using PCR anomaly (60%) + IV skew signal (40%) vs 20-day baseline, tanh-scaled. Feature-toggled via `OPTIONS_FLOW_ENABLED` (default off). Frontend: P/C ratio + IV summary cards, call/put volume comparison, P/C ratio history bar chart, data quality badges. Admin trigger for immediate fetch.
 
 ### ~~Machine Learning Signal Ensemble~~ (Done — Phase 17)
 

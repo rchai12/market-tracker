@@ -1,7 +1,7 @@
 """Adaptive weight computation Celery task.
 
 Analyzes historical signal accuracy per sector to compute optimal weights
-for the 6 signal components. Runs daily at 4 AM after maintenance.
+for the 7 signal components (6 base + options when enabled). Runs daily at 4 AM after maintenance.
 """
 
 import logging
@@ -95,6 +95,7 @@ async def _compute_sector_weights(
             Signal.volume_score,
             Signal.rsi_score,
             Signal.trend_score,
+            Signal.options_score,
             Signal.direction,
             SignalOutcome.is_correct,
             SignalOutcome.price_change_pct,
@@ -116,6 +117,8 @@ async def _compute_sector_weights(
         return None
 
     components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "rsi", "trend"]
+    if settings.options_flow_enabled:
+        components.append("options")
     component_correct = {k: 0 for k in components}
     component_total = {k: 0 for k in components}
     total_correct = 0
@@ -153,6 +156,12 @@ async def _compute_sector_weights(
                 component_correct["trend"] += 1
             component_total["trend"] += 1
 
+        # Options score
+        if settings.options_flow_enabled and row.options_score is not None:
+            if (1.0 if float(row.options_score) > 0 else -1.0) == actual_dir:
+                component_correct["options"] += 1
+            component_total["options"] += 1
+
         # Sentiment volume not stored separately — use overall correctness as proxy
         component_correct["sentiment_volume"] += 1 if row.is_correct else 0
         component_total["sentiment_volume"] += 1
@@ -177,7 +186,7 @@ async def _compute_sector_weights(
 
     overall_accuracy = (total_correct / len(rows) * 100) if rows else 0
 
-    return {
+    result_weights = {
         "sentiment_momentum": round(clamped["sentiment_momentum"], 4),
         "sentiment_volume": round(clamped["sentiment_volume"], 4),
         "price_momentum": round(clamped["price_momentum"], 4),
@@ -187,6 +196,9 @@ async def _compute_sector_weights(
         "sample_count": len(rows),
         "accuracy_pct": round(overall_accuracy, 2),
     }
+    if settings.options_flow_enabled:
+        result_weights["options"] = round(clamped.get("options", 0.08), 4)
+    return result_weights
 
 
 def clamp_weights(weights: dict[str, float], min_w: float, max_w: float) -> dict[str, float]:
@@ -243,29 +255,20 @@ def clamp_weights(weights: dict[str, float], min_w: float, max_w: float) -> dict
 
 async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights: dict) -> None:
     """Insert or update weights for a sector."""
-    stmt = pg_insert(SignalWeight).values(
-        sector_id=sector_id,
-        sentiment_momentum=weights["sentiment_momentum"],
-        sentiment_volume=weights["sentiment_volume"],
-        price_momentum=weights["price_momentum"],
-        volume_anomaly=weights["volume_anomaly"],
-        rsi=weights["rsi"],
-        trend=weights["trend"],
-        sample_count=weights["sample_count"],
-        accuracy_pct=weights["accuracy_pct"],
-        computed_at=datetime.now(timezone.utc),
-    )
-    stmt = stmt.on_conflict_on_constraint("signal_weights_sector_id_key").do_update(
-        set_={
-            "sentiment_momentum": stmt.excluded.sentiment_momentum,
-            "sentiment_volume": stmt.excluded.sentiment_volume,
-            "price_momentum": stmt.excluded.price_momentum,
-            "volume_anomaly": stmt.excluded.volume_anomaly,
-            "rsi": stmt.excluded.rsi,
-            "trend": stmt.excluded.trend,
-            "sample_count": stmt.excluded.sample_count,
-            "accuracy_pct": stmt.excluded.accuracy_pct,
-            "computed_at": stmt.excluded.computed_at,
-        }
-    )
+    values = {
+        "sector_id": sector_id,
+        "sentiment_momentum": weights["sentiment_momentum"],
+        "sentiment_volume": weights["sentiment_volume"],
+        "price_momentum": weights["price_momentum"],
+        "volume_anomaly": weights["volume_anomaly"],
+        "rsi": weights["rsi"],
+        "trend": weights["trend"],
+        "options": weights.get("options", 0.08),
+        "sample_count": weights["sample_count"],
+        "accuracy_pct": weights["accuracy_pct"],
+        "computed_at": datetime.now(timezone.utc),
+    }
+    stmt = pg_insert(SignalWeight).values(**values)
+    update_set = {k: getattr(stmt.excluded, k) for k in values if k != "sector_id"}
+    stmt = stmt.on_conflict_on_constraint("signal_weights_sector_id_key").do_update(set_=update_set)
     await session.execute(stmt)

@@ -1,12 +1,13 @@
 """Component scoring functions for signal generation.
 
-Each function computes one of the 6 signal components:
+Each function computes one of the 7 signal components:
 - Sentiment momentum: exponentially weighted sentiment, half-life 6h
 - Sentiment volume: unique event count vs baseline, signed by net sentiment
 - Price momentum: 5-day price change, tanh-scaled
 - Volume anomaly: trading volume vs 20-day avg, signed by price direction
 - RSI score: 14-period RSI mapped to oversold(+)/overbought(-) score
 - Trend score: SMA crossover + MACD histogram combined
+- Options score: put/call ratio anomaly + IV skew vs baseline
 """
 
 import math
@@ -15,9 +16,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY
+from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.models.article import Article
 from app.models.market_data import MarketDataDaily
+from app.models.options_activity import OptionsActivity
 from app.models.sentiment import SentimentScore
 from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
@@ -291,6 +293,71 @@ async def calc_trend_score(
 
     # Combine: SMA crossover (60%) + MACD (40%)
     return 0.6 * sma_score + 0.4 * macd_score
+
+
+async def calc_options_score(
+    session: AsyncSession, stock_id: int, now: datetime
+) -> float | None:
+    """Options flow score from put/call ratio anomaly + IV skew vs baseline.
+
+    Returns positive for bullish options flow (unusual call activity),
+    negative for bearish (unusual put activity). Bounded to [-1, 1].
+    Returns None if options data is unavailable or insufficient baseline.
+    """
+    if not settings.options_flow_enabled:
+        return None
+
+    today = now.date() if hasattr(now, "date") else now
+
+    # Fetch latest options activity for this stock
+    latest_result = await session.execute(
+        select(OptionsActivity)
+        .where(OptionsActivity.stock_id == stock_id)
+        .where(OptionsActivity.date <= today)
+        .order_by(OptionsActivity.date.desc())
+        .limit(1)
+    )
+    latest = latest_result.scalar_one_or_none()
+
+    if latest is None or latest.data_quality == "stale":
+        return None
+
+    # Fetch baseline (last N days)
+    baseline_days = settings.options_baseline_days
+    baseline_result = await session.execute(
+        select(OptionsActivity.put_call_ratio, OptionsActivity.iv_skew)
+        .where(OptionsActivity.stock_id == stock_id)
+        .where(OptionsActivity.date < latest.date)
+        .where(OptionsActivity.data_quality != "stale")
+        .order_by(OptionsActivity.date.desc())
+        .limit(baseline_days)
+    )
+    baseline_rows = baseline_result.all()
+
+    if len(baseline_rows) < 5:
+        return None  # Cold start — insufficient baseline
+
+    # Put/Call Ratio Anomaly (60%)
+    pcr_score = 0.0
+    if latest.put_call_ratio is not None:
+        pcr_values = [float(r.put_call_ratio) for r in baseline_rows if r.put_call_ratio is not None]
+        if len(pcr_values) >= 3:
+            pcr_mean = sum(pcr_values) / len(pcr_values)
+            pcr_std = (sum((v - pcr_mean) ** 2 for v in pcr_values) / len(pcr_values)) ** 0.5
+            pcr_z = (float(latest.put_call_ratio) - pcr_mean) / max(pcr_std, 0.01)
+            pcr_score = -math.tanh(pcr_z)  # High P/C = bearish = negative
+
+    # IV Skew Signal (40%)
+    skew_score = 0.0
+    if latest.iv_skew is not None:
+        skew_values = [float(r.iv_skew) for r in baseline_rows if r.iv_skew is not None]
+        if len(skew_values) >= 3:
+            skew_mean = sum(skew_values) / len(skew_values)
+            skew_std = (sum((v - skew_mean) ** 2 for v in skew_values) / len(skew_values)) ** 0.5
+            skew_z = (float(latest.iv_skew) - skew_mean) / max(skew_std, 0.01)
+            skew_score = -math.tanh(skew_z)  # Widening skew = more expensive puts = bearish
+
+    return 0.6 * pcr_score + 0.4 * skew_score
 
 
 async def get_recent_article_count(

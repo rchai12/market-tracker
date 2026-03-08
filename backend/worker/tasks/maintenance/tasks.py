@@ -82,6 +82,31 @@ async def cleanup_old_signals():
     return {"deleted": deleted}
 
 
+@async_task("worker.tasks.maintenance.cleanup_options_data", max_retries=1, retry_delay=120)
+async def cleanup_options_data():
+    """Delete options_activity rows older than retention period."""
+    from app.models.options_activity import OptionsActivity
+    from worker.tasks.maintenance.retention import delete_older_than
+
+    deleted = await delete_older_than(
+        model=OptionsActivity,
+        timestamp_column=OptionsActivity.created_at,
+        days=settings.retention_options_days,
+    )
+    logger.info("Options data cleanup: deleted %d rows", deleted)
+
+    # Also clean CBOE data (keep 365 days)
+    from app.models.cboe_put_call import CboePutCallRatio
+
+    deleted_cboe = await delete_older_than(
+        model=CboePutCallRatio,
+        timestamp_column=CboePutCallRatio.created_at,
+        days=365,
+    )
+    logger.info("CBOE ratio cleanup: deleted %d rows", deleted_cboe)
+    return {"options_deleted": deleted, "cboe_deleted": deleted_cboe}
+
+
 @celery_app.task(
     name="worker.tasks.maintenance.run_all_maintenance",
     bind=True,
@@ -101,6 +126,7 @@ def run_all_maintenance(self):
         ("scrape_logs", cleanup_scrape_logs),
         ("alert_logs", cleanup_alert_logs),
         ("signals", cleanup_old_signals),
+        ("options_data", cleanup_options_data),
     ]:
         try:
             results[name] = task_fn()

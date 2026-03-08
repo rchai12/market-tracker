@@ -221,6 +221,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         volume_score=float(signal.volume_score) if signal.volume_score else None,
         rsi_score=float(signal.rsi_score) if signal.rsi_score else None,
         trend_score=float(signal.trend_score) if signal.trend_score else None,
+        options_score=float(signal.options_score) if signal.options_score else None,
         article_count=signal.article_count,
         reasoning=signal.reasoning,
         ml_score=float(signal.ml_score) if signal.ml_score else None,

@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 17 (ML signal ensemble) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
+**Phase 18 (options flow) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -24,8 +24,9 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Event classification: rule-based classifier (10 categories: earnings, M&A, regulatory, product, analyst, insider, macro, legal, dividend, general)
 - Duplicate detection: fuzzy title matching via rapidfuzz token_set_ratio across sources within 24h windows
 - Source credibility: weighted scoring (SEC EDGAR 1.0, Reuters 0.9, Reddit 0.4) applied in sentiment momentum
-- Signal generation: 6-component composite scoring (sentiment momentum 30%, sentiment volume 20%, price momentum 15%, volume anomaly 10%, RSI 15%, trend 10%) with source credibility weighting and duplicate deduplication
-- ML signal ensemble: LightGBM binary classifier (per-sector + global fallback) trained on 6 component scores → ml_score, ml_direction, ml_confidence on each signal; disabled by default (ML_ENSEMBLE_ENABLED=true to activate)
+- Signal generation: 7-component composite scoring (sentiment momentum, sentiment volume, price momentum, volume anomaly, RSI, trend, options flow) with source credibility weighting and duplicate deduplication; options component gated behind OPTIONS_FLOW_ENABLED (default off)
+- Options flow: yfinance options chain data (put/call ratio, IV skew, weighted avg IV, ATM strike IV, volume/OI aggregates), CBOE market-wide P/C ratio, per-ticker data quality tracking (full/partial/stale), 7th signal component using z-score anomaly detection vs 20-day baseline
+- ML signal ensemble: LightGBM binary classifier (per-sector + global fallback) trained on component scores → ml_score, ml_direction, ml_confidence on each signal; disabled by default (ML_ENSEMBLE_ENABLED=true to activate)
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed, signal detail with outcomes + linked articles, accuracy trend + distribution endpoints
 - Alert dispatch: Discord webhooks + SMTP email, per-user AlertConfig matching, AlertLog history
 - Alert API: config CRUD, alert history, test alert endpoint
@@ -40,10 +41,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - StockDetailPage with price/volume charts, indicator toggles (SMA, Bollinger, RSI, MACD), sentiment chart, signal history, signal accuracy, watchlist toggle
 - Dashboard: signals feed (10 latest moderate+), clickable sector sentiment heatmap, top movers (bullish/bearish), article activity chart
 - Settings page: profile editing (username/email), password change, dark mode toggle, notification info
-- Admin page: task triggers (scrape, seed, maintenance, outcomes, weights, ML training), database stats table, ML model status
+- Admin page: task triggers (scrape, seed, maintenance, outcomes, weights, options fetch, ML training), database stats table, ML model status
 - Watchlist: sparkline charts (30-day price via TradingView), signal direction badges, links to stock detail
 - UI polish: loading skeletons, error retry buttons, consistent empty states
-- SQLAlchemy models for all 16 tables
+- SQLAlchemy models for all 18 tables
 - Docker Compose with resource limits, health checks, non-root users, tini init
 - Nginx reverse proxy with SSL/TLS (Let's Encrypt), HSTS, CSP, security headers
 - Nginx auth rate limiting: 5 req/min per IP on `/api/auth/` (brute-force protection)
@@ -83,10 +84,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, password validation, secret key (341 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), password validation, secret key (371 tests)
 
 ### What's next
-- Phase 18: TBD
+- Phase 19: TBD
 
 ## Architecture
 
@@ -102,19 +103,19 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   app/             FastAPI application
     api/           Route handlers: auth, stocks, watchlist, market_data, articles, sentiment, signals, alerts, backtests, admin (+ health)
     core/          Security (JWT/bcrypt), structured logging, request middleware, exceptions
-    models/        SQLAlchemy ORM models (16 tables)
-    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, backtest, ml_model, common)
+    models/        SQLAlchemy ORM models (18 tables)
+    schemas/       Pydantic request/response schemas (auth, stock, watchlist, market_data, article, sentiment, signal, alert, backtest, ml_model, options, common)
 
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
-    beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights, 4:30AM ML training)
+    beat_schedule  Cron schedule (:00 scrape, :05 market data, :10 options, :12 CBOE, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights, 4:30AM ML training)
     tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest), maintenance/ (retention + matview refresh)
     utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/
   alembic/         Database migrations
-  tests/           pytest test suite (341 tests)
+  tests/           pytest test suite (371 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
-  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Articles (EventCategoryBadge, SourceCredibilityIndicator), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, MLModelStatusTable, AccuracyBadge, SignalsTab, AccuracyTab, MethodologyTab), StockDetail (StockPriceSection, StockSentimentSignals, StockAccuracySection, StockArticlesSection), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card, QueryGuard)
+  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Articles (EventCategoryBadge, SourceCredibilityIndicator), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, MLModelStatusTable, AccuracyBadge, SignalsTab, AccuracyTab, MethodologyTab), StockDetail (StockPriceSection, StockSentimentSignals, StockOptionsSection, StockAccuracySection, StockArticlesSection), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card, QueryGuard)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Admin, Login, Register, Settings)
   src/store/       Zustand state stores (auth, theme, sidebar)
@@ -271,12 +272,16 @@ cd /opt/stock-predictor/backend
 | `backend/app/models/backtest.py` | Backtest + BacktestTrade ORM models |
 | `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker extraction, event classification, duplicate detection |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
+| `backend/worker/tasks/scraping/options_data.py` | Options chain fetch (yfinance) + CBOE P/C ratio tasks |
+| `backend/app/models/options_activity.py` | Per-ticker options snapshot ORM (daily aggregates) |
+| `backend/app/models/cboe_put_call.py` | Market-wide CBOE put/call ratio ORM |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
 | `backend/scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
 | `backend/alembic/versions/001_initial_schema.py` | Initial migration: all 13 tables |
 | `backend/alembic/versions/002_backtesting_v2.py` | Backtest v2: transaction costs, position sizing, stop-loss/take-profit, benchmark columns |
 | `backend/alembic/versions/003_signal_intelligence.py` | Signal intelligence: add sentiment_volume_score column |
 | `backend/alembic/versions/005_ml_ensemble.py` | ML ensemble: add ml_score/ml_direction/ml_confidence columns + ml_models table |
+| `backend/alembic/versions/006_options_flow.py` | Options flow: options_activity + cboe_put_call_ratio tables, options_score/options columns |
 | `scripts/backup.sh` | Database backup with configurable retention |
 | `scripts/restore.sh` | Database restore from backup |
 | `.github/workflows/ci.yml` | CI pipeline: lint, test, Docker build |
@@ -343,6 +348,9 @@ cd /opt/stock-predictor/backend
 | POST | `/api/admin/backfill-duplicate-groups` | Admin | Done |
 | POST | `/api/admin/train-ml-models` | Admin | Done |
 | GET | `/api/admin/ml-models` | Admin | Done |
+| POST | `/api/admin/fetch-options` | Admin | Done |
+| GET | `/api/market-data/{ticker}/options` | Yes | Done |
+| GET | `/api/market-data/cboe/put-call-ratio` | Yes | Done |
 | GET | `/api/admin/db-stats` | Admin | Done |
 
 ## Data Pipeline
@@ -354,6 +362,8 @@ Initialization:
 Hourly (Celery Beat on Compute VM):
   :00 → fan-out 7 scrapers → store articles + extract tickers (symbol + company name matching) → chain FinBERT sentiment
   :05 → fetch market data via yfinance (5-day window, weekdays only)
+  :10 → fetch options chain data via yfinance (weekdays only, if OPTIONS_FLOW_ENABLED)
+  :12 → fetch CBOE put/call ratio (weekdays only, if OPTIONS_FLOW_ENABLED)
   :15 → sentiment catch-up (process any unprocessed articles)
   :30 → generate composite signals (+ ML inference if enabled) → dispatch alerts (Discord + email) for moderate+ signals
   :35 → refresh materialized views (daily sentiment)
@@ -372,9 +382,11 @@ Daily:
 composite = 0.30 * sentiment_momentum + 0.20 * sentiment_volume
           + 0.15 * price_momentum    + 0.10 * volume_anomaly
           + 0.15 * rsi_score         + 0.10 * trend_score
+          + 0.08 * options_score  (when OPTIONS_FLOW_ENABLED; other weights scale down proportionally)
 
-RSI score:   tanh((50 - rsi) / 50 * 2.5)  — oversold → positive, overbought → negative
-Trend score: 0.6 * sma_crossover + 0.4 * macd_histogram_signal
+RSI score:     tanh((50 - rsi) / 50 * 2.5)  — oversold → positive, overbought → negative
+Trend score:   0.6 * sma_crossover + 0.4 * macd_histogram_signal
+Options score: 0.6 * -tanh(pcr_z) + 0.4 * -tanh(skew_z)  — z-scores vs 20-day baseline
 
 Weights are adaptive: per-sector optimization runs daily at 4 AM based on outcome accuracy.
 

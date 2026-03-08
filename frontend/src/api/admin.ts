@@ -60,6 +60,11 @@ export interface MLModelStatus {
   feature_importances: Record<string, number> | null;
 }
 
+export async function triggerOptionsFetch(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/fetch-options");
+  return data;
+}
+
 export async function triggerMLTraining(): Promise<TaskResponse> {
   const { data } = await apiClient.post<TaskResponse>("/admin/train-ml-models");
   return data;

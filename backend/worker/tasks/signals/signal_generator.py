@@ -7,6 +7,7 @@ Computes composite signal scores for all active stocks by combining:
 - Volume anomaly (10%): trading volume vs 20-day avg, signed by price direction
 - RSI (15%): 14-period RSI mapped to oversold(+)/overbought(-) score
 - Trend (10%): SMA crossover + MACD histogram combined score
+- Options (8%): put/call ratio anomaly + IV skew vs baseline (when enabled)
 """
 
 import logging
@@ -22,6 +23,7 @@ from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.tasks.signals.component_scores import (
+    calc_options_score,
     calc_price_momentum,
     calc_rsi_score,
     calc_sentiment_momentum,
@@ -34,13 +36,22 @@ from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
-# ── Scoring weights (6 components, sum to 1.0) ──
+# ── Scoring weights (6 components without options, 7 with options, sum to 1.0) ──
 WEIGHT_SENTIMENT_MOMENTUM = 0.30
 WEIGHT_SENTIMENT_VOLUME = 0.20
 WEIGHT_PRICE_MOMENTUM = 0.15
 WEIGHT_VOLUME_ANOMALY = 0.10
 WEIGHT_RSI = 0.15
 WEIGHT_TREND = 0.10
+
+# When options flow is enabled, redistribute to accommodate 8% options weight
+WEIGHT_SENTIMENT_MOMENTUM_OPT = 0.28
+WEIGHT_SENTIMENT_VOLUME_OPT = 0.18
+WEIGHT_PRICE_MOMENTUM_OPT = 0.14
+WEIGHT_VOLUME_ANOMALY_OPT = 0.09
+WEIGHT_RSI_OPT = 0.14
+WEIGHT_TREND_OPT = 0.09
+WEIGHT_OPTIONS = 0.08
 
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
@@ -110,6 +121,7 @@ async def _generate_signals_async() -> dict:
                     score_data, ml_models_map, stock.sector_id, direction
                 ) if ml_models_map else None
 
+                opts_raw = score_data["options_score"]
                 signal = Signal(
                     stock_id=stock.id,
                     direction=direction,
@@ -121,6 +133,7 @@ async def _generate_signals_async() -> dict:
                     volume_score=round(score_data["volume_anomaly"], 5),
                     rsi_score=round(score_data["rsi_score"], 5),
                     trend_score=round(score_data["trend_score"], 5),
+                    options_score=round(opts_raw, 5) if opts_raw else None,
                     article_count=score_data["article_count"],
                     reasoning=reasoning,
                     ml_score=round(ml_result.ml_score, 5) if ml_result else None,
@@ -166,13 +179,14 @@ async def _compute_composite_score(
     weights_map: dict | None = None,
     sector_id: int | None = None,
 ) -> dict | None:
-    """Compute all six components and the weighted composite for a stock."""
+    """Compute all components and the weighted composite for a stock."""
     sent_momentum = await calc_sentiment_momentum(session, stock_id, now)
     sent_volume = await calc_sentiment_volume(session, stock_id, now)
     price_mom = await calc_price_momentum(session, stock_id, now)
     vol_anomaly = await calc_volume_anomaly(session, stock_id, now)
     rsi = await calc_rsi_score(session, stock_id, now)
     trend = await calc_trend_score(session, stock_id, now)
+    options = await calc_options_score(session, stock_id, now)
 
     article_count = await get_recent_article_count(session, stock_id, now)
 
@@ -188,6 +202,7 @@ async def _compute_composite_score(
     va = vol_anomaly if vol_anomaly is not None else 0.0
     rsi_val = rsi if rsi is not None else 0.0
     trend_val = trend if trend is not None else 0.0
+    opts_val = options if options is not None else 0.0
 
     # Use adaptive weights if available, otherwise default
     w = _get_weights(weights_map, sector_id)
@@ -199,6 +214,7 @@ async def _compute_composite_score(
         + w["volume_anomaly"] * va
         + w["rsi"] * rsi_val
         + w["trend"] * trend_val
+        + w.get("options", 0.0) * opts_val
     )
 
     return {
@@ -209,6 +225,7 @@ async def _compute_composite_score(
         "volume_anomaly": va,
         "rsi_score": rsi_val,
         "trend_score": trend_val,
+        "options_score": opts_val,
         "article_count": article_count,
         "weights_source": w["source"],
     }
@@ -226,15 +243,17 @@ async def _load_all_weights(session: AsyncSession) -> dict:
 
     weights_map = {}
     for row in rows:
-        weights_map[row.sector_id] = {
+        w = {
             "sentiment_momentum": float(row.sentiment_momentum),
             "sentiment_volume": float(row.sentiment_volume),
             "price_momentum": float(row.price_momentum),
             "volume_anomaly": float(row.volume_anomaly),
             "rsi": float(row.rsi),
             "trend": float(row.trend),
+            "options": float(row.options),
             "source": "sector" if row.sector_id else "global",
         }
+        weights_map[row.sector_id] = w
     return weights_map
 
 
@@ -249,6 +268,17 @@ def _get_weights(weights_map: dict | None, sector_id: int | None) -> dict:
 
 
 def _default_weights() -> dict:
+    if settings.options_flow_enabled:
+        return {
+            "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM_OPT,
+            "sentiment_volume": WEIGHT_SENTIMENT_VOLUME_OPT,
+            "price_momentum": WEIGHT_PRICE_MOMENTUM_OPT,
+            "volume_anomaly": WEIGHT_VOLUME_ANOMALY_OPT,
+            "rsi": WEIGHT_RSI_OPT,
+            "trend": WEIGHT_TREND_OPT,
+            "options": WEIGHT_OPTIONS,
+            "source": "default",
+        }
     return {
         "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM,
         "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
@@ -256,6 +286,7 @@ def _default_weights() -> dict:
         "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
         "rsi": WEIGHT_RSI,
         "trend": WEIGHT_TREND,
+        "options": 0.0,
         "source": "default",
     }
 
@@ -313,6 +344,11 @@ def _build_reasoning(
         trend_desc = "uptrend" if trend_val > 0 else "downtrend"
         parts.append(f"Technical trend is {trend_desc} ({trend_val:.3f})")
 
+    opts_val = score_data.get("options_score", 0)
+    if abs(opts_val) > 0.3:
+        opts_desc = "bullish" if opts_val > 0 else "bearish"
+        parts.append(f"Options flow is {opts_desc} ({opts_val:.3f})")
+
     return ". ".join(parts) + "."
 
 
@@ -348,6 +384,8 @@ def _compute_ml_score(
         score_data["rsi_score"],
         score_data["trend_score"],
     ]
+    if settings.options_flow_enabled:
+        features.append(score_data["options_score"])
 
     return predict(
         model_path,
