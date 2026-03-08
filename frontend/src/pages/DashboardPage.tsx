@@ -10,6 +10,7 @@ import TopMoversCard from "../components/dashboard/TopMoversCard";
 import ArticleActivityCard from "../components/dashboard/ArticleActivityCard";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import ErrorRetry from "../components/common/ErrorRetry";
+import Card from "../components/common/Card";
 
 export default function DashboardPage() {
   const {
@@ -92,16 +93,16 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 text-center">
+          <Card padding="md" className="text-center">
             <p className="text-gray-500 dark:text-gray-400 text-sm">
               No signals yet. Signals will appear after the generation pipeline runs.
             </p>
-          </div>
+          </Card>
         )}
       </section>
 
       {/* Signal Accuracy */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
+      <Card className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
           Signal Accuracy
         </h2>
@@ -112,11 +113,11 @@ export default function DashboardPage() {
         ) : (
           <AccuracyCard data={accuracy ?? []} />
         )}
-      </section>
+      </Card>
 
       {/* Sector Heatmap + Top Movers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+        <Card>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
             Sector Sentiment
           </h2>
@@ -135,9 +136,9 @@ export default function DashboardPage() {
               No sector data yet. Data will appear after sentiment analysis runs.
             </p>
           )}
-        </section>
+        </Card>
 
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+        <Card>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
             Top Movers
           </h2>
@@ -181,11 +182,11 @@ export default function DashboardPage() {
               No signals yet. Top movers will appear after signal generation runs.
             </p>
           )}
-        </section>
+        </Card>
       </div>
 
       {/* Article Activity */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+      <Card>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
           Article Activity
         </h2>
@@ -200,7 +201,7 @@ export default function DashboardPage() {
             No articles scraped yet. Data will appear after scrapers run.
           </p>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

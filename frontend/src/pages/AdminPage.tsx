@@ -10,6 +10,7 @@ import {
 } from "../api/admin";
 import type { TaskResponse } from "../api/admin";
 import type { AxiosError } from "axios";
+import Card from "../components/common/Card";
 
 function TaskButton({
   label,
@@ -38,7 +39,7 @@ function TaskButton({
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+    <Card>
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{label}</h3>
         <button
@@ -57,7 +58,7 @@ function TaskButton({
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -79,7 +80,7 @@ export default function AdminPage() {
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Task Triggers</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <TaskButton label="Scrape Now" onTrigger={triggerScrape} />
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+          <Card>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Seed History</h3>
               <div className="flex items-center gap-2">
@@ -97,7 +98,7 @@ export default function AdminPage() {
                 <SeedButton period={seedPeriod} />
               </div>
             </div>
-          </div>
+          </Card>
           <TaskButton label="Maintenance" onTrigger={triggerMaintenance} />
           <TaskButton label="Evaluate Outcomes" onTrigger={triggerOutcomeEval} />
           <TaskButton label="Compute Weights" onTrigger={triggerWeightCompute} />
@@ -107,7 +108,7 @@ export default function AdminPage() {
       {/* Database Stats */}
       <section>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Database Stats</h2>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
+        <Card padding="none" className="overflow-hidden">
           {statsLoading ? (
             <div className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
           ) : dbStats ? (
@@ -140,7 +141,7 @@ export default function AdminPage() {
           ) : (
             <div className="p-6 text-sm text-gray-500 dark:text-gray-400">Failed to load stats</div>
           )}
-        </div>
+        </Card>
       </section>
     </div>
   );

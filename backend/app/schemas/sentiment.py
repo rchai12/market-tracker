@@ -20,6 +20,7 @@ class SentimentScoreResponse(BaseModel):
     article_title: str | None = None
     article_source: str | None = None
     article_source_url: str | None = None
+    article_event_category: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -66,6 +66,29 @@ async def trigger_weight_computation(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/backfill-event-categories")
+async def trigger_backfill_event_categories(
+    _admin: User = Depends(get_current_admin),
+):
+    """Classify articles that have no event_category set."""
+    from worker.tasks.maintenance.tasks import backfill_event_categories
+
+    task = backfill_event_categories.delay()
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/backfill-duplicate-groups")
+async def trigger_backfill_duplicate_groups(
+    days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
+    _admin: User = Depends(get_current_admin),
+):
+    """Detect duplicate articles from the last N days."""
+    from worker.tasks.maintenance.tasks import backfill_duplicate_groups
+
+    task = backfill_duplicate_groups.delay(days)
+    return {"task_id": task.id, "days": days, "status": "queued"}
+
+
 @router.get("/db-stats")
 async def get_db_stats(
     _admin: User = Depends(get_current_admin),

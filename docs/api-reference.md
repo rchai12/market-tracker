@@ -145,8 +145,9 @@ Query params: `?days=365` (default 365)
 |--------|------|------|--------|-------------|
 | GET | `/articles` | Yes | **Done** | List articles (paginated, filterable) |
 | GET | `/articles/sources` | Yes | **Done** | List sources with article counts |
+| GET | `/articles/event-categories` | Yes | **Done** | List event categories with article counts |
 
-Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=false&page=1&per_page=20`
+Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=false&event_category=earnings&page=1&per_page=20`
 
 ### GET /articles response
 ```json
@@ -156,7 +157,8 @@ Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=fal
       "id": 1, "source": "yahoo_finance", "source_url": "https://...",
       "title": "XOM beats earnings", "summary": null, "author": null,
       "published_at": "2025-01-15T10:00:00Z", "scraped_at": "2025-01-15T10:05:00Z",
-      "is_processed": false, "event_category": null,
+      "is_processed": false, "event_category": "earnings",
+      "duplicate_group_id": null,
       "tickers": ["XOM", "CVX"]
     }
   ],
@@ -170,6 +172,16 @@ Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=fal
   { "source": "yahoo_finance", "count": 450 },
   { "source": "reuters", "count": 230 },
   { "source": "sec_edgar", "count": 180 }
+]
+```
+
+### GET /articles/event-categories response
+```json
+[
+  { "category": "earnings", "count": 320 },
+  { "category": "macro_economic", "count": 180 },
+  { "category": "analyst_rating", "count": 150 },
+  { "category": "general_news", "count": 450 }
 ]
 ```
 
@@ -213,7 +225,8 @@ Query params: `?page=1&per_page=20`
       "model_version": "ProsusAI/finbert",
       "created_at": "2025-06-15T10:00:00Z",
       "article_title": "XOM beats earnings expectations",
-      "article_source": "yahoo_finance"
+      "article_source": "yahoo_finance",
+      "article_event_category": "earnings"
     }
   ],
   "meta": { "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
@@ -561,6 +574,8 @@ Returns CSV file as attachment download.
 | POST | `/admin/maintenance` | Admin | **Done** | Trigger data maintenance (compression, cleanup, purge) |
 | POST | `/admin/evaluate-outcomes` | Admin | **Done** | Trigger signal outcome evaluation (Celery task) |
 | POST | `/admin/compute-weights` | Admin | **Done** | Trigger adaptive weight computation (Celery task) |
+| POST | `/admin/backfill-event-categories` | Admin | **Done** | Classify articles without event_category |
+| POST | `/admin/backfill-duplicate-groups` | Admin | **Done** | Detect duplicate articles (last N days) |
 | GET | `/admin/db-stats` | Admin | **Done** | Database stats (row counts, table sizes) |
 
 ### POST /admin/seed-history

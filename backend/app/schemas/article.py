@@ -18,6 +18,7 @@ class ArticleResponse(BaseModel):
     scraped_at: datetime
     is_processed: bool
     event_category: str | None
+    duplicate_group_id: int | None = None
     tickers: list[str] = []
 
     model_config = {"from_attributes": True}

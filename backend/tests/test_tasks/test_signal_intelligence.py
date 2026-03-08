@@ -250,7 +250,7 @@ class TestComputeAccuracyDirect:
     """Test the real _compute_accuracy helper from the API module."""
 
     def test_accuracy_computation(self):
-        from app.api.signals import _compute_accuracy
+        from app.api.signal_accuracy import _compute_accuracy
 
         Row = type("Row", (), {})
         rows = []
@@ -279,7 +279,7 @@ class TestComputeAccuracyDirect:
         assert result.bearish_accuracy_pct == 50.0
 
     def test_accuracy_single_direction(self):
-        from app.api.signals import _compute_accuracy
+        from app.api.signal_accuracy import _compute_accuracy
 
         Row = type("Row", (), {})
         rows = []
@@ -297,7 +297,7 @@ class TestComputeAccuracyDirect:
         assert abs(result.accuracy_pct - 66.7) < 0.1
 
     def test_all_correct(self):
-        from app.api.signals import _compute_accuracy
+        from app.api.signal_accuracy import _compute_accuracy
 
         Row = type("Row", (), {})
         rows = []
@@ -313,7 +313,7 @@ class TestComputeAccuracyDirect:
         assert result.correct_count == 2
 
     def test_no_correct(self):
-        from app.api.signals import _compute_accuracy
+        from app.api.signal_accuracy import _compute_accuracy
 
         Row = type("Row", (), {})
         rows = []

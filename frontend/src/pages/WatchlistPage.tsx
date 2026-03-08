@@ -6,6 +6,7 @@ import { getSignalHistory } from "../api/signals";
 import SparklineChart from "../components/charts/SparklineChart";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import ErrorRetry from "../components/common/ErrorRetry";
+import Card from "../components/common/Card";
 import { DIRECTION_COLORS } from "../constants/ui";
 
 function WatchlistCard({ item }: { item: WatchlistItem }) {
@@ -25,7 +26,7 @@ function WatchlistCard({ item }: { item: WatchlistItem }) {
 
   return (
     <Link to={`/stocks/${item.ticker}`} className="block">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 hover:shadow-md transition-shadow">
+      <Card className="hover:shadow-md transition-shadow">
         <div className="flex justify-between items-start">
           <div>
             <p className="font-bold text-gray-900 dark:text-white">{item.ticker}</p>
@@ -55,7 +56,7 @@ function WatchlistCard({ item }: { item: WatchlistItem }) {
             <div className="h-10 bg-gray-100 dark:bg-gray-700/50 rounded animate-pulse" />
           )}
         </div>
-      </div>
+      </Card>
     </Link>
   );
 }

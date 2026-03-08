@@ -34,6 +34,8 @@ dependencies = [
     "torch>=2.5.0",
     # Alerts
     "aiosmtplib>=3.0.0",
+    # NLP
+    "rapidfuzz>=3.0.0",
     # Utilities
     "python-dateutil>=2.9.0",
     "email-validator>=2.2.0",

@@ -10,22 +10,27 @@ Computes composite signal scores for all active stocks by combining:
 """
 
 import logging
-import math
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models.market_data import MarketDataDaily
-from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
+from worker.tasks.signals.component_scores import (
+    calc_price_momentum,
+    calc_rsi_score,
+    calc_sentiment_momentum,
+    calc_sentiment_volume,
+    calc_trend_score,
+    calc_volume_anomaly,
+    get_recent_article_count,
+)
 from worker.utils.async_task import run_async
-from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +41,6 @@ WEIGHT_PRICE_MOMENTUM = 0.15
 WEIGHT_VOLUME_ANOMALY = 0.10
 WEIGHT_RSI = 0.15
 WEIGHT_TREND = 0.10
-
-# ── Parameters ──
-SENTIMENT_HALF_LIFE_HOURS = 6
-BASELINE_DAYS = 20
-PRICE_MOMENTUM_DAYS = 5
-RSI_LOOKBACK_DAYS = 30
-TREND_LOOKBACK_DAYS = 60
 
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
@@ -165,7 +163,7 @@ async def _compute_composite_score(
     rsi = await calc_rsi_score(session, stock_id, now)
     trend = await calc_trend_score(session, stock_id, now)
 
-    article_count = await _get_recent_article_count(session, stock_id, now)
+    article_count = await get_recent_article_count(session, stock_id, now)
 
     has_sentiment = sent_momentum is not None
     has_market = price_mom is not None
@@ -230,7 +228,7 @@ async def _load_all_weights(session: AsyncSession) -> dict:
 
 
 def _get_weights(weights_map: dict | None, sector_id: int | None) -> dict:
-    """Look up adaptive weights: sector-specific → global → defaults."""
+    """Look up adaptive weights: sector-specific -> global -> defaults."""
     if weights_map:
         if sector_id is not None and sector_id in weights_map:
             return weights_map[sector_id]
@@ -249,234 +247,6 @@ def _default_weights() -> dict:
         "trend": WEIGHT_TREND,
         "source": "default",
     }
-
-
-async def calc_sentiment_momentum(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """Exponentially weighted average of sentiment scores, half-life 6h.
-
-    Sentiment value per score = positive - negative (range: [-1, 1]).
-    Weight = exp(-ln(2) * hours_ago / half_life).
-    """
-    since = now - timedelta(hours=48)
-    result = await session.execute(
-        select(
-            SentimentScore.positive_score,
-            SentimentScore.negative_score,
-            SentimentScore.processed_at,
-        )
-        .where(SentimentScore.stock_id == stock_id)
-        .where(SentimentScore.processed_at >= since)
-        .order_by(SentimentScore.processed_at.desc())
-    )
-    rows = result.all()
-
-    if not rows:
-        return None
-
-    decay_rate = math.log(2) / SENTIMENT_HALF_LIFE_HOURS
-    weighted_sum = 0.0
-    weight_total = 0.0
-
-    for row in rows:
-        sentiment_value = float(row.positive_score) - float(row.negative_score)
-        hours_ago = (now - row.processed_at).total_seconds() / 3600
-        weight = math.exp(-decay_rate * hours_ago)
-        weighted_sum += sentiment_value * weight
-        weight_total += weight
-
-    if weight_total == 0:
-        return None
-
-    return weighted_sum / weight_total
-
-
-async def calc_sentiment_volume(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """Article count in last 24h vs 20-day daily baseline.
-
-    Magnitude via tanh, signed by net sentiment direction.
-    """
-    since_24h = now - timedelta(hours=24)
-    recent_result = await session.execute(
-        select(
-            func.count(SentimentScore.id),
-            func.avg(SentimentScore.positive_score - SentimentScore.negative_score),
-        )
-        .where(SentimentScore.stock_id == stock_id)
-        .where(SentimentScore.processed_at >= since_24h)
-    )
-    recent_row = recent_result.one()
-    recent_count = recent_row[0] or 0
-    recent_net_sentiment = float(recent_row[1]) if recent_row[1] is not None else 0.0
-
-    if recent_count == 0:
-        return None
-
-    since_20d = now - timedelta(days=BASELINE_DAYS)
-    baseline_result = await session.execute(
-        select(func.count(SentimentScore.id))
-        .where(SentimentScore.stock_id == stock_id)
-        .where(SentimentScore.processed_at >= since_20d)
-        .where(SentimentScore.processed_at < since_24h)
-    )
-    baseline_total = baseline_result.scalar() or 0
-    baseline_daily_avg = baseline_total / max(BASELINE_DAYS - 1, 1)
-
-    if baseline_daily_avg == 0:
-        ratio = min(recent_count, 5.0)
-    else:
-        ratio = recent_count / baseline_daily_avg
-
-    magnitude = math.tanh(ratio - 1.0)
-    direction_sign = 1.0 if recent_net_sentiment >= 0 else -1.0
-
-    return magnitude * direction_sign
-
-
-async def calc_price_momentum(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """5-day price change, tanh-scaled to [-1, 1]."""
-    result = await session.execute(
-        select(MarketDataDaily.close, MarketDataDaily.date)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(PRICE_MOMENTUM_DAYS + 1)
-    )
-    rows = result.all()
-
-    if len(rows) < 2:
-        return None
-
-    latest_close = float(rows[0].close)
-    oldest_close = float(rows[-1].close)
-
-    if oldest_close == 0:
-        return None
-
-    pct_change = (latest_close - oldest_close) / oldest_close
-    return math.tanh(pct_change * 5)
-
-
-async def calc_volume_anomaly(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """Trading volume vs 20-day average, signed by price direction."""
-    result = await session.execute(
-        select(MarketDataDaily.volume, MarketDataDaily.close, MarketDataDaily.date)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.volume != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(BASELINE_DAYS + 1)
-    )
-    rows = result.all()
-
-    if len(rows) < 3:
-        return None
-
-    latest_volume = rows[0].volume
-    latest_close = float(rows[0].close) if rows[0].close else None
-    prev_close = float(rows[1].close) if rows[1].close else None
-
-    volumes = [r.volume for r in rows[1:] if r.volume and r.volume > 0]
-    if not volumes:
-        return None
-
-    avg_volume = sum(volumes) / len(volumes)
-    if avg_volume == 0:
-        return None
-
-    ratio = latest_volume / avg_volume
-    magnitude = math.tanh(ratio - 1.0)
-
-    if latest_close is not None and prev_close is not None and prev_close > 0:
-        price_direction = 1.0 if latest_close >= prev_close else -1.0
-    else:
-        price_direction = 1.0
-
-    return magnitude * price_direction
-
-
-async def calc_rsi_score(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """RSI-based score: oversold (<30) → positive, overbought (>70) → negative."""
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(RSI_LOOKBACK_DAYS)
-    )
-    rows = result.all()
-
-    if len(rows) < 16:  # Need at least 14+1 for RSI + 1 for warmup
-        return None
-
-    closes = [float(r.close) for r in reversed(rows)]
-    rsi_values = compute_rsi(closes, period=14)
-    latest_rsi = rsi_values[-1]
-    if latest_rsi is None:
-        return None
-
-    # Center at 50, scale so edges hit ~1: RSI<30 → positive, RSI>70 → negative
-    centered = (50 - latest_rsi) / 50
-    return math.tanh(centered * 2.5)
-
-
-async def calc_trend_score(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> float | None:
-    """Combined SMA crossover + MACD crossover trend score."""
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(TREND_LOOKBACK_DAYS)
-    )
-    rows = result.all()
-
-    if len(rows) < 52:  # Need 50 for SMA50 + buffer
-        return None
-
-    closes = [float(r.close) for r in reversed(rows)]
-
-    # SMA crossover component
-    sma20 = compute_sma(closes, 20)
-    sma50 = compute_sma(closes, 50)
-    sma_score = 0.0
-    if sma20[-1] is not None and sma50[-1] is not None and sma50[-1] != 0:
-        sma_diff = (sma20[-1] - sma50[-1]) / sma50[-1]
-        sma_score = math.tanh(sma_diff * 10)
-
-    # MACD crossover component
-    macd_data = compute_macd(closes)
-    macd_score = 0.0
-    latest_macd = macd_data[-1]
-    if latest_macd["histogram"] is not None and closes[-1] != 0:
-        norm_hist = latest_macd["histogram"] / closes[-1]
-        macd_score = math.tanh(norm_hist * 100)
-
-    # Combine: SMA crossover (60%) + MACD (40%)
-    return 0.6 * sma_score + 0.4 * macd_score
-
-
-async def _get_recent_article_count(
-    session: AsyncSession, stock_id: int, now: datetime
-) -> int:
-    """Count sentiment-scored articles in the last 24h for this stock."""
-    since = now - timedelta(hours=24)
-    result = await session.execute(
-        select(func.count(SentimentScore.id))
-        .where(SentimentScore.stock_id == stock_id)
-        .where(SentimentScore.processed_at >= since)
-    )
-    return result.scalar() or 0
 
 
 def classify_direction(composite: float) -> str:

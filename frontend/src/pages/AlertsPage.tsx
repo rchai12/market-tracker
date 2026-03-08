@@ -10,6 +10,7 @@ import {
 } from "../api/alerts";
 import CreateAlertForm from "../components/forms/CreateAlertForm";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import Card from "../components/common/Card";
 
 export default function AlertsPage() {
   const queryClient = useQueryClient();
@@ -80,18 +81,18 @@ export default function AlertsPage() {
 
       {/* Create Form */}
       {showCreate && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
+        <Card className="mb-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">New Alert Configuration</h2>
           <CreateAlertForm
             onSubmit={(data) => createMutation.mutate(data)}
             isPending={createMutation.isPending}
             onCancel={() => setShowCreate(false)}
           />
-        </div>
+        </Card>
       )}
 
       {/* Configs */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
+      <Card className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Alert Configurations</h2>
         {configsLoading ? (
           <LoadingSkeleton variant="row" count={3} />
@@ -139,10 +140,10 @@ export default function AlertsPage() {
             No alert configs yet. Create one to receive notifications when signals trigger.
           </p>
         )}
-      </div>
+      </Card>
 
       {/* History */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+      <Card>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Alert History</h2>
         {historyLoading ? (
           <LoadingSkeleton variant="row" count={3} />
@@ -186,7 +187,7 @@ export default function AlertsPage() {
             No alerts sent yet. Alerts will appear here when signals match your configurations.
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

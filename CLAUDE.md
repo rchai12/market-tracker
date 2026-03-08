@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 15 (signal intelligence) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Post-phase work added ticker extraction improvements, sector filtering, and deployment fixes.
+**Phase 16 (enhanced news intelligence) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -21,7 +21,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - FinBERT sentiment analysis: singleton model, batch inference, 512-token chunking, lazy-loaded on compute VM
 - Sentiment API: per-ticker timeline, scored articles, sector summaries, trending stocks
 - Sentiment pipeline: auto-processes new articles after scraping + :15 catch-up task
-- Signal generation: 6-component composite scoring (sentiment momentum 30%, sentiment volume 20%, price momentum 15%, volume anomaly 10%, RSI 15%, trend 10%)
+- Event classification: rule-based classifier (10 categories: earnings, M&A, regulatory, product, analyst, insider, macro, legal, dividend, general)
+- Duplicate detection: fuzzy title matching via rapidfuzz token_set_ratio across sources within 24h windows
+- Source credibility: weighted scoring (SEC EDGAR 1.0, Reuters 0.9, Reddit 0.4) applied in sentiment momentum
+- Signal generation: 6-component composite scoring (sentiment momentum 30%, sentiment volume 20%, price momentum 15%, volume anomaly 10%, RSI 15%, trend 10%) with source credibility weighting and duplicate deduplication
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed, signal detail with outcomes + linked articles, accuracy trend + distribution endpoints
 - Alert dispatch: Discord webhooks + SMTP email, per-user AlertConfig matching, AlertLog history
 - Alert API: config CRUD, alert history, test alert endpoint
@@ -79,10 +82,10 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence (schemas, accuracy computation, bucketing), indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, password validation, secret key (264 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, password validation, secret key (316 tests)
 
 ### What's next
-- Phase 15: TBD
+- Phase 17: TBD
 
 ## Architecture
 
@@ -104,13 +107,13 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
   worker/          Celery application
     celery_app.py  Celery instance + Redis config
     beat_schedule  Cron schedule (:00 scrape, :05 market data, :15 sentiment, :30 signals, :35 matview refresh, :45 outcomes, 3AM maintenance, 4AM weights)
-    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, dispatcher, outcome evaluator, weight optimizer, backtest), maintenance/ (retention + matview refresh)
-    utils/         Rate limiter, text cleaner, ticker extractor, async_task helper, technical_indicators, backtester
+    tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, backtest), maintenance/ (retention + matview refresh)
+    utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, backtester/
   alembic/         Database migrations
-  tests/           pytest test suite (264 tests)
+  tests/           pytest test suite (316 tests)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
-  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, AccuracyBadge), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card)
+  src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Articles (EventCategoryBadge, SourceCredibilityIndicator), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, AccuracyBadge, SignalsTab, AccuracyTab, MethodologyTab), StockDetail (StockPriceSection, StockSentimentSignals, StockAccuracySection, StockArticlesSection), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card, QueryGuard)
   src/constants/   Shared UI constants (DIRECTION_COLORS, STRENGTH_STYLES)
   src/pages/       All route pages (Dashboard, StockDetail, Sentiment, Signals, Backtest, Alerts, Admin, Login, Register, Settings)
   src/store/       Zustand state stores (auth, theme, sidebar)
@@ -185,8 +188,8 @@ cd /opt/stock-predictor/backend
 - Ruff for linting and formatting (line length 120)
 - Models use SQLAlchemy 2.0 `Mapped` / `mapped_column` syntax
 - Tests use pytest-asyncio with `auto` mode
-- Celery tasks bridge async/sync via `run_async()` helper (`worker/utils/async_task.py`)
-- Shared `PaginationMeta` and `calc_total_pages()` in `schemas/common.py`
+- Celery tasks bridge async/sync via `run_async()` helper (`worker/utils/async_task.py`) or `@async_task` decorator (`worker/utils/celery_helpers.py`)
+- Shared `PaginationMeta`, `calc_total_pages()`, and `PaginationParams` dependency in `schemas/common.py`
 - Shared `get_stock_by_ticker()` dependency in `dependencies.py`
 
 ### TypeScript (frontend/)
@@ -248,16 +251,20 @@ cd /opt/stock-predictor/backend
 | `backend/worker/tasks/scraping/orchestrate.py` | Fan-out all 7 scrapers via Celery group → chain sentiment |
 | `backend/worker/tasks/sentiment/finbert_analyzer.py` | Singleton FinBERT model: batch inference, chunking, lazy-loaded |
 | `backend/worker/tasks/sentiment/sentiment_task.py` | Celery task: process unprocessed articles through FinBERT |
-| `backend/worker/tasks/signals/signal_generator.py` | Celery task: 6-component composite signal scoring for all active stocks |
+| `backend/worker/tasks/signals/signal_generator.py` | Celery task: composite signal orchestration, weights, classification, reasoning |
+| `backend/worker/tasks/signals/component_scores.py` | 6 component scoring functions (sentiment momentum/volume, price, volume, RSI, trend) |
 | `backend/worker/tasks/signals/alert_dispatcher.py` | Celery task: match signals to AlertConfigs, send Discord/email |
 | `backend/worker/tasks/signals/outcome_evaluator.py` | Celery task: evaluate signal accuracy after 1/3/5 day windows |
 | `backend/worker/tasks/signals/weight_optimizer.py` | Celery task: compute per-sector adaptive weights from outcomes |
 | `backend/worker/utils/technical_indicators.py` | Pure computation: RSI, SMA, EMA, MACD, Bollinger Bands |
-| `backend/worker/utils/backtester.py` | Pure backtesting engine: signal replay, trading simulation, performance metrics |
+| `backend/worker/utils/backtester/` | Backtesting engine package: trade execution, metrics, signals, benchmark modules |
+| `backend/worker/utils/celery_helpers.py` | `@async_task` decorator factory for Celery tasks (reduces boilerplate) |
+| `backend/worker/utils/event_classifier.py` | Rule-based event classification (10 categories, keyword matching) |
+| `backend/worker/utils/duplicate_detector.py` | Fuzzy title matching via rapidfuzz for cross-source dedup |
 | `backend/worker/tasks/signals/backtest_task.py` | Celery task: fetch data, run backtester, store results |
 | `backend/app/api/backtests.py` | Backtest endpoints: create, list, detail, delete, CSV export |
 | `backend/app/models/backtest.py` | Backtest + BacktestTrade ORM models |
-| `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker + company name extraction |
+| `backend/worker/tasks/scraping/base_scraper.py` | Abstract scraper with DB storage, dedup, ticker extraction, event classification, duplicate detection |
 | `backend/worker/tasks/scraping/market_data.py` | yfinance fetch + historical seed task |
 | `backend/scripts/seed_sp500.py` | Seed 6 sectors (~86 tickers): Energy, Financials, Technology, Comm Services, Consumer Disc, ETFs |
 | `backend/scripts/seed_historical_data.py` | Backfill full OHLCV history for all tickers |
@@ -295,6 +302,7 @@ cd /opt/stock-predictor/backend
 | GET | `/api/market-data/{ticker}/indicators` | Yes | Done |
 | GET | `/api/articles` | Yes | Done |
 | GET | `/api/articles/sources` | Yes | Done |
+| GET | `/api/articles/event-categories` | Yes | Done |
 | GET | `/api/sentiment/{ticker}` | Yes | Done |
 | GET | `/api/sentiment/{ticker}/articles` | Yes | Done |
 | GET | `/api/sentiment/summary/sectors` | Yes | Done |
@@ -324,6 +332,8 @@ cd /opt/stock-predictor/backend
 | POST | `/api/admin/maintenance` | Admin | Done |
 | POST | `/api/admin/evaluate-outcomes` | Admin | Done |
 | POST | `/api/admin/compute-weights` | Admin | Done |
+| POST | `/api/admin/backfill-event-categories` | Admin | Done |
+| POST | `/api/admin/backfill-duplicate-groups` | Admin | Done |
 | GET | `/api/admin/db-stats` | Admin | Done |
 
 ## Data Pipeline

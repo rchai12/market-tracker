@@ -11,6 +11,11 @@ Context document for planned features and improvements. Each section captures th
 | 9 | Data retention + optimization | Performance indexes, article compression, log cleanup, materialized views, admin endpoints |
 | 10 | Signal feedback loop | Outcome evaluation (1/3/5-day windows), adaptive per-sector weight optimization, accuracy UI |
 | 11 | Technical indicators | RSI, SMA, EMA, MACD, Bollinger Bands in signal scoring + frontend chart overlays/sub-charts |
+| 12 | Backtesting engine | Historical signal replay, equity curves, trade logs, Sharpe/drawdown/win rate metrics |
+| 13 | UX polish | Stock search, profile/password management, mobile responsive sidebar, code splitting, admin dashboard |
+| 14 | Realistic backtesting | Transaction costs, position sizing, stop-loss/take-profit, benchmark comparison, CSV export |
+| 15 | Signal intelligence | Component breakdown, accuracy analytics (trend/distribution), signal detail panel, methodology tab |
+| 16 | Enhanced news intelligence | Event classification (10 categories), fuzzy duplicate detection, source credibility weighting |
 
 ---
 
@@ -46,20 +51,9 @@ Context document for planned features and improvements. Each section captures th
 - Whether to support manual trades alongside auto-trades
 - How to handle dividends, splits, after-hours gaps
 
-### Enhanced News Intelligence
+### ~~Enhanced News Intelligence~~ (Done — Phase 16)
 
-**Motivation:** Improve signal quality with better article understanding.
-
-**Approach:**
-- **Event classification**: Categorize articles (earnings, M&A, regulatory, product launch, etc.) beyond FinBERT positive/negative
-- **Named entity extraction**: Pull out executives, companies, products mentioned
-- **Duplicate/near-duplicate detection**: Cluster articles about the same event to avoid over-counting sentiment
-- **Source credibility weighting**: Weight sentiment by source reliability (SEC filings > Reddit)
-
-**Key decisions:**
-- Whether to use a larger LLM (Claude/GPT) for event classification or fine-tune a smaller model
-- Real-time vs batch processing for entity extraction
-- How to build source credibility scores (manual vs learned)
+Implemented: rule-based event classification (10 categories, ~100 keywords), fuzzy duplicate detection via rapidfuzz token_set_ratio, source credibility weighting in signal scoring. Named entity extraction deferred.
 
 ### Real-time Data Streaming
 

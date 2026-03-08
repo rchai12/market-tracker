@@ -4,6 +4,7 @@ import { useAuthStore } from "../store/authStore";
 import { useThemeStore } from "../store/themeStore";
 import { updateProfile, changePassword } from "../api/auth";
 import type { AxiosError } from "axios";
+import Card from "../components/common/Card";
 
 function getErrorMessage(err: unknown): string {
   const axErr = err as AxiosError<{ detail: string }>;
@@ -77,7 +78,7 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Settings</h1>
 
       {/* Profile */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mb-6">
+      <Card padding="md" className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Profile</h2>
         <form onSubmit={handleProfileSave} className="space-y-4">
           <div>
@@ -115,10 +116,10 @@ export default function SettingsPage() {
             {profileLoading ? "Saving..." : "Save Profile"}
           </button>
         </form>
-      </section>
+      </Card>
 
       {/* Change Password */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mb-6">
+      <Card padding="md" className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Change Password</h2>
         <form onSubmit={handlePasswordChange} className="space-y-4">
           <div>
@@ -170,10 +171,10 @@ export default function SettingsPage() {
             {pwLoading ? "Updating..." : "Update Password"}
           </button>
         </form>
-      </section>
+      </Card>
 
       {/* Appearance */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mb-6">
+      <Card padding="md" className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Appearance</h2>
         <div className="flex items-center justify-between">
           <div>
@@ -195,10 +196,10 @@ export default function SettingsPage() {
             />
           </button>
         </div>
-      </section>
+      </Card>
 
       {/* Notifications */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+      <Card padding="md">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notifications</h2>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -231,7 +232,7 @@ export default function SettingsPage() {
           </Link>
           .
         </p>
-      </section>
+      </Card>
     </div>
   );
 }

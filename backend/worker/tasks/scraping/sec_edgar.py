@@ -107,6 +107,7 @@ class SecEdgarScraper(BaseScraper):
                 "raw_text": f"Filing type: {form_type}. Entity: {entity_name}. Date: {item.get('filing_date', '')}.",
                 "published_at": datetime.now(timezone.utc),
                 "metadata": {"form_type": form_type, "entity_name": entity_name},
+                "event_category": event_category,
             })
 
         return parsed

@@ -15,6 +15,7 @@ import TradeLog from "../components/backtests/TradeLog";
 import EquityCurveChart from "../components/charts/EquityCurveChart";
 import BacktestCompare from "../components/backtests/BacktestCompare";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import Card from "../components/common/Card";
 
 export default function BacktestPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -154,7 +155,7 @@ export default function BacktestPage() {
 
       {/* Configuration form */}
       {showForm && !compareMode && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+        <Card padding="md">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             Configure Backtest
           </h2>
@@ -167,7 +168,7 @@ export default function BacktestPage() {
               Failed to create backtest. Check your inputs and try again.
             </p>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Past backtests list */}
@@ -220,14 +221,14 @@ export default function BacktestPage() {
           ) : detail ? (
             <>
               {detail.status === "pending" || detail.status === "running" ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 text-center">
+                <Card padding="md" className="text-center">
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-3" />
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Backtest is {detail.status}...
                   </p>
-                </div>
+                </Card>
               ) : detail.status === "failed" ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+                <Card padding="md">
                   <p className="text-red-600 dark:text-red-400 font-medium">
                     Backtest failed
                   </p>
@@ -236,20 +237,20 @@ export default function BacktestPage() {
                       {detail.error_message}
                     </p>
                   )}
-                </div>
+                </Card>
               ) : (
                 <>
                   {/* Metrics */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+                  <Card padding="md">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                       Performance Metrics
                     </h2>
                     <MetricsSummary backtest={detail} />
-                  </div>
+                  </Card>
 
                   {/* Equity curve */}
                   {detail.equity_curve.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+                    <Card padding="md">
                       <div className="flex items-center justify-between mb-3">
                         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                           Equity Curve
@@ -267,11 +268,11 @@ export default function BacktestPage() {
                         benchmarkData={detail.benchmark_equity_curve}
                         benchmarkLabel={detail.benchmark_ticker || "SPY"}
                       />
-                    </div>
+                    </Card>
                   )}
 
                   {/* Trade log */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+                  <Card padding="md">
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                         Trade Log ({detail.trades.length} trades)
@@ -284,7 +285,7 @@ export default function BacktestPage() {
                       </button>
                     </div>
                     <TradeLog trades={detail.trades} />
-                  </div>
+                  </Card>
                 </>
               )}
             </>

@@ -22,6 +22,7 @@ async def list_articles(
     source: str | None = Query(None, description="Filter by source (yahoo_news, finviz, etc.)"),
     ticker: str | None = Query(None, description="Filter by associated stock ticker"),
     is_processed: bool | None = Query(None, description="Filter by processing status"),
+    event_category: str | None = Query(None, description="Filter by event category"),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -33,6 +34,9 @@ async def list_articles(
 
     if is_processed is not None:
         base_query = base_query.where(Article.is_processed == is_processed)
+
+    if event_category:
+        base_query = base_query.where(Article.event_category == event_category)
 
     if ticker:
         base_query = base_query.join(ArticleStock).join(Stock).where(
@@ -70,6 +74,7 @@ async def list_articles(
             scraped_at=article.scraped_at,
             is_processed=article.is_processed,
             event_category=article.event_category,
+            duplicate_group_id=article.duplicate_group_id,
             tickers=tickers,
         )
         data.append(resp)
@@ -98,3 +103,19 @@ async def list_sources(
     )
     result = await db.execute(query)
     return [{"source": row.source, "count": row.count} for row in result.all()]
+
+
+@router.get("/event-categories")
+async def list_event_categories(
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List event categories with article counts."""
+    query = (
+        select(Article.event_category, func.count(Article.id).label("count"))
+        .where(Article.event_category != None)  # noqa: E711
+        .group_by(Article.event_category)
+        .order_by(func.count(Article.id).desc())
+    )
+    result = await db.execute(query)
+    return [{"category": row.event_category, "count": row.count} for row in result.all()]

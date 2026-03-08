@@ -73,6 +73,12 @@
                     │  Matching   │
                     └──────┬──────┘
                            │
+                    ┌──────▼──────┐
+                    │   Event     │  10 categories (earnings, M&A, etc.)
+                    │ Classifier  │  + fuzzy dedup (rapidfuzz)
+                    │ + Dedup     │  + source credibility scoring
+                    └──────┬──────┘
+                           │
               ┌────────────┼────────────┐
               │            │            │
        ┌──────▼──────┐ ┌──▼───┐ ┌──────▼──────┐
@@ -158,7 +164,7 @@ backtests >── sectors (nullable)
 | stocks | S&P 500 tickers | ticker, company_name, sector_id, industry, is_active |
 | market_data_daily | Historical OHLCV | stock_id, date, open/high/low/close/volume |
 | market_data_intraday | Intraday prices | stock_id, timestamp, OHLCV |
-| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed |
+| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, duplicate_group_id |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
 | signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning |

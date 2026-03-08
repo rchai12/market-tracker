@@ -1,5 +1,5 @@
 import apiClient from "./client";
-import type { Article, PaginatedResponse } from "../types";
+import type { Article, EventCategorySummary, PaginatedResponse } from "../types";
 
 interface ListArticlesParams {
   page?: number;
@@ -7,6 +7,7 @@ interface ListArticlesParams {
   source?: string;
   ticker?: string;
   is_processed?: boolean;
+  event_category?: string;
 }
 
 export async function listArticles(
@@ -20,5 +21,10 @@ export async function listSources(): Promise<
   { source: string; count: number }[]
 > {
   const { data } = await apiClient.get("/articles/sources");
+  return data;
+}
+
+export async function getEventCategories(): Promise<EventCategorySummary[]> {
+  const { data } = await apiClient.get("/articles/event-categories");
   return data;
 }

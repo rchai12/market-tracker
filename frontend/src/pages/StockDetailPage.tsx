@@ -1,29 +1,18 @@
-import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getStock } from "../api/stocks";
-import { getDailyData, getIndicators } from "../api/marketData";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../api/watchlist";
-import { getTickerSentimentTimeline, getTickerSentimentArticles } from "../api/sentiment";
-import { getSignalHistory, getTickerAccuracy } from "../api/signals";
-import AccuracyBadge from "../components/signals/AccuracyBadge";
-import { humanizeSource, formatTimeAgo } from "../utils/format";
-import PriceChart from "../components/charts/PriceChart";
-import VolumeChart from "../components/charts/VolumeChart";
-import RSIChart from "../components/charts/RSIChart";
-import MACDChart from "../components/charts/MACDChart";
-import SentimentChart from "../components/sentiment/SentimentChart";
+import { getTickerSentimentTimeline } from "../api/sentiment";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
-import SignalCard from "../components/signals/SignalCard";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import StockPriceSection from "../components/stock-detail/StockPriceSection";
+import StockSentimentSignals from "../components/stock-detail/StockSentimentSignals";
+import StockAccuracySection from "../components/stock-detail/StockAccuracySection";
+import StockArticlesSection from "../components/stock-detail/StockArticlesSection";
 
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const queryClient = useQueryClient();
-  const [showSMA, setShowSMA] = useState(false);
-  const [showBollinger, setShowBollinger] = useState(false);
-  const [showRSI, setShowRSI] = useState(false);
-  const [showMACD, setShowMACD] = useState(false);
 
   const { data: stock, isLoading: stockLoading } = useQuery({
     queryKey: ["stock", ticker],
@@ -31,39 +20,9 @@ export default function StockDetailPage() {
     enabled: !!ticker,
   });
 
-  const { data: marketData, isLoading: marketLoading } = useQuery({
-    queryKey: ["market-data", ticker, "daily"],
-    queryFn: () => getDailyData(ticker!, { limit: 365 }),
-    enabled: !!ticker,
-  });
-
   const { data: sentimentData } = useQuery({
     queryKey: ["sentiment-timeline", ticker],
     queryFn: () => getTickerSentimentTimeline(ticker!, 30),
-    enabled: !!ticker,
-  });
-
-  const { data: signalData } = useQuery({
-    queryKey: ["signals", ticker],
-    queryFn: () => getSignalHistory(ticker!, 1, 5),
-    enabled: !!ticker,
-  });
-
-  const { data: articlesData } = useQuery({
-    queryKey: ["sentiment-articles", ticker],
-    queryFn: () => getTickerSentimentArticles(ticker!, 1, 10),
-    enabled: !!ticker,
-  });
-
-  const { data: indicatorData } = useQuery({
-    queryKey: ["indicators", ticker],
-    queryFn: () => getIndicators(ticker!, { days: 365 }),
-    enabled: !!ticker,
-  });
-
-  const { data: accuracyData } = useQuery({
-    queryKey: ["ticker-accuracy", ticker],
-    queryFn: () => getTickerAccuracy(ticker!),
     enabled: !!ticker,
   });
 
@@ -92,13 +51,13 @@ export default function StockDetailPage() {
     return <p className="text-red-500">Stock not found</p>;
   }
 
-  // Compute latest sentiment from timeline data
   const latestSentiment = sentimentData && sentimentData.length > 0
     ? sentimentData[sentimentData.length - 1]
     : null;
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
@@ -134,179 +93,10 @@ export default function StockDetailPage() {
         </button>
       </div>
 
-      {/* Price Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Price
-          </h2>
-          {marketData && marketData.length > 0 && indicatorData && (
-            <div className="flex gap-2">
-              {(["SMA", "Bollinger", "RSI", "MACD"] as const).map((label) => {
-                const active = label === "SMA" ? showSMA : label === "Bollinger" ? showBollinger : label === "RSI" ? showRSI : showMACD;
-                const toggle = label === "SMA" ? setShowSMA : label === "Bollinger" ? setShowBollinger : label === "RSI" ? setShowRSI : setShowMACD;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => toggle((v) => !v)}
-                    className={`px-2 py-1 text-xs rounded font-medium transition-colors ${
-                      active
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {marketLoading ? (
-          <LoadingSkeleton variant="chart" count={1} />
-        ) : marketData && marketData.length > 0 ? (
-          <PriceChart
-            data={marketData}
-            indicators={indicatorData}
-            showSMA={showSMA}
-            showBollinger={showBollinger}
-          />
-        ) : (
-          <p className="text-gray-500 dark:text-gray-400 py-8 text-center">
-            No market data yet. Data will appear after the first market data fetch.
-          </p>
-        )}
-      </div>
-
-      {/* RSI Chart */}
-      {showRSI && indicatorData && indicatorData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            RSI (14)
-          </h2>
-          <RSIChart data={indicatorData} />
-        </div>
-      )}
-
-      {/* MACD Chart */}
-      {showMACD && indicatorData && indicatorData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            MACD (12, 26, 9)
-          </h2>
-          <MACDChart data={indicatorData} />
-        </div>
-      )}
-
-      {/* Volume Chart */}
-      {marketData && marketData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Volume
-          </h2>
-          <VolumeChart data={marketData} />
-        </div>
-      )}
-
-      {/* Sentiment + Signals */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Sentiment (30 days)
-          </h2>
-          {sentimentData && sentimentData.length > 0 ? (
-            <SentimentChart data={sentimentData} height={180} />
-          ) : (
-            <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
-              No sentiment data yet. Data will appear after articles are analyzed.
-            </p>
-          )}
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Recent Signals
-          </h2>
-          {signalData && signalData.data.length > 0 ? (
-            <div className="space-y-3">
-              {signalData.data.map((signal) => (
-                <SignalCard key={signal.id} signal={signal} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
-              No signals yet. Signals will appear after the generation pipeline runs.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Signal Accuracy */}
-      {accuracyData && accuracyData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mt-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Signal Accuracy
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {accuracyData.map((acc) => (
-              <div key={acc.window_days} className="text-center rounded-lg bg-gray-50 dark:bg-gray-700/50 p-3">
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                  {acc.window_days}-Day Window
-                </p>
-                <AccuracyBadge accuracy={acc.accuracy_pct} size="md" />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {acc.correct_count}/{acc.total_evaluated} correct
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Articles */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mt-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-          Recent Articles
-        </h2>
-        {articlesData && articlesData.data.length > 0 ? (
-          <div className="space-y-2">
-            {articlesData.data.map((score) => (
-              <div
-                key={score.id}
-                className="flex items-start gap-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0"
-              >
-                <SentimentBadge label={score.label} size="sm" />
-                <div className="flex-1 min-w-0">
-                  {score.article_source_url ? (
-                    <a
-                      href={score.article_source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 line-clamp-2"
-                    >
-                      {score.article_title || "Untitled"}
-                    </a>
-                  ) : (
-                    <p className="text-sm text-gray-900 dark:text-white line-clamp-2">
-                      {score.article_title || "Untitled"}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {score.article_source && (
-                      <span>{humanizeSource(score.article_source)}</span>
-                    )}
-                    <span>{formatTimeAgo(score.processed_at)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
-            No articles yet. Articles will appear after news is scraped and analyzed.
-          </p>
-        )}
-      </div>
+      <StockPriceSection ticker={ticker!} />
+      <StockSentimentSignals ticker={ticker!} />
+      <StockAccuracySection ticker={ticker!} />
+      <StockArticlesSection ticker={ticker!} />
     </div>
   );
 }

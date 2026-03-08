@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getSectorSentiment, getTrendingSentiment } from "../api/sentiment";
+import { getEventCategories } from "../api/articles";
 import SentimentBadge from "../components/sentiment/SentimentBadge";
+import EventCategoryBadge from "../components/articles/EventCategoryBadge";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import Card from "../components/common/Card";
 
 export default function SentimentPage() {
   const { data: sectors, isLoading: sectorsLoading } = useQuery({
@@ -15,6 +18,11 @@ export default function SentimentPage() {
     queryFn: () => getTrendingSentiment(3, 10),
   });
 
+  const { data: eventCategories } = useQuery({
+    queryKey: ["event-categories"],
+    queryFn: getEventCategories,
+  });
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -22,7 +30,7 @@ export default function SentimentPage() {
       </h1>
 
       {/* Sector Sentiment */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
+      <Card className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Sector Sentiment (7 days)
         </h2>
@@ -73,10 +81,29 @@ export default function SentimentPage() {
             No sentiment data yet. Data will appear after articles are processed.
           </p>
         )}
-      </div>
+      </Card>
+
+      {/* Event Categories */}
+      {eventCategories && eventCategories.length > 0 && (
+        <Card className="mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Article Categories
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {eventCategories.map((ec) => (
+              <div key={ec.category} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg px-3 py-2">
+                <EventCategoryBadge category={ec.category} size="md" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {ec.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Trending Stocks by Sentiment */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+      <Card>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Trending by Sentiment (3 days)
         </h2>
@@ -134,7 +161,7 @@ export default function SentimentPage() {
             No trending sentiment data yet. Data will appear after articles are processed.
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

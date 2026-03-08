@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     finbert_batch_size: int = 16
     finbert_max_length: int = 512
 
+    # Duplicate detection
+    duplicate_similarity_threshold: float = 85.0
+
     # Signal feedback loop
     feedback_enabled: bool = True
     feedback_evaluation_windows: str = "1,3,5"
@@ -91,6 +94,22 @@ class Settings(BaseSettings):
     @property
     def feedback_windows_list(self) -> list[int]:
         return [int(w.strip()) for w in self.feedback_evaluation_windows.split(",")]
+
+
+# Source credibility weights for sentiment scoring.
+# Higher = more reliable source. Used as multiplier in sentiment_momentum.
+SOURCE_CREDIBILITY: dict[str, float] = {
+    "sec_edgar": 1.0,
+    "fred": 0.9,
+    "reuters_rss": 0.9,
+    "marketwatch": 0.8,
+    "yahoo_finance": 0.75,
+    "finviz": 0.7,
+    "google_news": 0.65,
+    "reddit_stocks": 0.4,
+    "reddit_wallstreetbets": 0.35,
+}
+DEFAULT_SOURCE_CREDIBILITY = 0.5
 
 
 settings = Settings()

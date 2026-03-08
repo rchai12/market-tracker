@@ -106,6 +106,7 @@ async def get_ticker_sentiment_articles(
             article_title=s.article.title if s.article else None,
             article_source=s.article.source if s.article else None,
             article_source_url=s.article.source_url if s.article else None,
+            article_event_category=s.article.event_category if s.article else None,
         )
         for s in scores
     ]

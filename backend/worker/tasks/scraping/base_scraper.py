@@ -1,15 +1,18 @@
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.config import settings
 from app.database import async_session
 from app.models.article import Article, ArticleStock
 from app.models.scrape_log import ScrapeLog
 from app.models.stock import Stock
 from worker.utils.async_task import run_async
+from worker.utils.duplicate_detector import find_duplicate_group
+from worker.utils.event_classifier import classify_event
 from worker.utils.text_cleaner import clean_article_text
 from worker.utils.ticker_extractor import build_company_map, extract_tickers, match_industry_keywords
 
@@ -66,6 +69,11 @@ class BaseScraper(ABC):
 
                 raw_text = clean_article_text(article_data.get("raw_text"))
 
+                # Event classification: use scraper-provided category or classify by rules
+                event_category = article_data.get("event_category") or classify_event(
+                    article_data["title"], raw_text, self.source_name
+                )
+
                 article = Article(
                     source=self.source_name,
                     source_url=source_url,
@@ -74,6 +82,7 @@ class BaseScraper(ABC):
                     author=article_data.get("author"),
                     published_at=article_data.get("published_at"),
                     metadata_=article_data.get("metadata", {}),
+                    event_category=event_category,
                     is_processed=False,
                 )
                 session.add(article)
@@ -107,6 +116,36 @@ class BaseScraper(ABC):
                                 .values(article_id=article.id, stock_id=stock_id, confidence=0.45)
                                 .on_conflict_do_nothing()
                             )
+
+                # Duplicate detection: find articles with similar titles from last 24h
+                all_linked_stock_ids = directly_linked_stock_ids | {
+                    stock_id
+                    for industry in matched_industries
+                    for stock_id in industry_stock_map.get(industry, [])
+                }
+                if all_linked_stock_ids:
+                    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                    recent_q = (
+                        select(Article.id, Article.title, Article.duplicate_group_id)
+                        .join(ArticleStock, ArticleStock.article_id == Article.id)
+                        .where(
+                            and_(
+                                Article.scraped_at >= cutoff,
+                                Article.id != article.id,
+                                ArticleStock.stock_id.in_(all_linked_stock_ids),
+                            )
+                        )
+                        .distinct()
+                    )
+                    recent_result = await session.execute(recent_q)
+                    recent_articles = [(r.id, r.title, r.duplicate_group_id) for r in recent_result.all()]
+
+                    if recent_articles:
+                        group_id = find_duplicate_group(
+                            article.title, recent_articles, settings.duplicate_similarity_threshold
+                        )
+                        if group_id is not None:
+                            article.duplicate_group_id = group_id
 
                 new_count += 1
 
