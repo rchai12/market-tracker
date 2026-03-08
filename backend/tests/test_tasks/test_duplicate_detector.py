@@ -81,3 +81,27 @@ class TestFindDuplicateGroup:
         recent = [(1, "Rate Cut", None)]
         result = find_duplicate_group("Rate Cut", recent)
         assert result == 1
+
+    def test_threshold_boundary_exact(self):
+        """Kill mutation: `>= threshold` changed to `> threshold`."""
+        # Identical titles → score = 100.0; threshold=100.0 should still match
+        result = find_duplicate_group("Exact Title", [(1, "Exact Title", None)], threshold=100.0)
+        assert result == 1
+
+    def test_strict_greater_than_in_scoring(self):
+        """Kill mutation: `score > best_score` changed to `>=` (tie-breaking order)."""
+        # Two identical candidates — first one should win because `>` is strict
+        recent = [
+            (10, "Fed Raises Interest Rates Quarter Point", 100),
+            (20, "Fed Raises Interest Rates Quarter Point", 200),
+        ]
+        result = find_duplicate_group("Fed Raises Interest Rates Quarter Point", recent)
+        # Both score 100.0, but first match (id=10, group=100) wins with strict `>`
+        assert result == 100
+
+    def test_group_id_none_vs_zero(self):
+        """Kill mutation: `group_id is not None` changed to truthy check."""
+        # group_id=0 is falsy but not None — should be returned as-is
+        recent = [(1, "Identical Title Here", 0)]
+        result = find_duplicate_group("Identical Title Here", recent)
+        assert result == 0  # Should return 0, not article_id 1

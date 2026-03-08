@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 19 (infrastructure) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Phase 19 added infrastructure improvements: Redis caching layer (5 endpoints cached with TTL + Celery invalidation), dead letter queue (Celery task_failure signal → task_failures table + admin retry), API key authentication (SHA-256 hashed keys, dual JWT/API-key auth), admin audit logging (all admin POST actions recorded), health alert notifications (DB/Redis/queue checks every 5min → Discord webhook), slow query detection (SQLAlchemy event listeners). Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
+**Phase 20 (comprehensive testing) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Phase 19 added infrastructure improvements: Redis caching layer (5 endpoints cached with TTL + Celery invalidation), dead letter queue (Celery task_failure signal → task_failures table + admin retry), API key authentication (SHA-256 hashed keys, dual JWT/API-key auth), admin audit logging (all admin POST actions recorded), health alert notifications (DB/Redis/queue checks every 5min → Discord webhook), slow query detection (SQLAlchemy event listeners). Phase 20 added comprehensive testing: coverage reporting (.coveragerc, fail_under=60%), mutation testing (9 modules, 3 tiers), backend API integration tests (PostgreSQL), Playwright E2E tests, Vitest config, weekly mutation CI workflow. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -69,7 +69,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Alembic migrations (13 initial + 6 feature migrations)
 - Database backup/restore scripts with retention
 - Flower (Celery monitoring) on :5555 (SSH tunnel access)
-- GitHub Actions CI: lint, test, Docker build
+- GitHub Actions CI: lint, unit test (with coverage), integration test (Postgres service), Docker build; weekly mutation testing workflow
 - 9 performance indexes (sentiment_scores, articles, signals, market_data, etc.)
 - Data retention: article text compression, scrape/alert log cleanup, weak signal purge
 - Daily sentiment materialized view with hourly refresh
@@ -90,10 +90,17 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), cache (key builder, decorator, invalidation), dead letter (failure recording, signal handler), API keys (generation, hashing), audit logging, slow query detection, password validation, secret key (415 tests)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), cache (key builder, decorator, invalidation), dead letter (failure recording, signal handler), API keys (generation, hashing), audit logging, slow query detection, password validation, secret key (415 unit tests)
+- Mutation tests: 9 modules across 3 tiers — indicators, metrics, engine, component_scores (Tier 1); signal_generator, weight_optimizer, benchmark, security, dependencies (Tier 2); cache, event_classifier, duplicate_detector, ticker_extractor additions (Tier 3) (~138 mutation-killing tests)
+- Coverage reporting: `.coveragerc` with fail_under=60%, pytest-cov integration, HTML reports
+- Backend integration tests: full HTTP → FastAPI → SQLAlchemy → PostgreSQL cycle (auth flow, stocks/watchlist, signals/admin, error handling) with httpx AsyncClient + ASGITransport (~34 tests, requires Postgres)
+- Frontend E2E tests: Playwright (Chromium) with authenticated fixtures (auth, navigation, signals, admin) (~10 tests)
+- Vitest config: jsdom environment with @testing-library/react for future frontend unit tests
+- CI: coverage enforcement, integration test job (separate Postgres service), weekly mutation testing workflow
+- Total: 553 unit tests + 34 integration tests + 10 E2E tests
 
 ### What's next
-- Phase 20: TBD
+- Phase 21: TBD
 
 ## Architecture
 
@@ -118,7 +125,9 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest), maintenance/ (retention + matview refresh + health_check)
     utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/
   alembic/         Database migrations
-  tests/           pytest test suite (415 tests)
+  tests/           pytest test suite (553 unit tests + 34 integration tests)
+    test_mutation/   Mutation-killing tests for 9 critical modules (3 tiers)
+    integration/     API integration tests (requires PostgreSQL)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
   src/api/         Axios API client (auth, stocks, watchlist, marketData, articles, sentiment, signals, alerts, backtests, admin)
   src/components/  Layout (AppLayout, Header, Sidebar, SearchBar), Charts (PriceChart, VolumeChart, SentimentChart, SparklineChart, RSIChart, MACDChart, EquityCurveChart), Forms (BacktestForm), Backtests (BacktestResultCard, MetricsSummary, TradeLog, BacktestCompare), Articles (EventCategoryBadge, SourceCredibilityIndicator), Sentiment (SentimentBadge), Signals (SignalCard, ComponentBreakdown, SignalDetailPanel, AccuracyTrendChart, AccuracyDistributionChart, WeightsTable, MLModelStatusTable, AccuracyBadge, SignalsTab, AccuracyTab, MethodologyTab), StockDetail (StockPriceSection, StockSentimentSignals, StockOptionsSection, StockAccuracySection, StockArticlesSection), Dashboard (SectorHeatmapCard, TopMoversCard, ArticleActivityCard, AccuracyCard), Common (LoadingSkeleton, ErrorRetry, Card, QueryGuard)
@@ -147,6 +156,12 @@ make seed                  # Seed S&P 500 stocks
 make seed-history          # Seed full historical market data (max available)
 make seed-all              # Seed stocks + historical data in one go
 make test                  # Run backend pytest suite
+make test-cov              # Run tests with coverage report (HTML + terminal)
+make test-unit             # Run unit tests only (exclude integration)
+make test-integration      # Run integration tests (requires Postgres)
+make test-e2e              # Run Playwright E2E tests
+make mutmut-run            # Run mutation testing on Tier 1 modules
+make mutmut-results        # Show mutation testing results
 make lint                  # Run ruff check + format
 make health                # Check health endpoint with details
 make dev-backend           # Run FastAPI with hot reload (local)

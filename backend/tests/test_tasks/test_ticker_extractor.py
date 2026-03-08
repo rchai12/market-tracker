@@ -122,6 +122,33 @@ class TestCompanyNameMatching:
         tickers = {r[0] for r in results}
         assert "TSLA" in tickers
 
+    def test_dedup_highest_confidence_wins(self):
+        """Kill mutation: `max(results.get(ticker, 0), conf)` logic."""
+        # $AAPL (0.95) + company name "Apple" (0.60) → should be 0.95, not 0.60
+        title = "$AAPL stock surges as Apple announces new product"
+        results = extract_tickers(title, None, KNOWN_TICKERS, company_map=COMPANY_MAP)
+        aapl_results = [r for r in results if r[0] == "AAPL"]
+        assert len(aapl_results) == 1  # Deduplicated to one entry
+        assert aapl_results[0][1] == 0.95  # Highest confidence wins
+
+    def test_confidence_sort_order(self):
+        """Kill mutation: `reverse=True` removed from sort."""
+        title = "$XOM leads energy while Oracle reports earnings"
+        results = extract_tickers(title, None, KNOWN_TICKERS, company_map=COMPANY_MAP)
+        # $XOM = 0.95, Oracle = 0.60 — should be descending
+        assert len(results) >= 2
+        for i in range(len(results) - 1):
+            assert results[i][1] >= results[i + 1][1]
+
+    def test_all_four_patterns_dedup(self):
+        """Kill mutation: dedup across all pattern types."""
+        # AAPL via $AAPL (0.95), (AAPL) (0.90), AAPL caps (0.70), Apple name (0.60)
+        title = "$AAPL (AAPL) AAPL Apple reports earnings"
+        results = extract_tickers(title, None, KNOWN_TICKERS, company_map=COMPANY_MAP)
+        aapl_results = [r for r in results if r[0] == "AAPL"]
+        assert len(aapl_results) == 1
+        assert aapl_results[0][1] == 0.95
+
 
 class TestBuildCompanyMap:
     def test_builds_short_names(self):
@@ -139,6 +166,26 @@ class TestBuildCompanyMap:
         m = build_company_map([("XOM", "Exxon Mobil Corporation")])
         assert "Exxon Mobil" in m
         assert m["Exxon Mobil"] == "XOM"
+
+    def test_strips_various_suffixes(self):
+        """Kill mutation: _COMPANY_SUFFIXES regex pattern."""
+        m = build_company_map([
+            ("A", "Alpha Corp."),
+            ("B", "Beta Ltd."),
+            ("C", "Gamma plc"),
+            ("D", "Delta Holdings"),
+        ])
+        assert "Alpha" in m
+        assert "Beta" in m
+        assert "Gamma" in m
+        assert "Delta" in m
+
+    def test_short_name_exclusion(self):
+        """Kill mutation: _NAME_TOO_SHORT check removed."""
+        m = build_company_map([("T", "AT Inc")])
+        # "AT" is in _NAME_TOO_SHORT, should NOT create short variation
+        assert "AT Inc" in m  # Full name still works
+        assert "AT" not in m  # Short name excluded
 
 
 class TestIndustryKeywordMatching:

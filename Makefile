@@ -1,4 +1,4 @@
-.PHONY: up down logs logs-backend build migrate seed seed-history seed-all shell test lint dev-backend dev-frontend health backup restore certbot
+.PHONY: up down logs logs-backend build migrate seed seed-history seed-all shell test test-cov test-unit test-integration test-e2e mutmut-run mutmut-results lint dev-backend dev-frontend health backup restore certbot
 
 up:
 	docker compose up -d
@@ -33,6 +33,27 @@ shell:
 
 test:
 	cd backend && python -m pytest tests/ -v
+
+test-cov:
+	cd backend && python -m pytest tests/ -v --cov --cov-report=html --cov-report=term-missing
+
+test-unit:
+	cd backend && python -m pytest tests/ -v -m "not integration"
+
+test-integration:
+	cd backend && python -m pytest tests/integration/ -v -m integration
+
+test-e2e:
+	cd frontend && npx playwright test
+
+mutmut-run:
+	cd backend && python -m mutmut run --paths-to-mutate=worker/utils/technical_indicators.py
+	cd backend && python -m mutmut run --paths-to-mutate=worker/utils/backtester/metrics.py
+	cd backend && python -m mutmut run --paths-to-mutate=worker/utils/backtester/engine.py
+	cd backend && python -m mutmut run --paths-to-mutate=worker/tasks/signals/component_scores.py
+
+mutmut-results:
+	cd backend && python -m mutmut results
 
 lint:
 	cd backend && ruff check . && ruff format --check .

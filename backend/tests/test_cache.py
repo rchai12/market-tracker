@@ -212,6 +212,40 @@ class TestCachedDecorator:
 
         asyncio.run(_test())
 
+    def test_special_chars_in_params(self):
+        """Kill mutation: param serialization handles special characters."""
+        key = cache_key("test", ticker="BRK.B")
+        assert "cache:test:" in key
+        # Different special chars should produce different keys
+        key2 = cache_key("test", ticker="BRK-B")
+        assert key != key2
+
+    def test_nested_pydantic_in_list(self):
+        """Kill mutation: list-of-models serialization path."""
+        m1 = MagicMock()
+        m1.model_dump.return_value = {"nested": {"id": 1}}
+        result = _to_serializable([m1])
+        assert result == [{"nested": {"id": 1}}]
+        m1.model_dump.assert_called_once_with(mode="json")
+
+    def test_cache_ttl_passed_to_set(self):
+        """Kill mutation: TTL value correctly forwarded."""
+        async def _test():
+            mock_client = AsyncMock()
+            with patch("app.core.cache._client", return_value=mock_client):
+                await set_cached("cache:key", {"v": 1}, 120)
+            return mock_client
+
+        mock_client = asyncio.run(_test())
+        args = mock_client.set.call_args
+        assert args[1]["ex"] == 120  # TTL is 120, not default 300
+
+    def test_integer_params_in_key(self):
+        """Kill mutation: integer params correctly stringified in key."""
+        k1 = cache_key("test", page=1, per_page=20)
+        k2 = cache_key("test", page=2, per_page=20)
+        assert k1 != k2  # Different pages → different keys
+
     def test_di_params_excluded_from_key(self):
         async def _test():
             with patch("app.core.cache.get_cached", new_callable=AsyncMock, return_value=None) as mock_get, \

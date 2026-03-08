@@ -1,0 +1,19 @@
+[run]
+source = app,worker
+omit =
+    */alembic/*
+    */__init__.py
+    */tests/*
+    */conftest.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.
+    raise NotImplementedError
+show_missing = true
+precision = 2
+fail_under = 60
+
+[html]
+directory = htmlcov

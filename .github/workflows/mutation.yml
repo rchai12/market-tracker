@@ -1,0 +1,34 @@
+name: Mutation Testing
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # Every Sunday at 3 AM UTC
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  mutmut:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run mutmut on technical_indicators
+        run: |
+          python -m mutmut run \
+            --paths-to-mutate=worker/utils/technical_indicators.py \
+            --tests-dir=tests/ \
+            --runner="python -m pytest tests/test_tasks/test_indicators.py tests/test_mutation/test_indicators_mutation.py -x -q" \
+            || true
+
+      - name: Show results
+        if: always()
+        run: python -m mutmut results || true

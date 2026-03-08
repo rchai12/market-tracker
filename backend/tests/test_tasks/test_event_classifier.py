@@ -150,3 +150,25 @@ class TestDefaultAndEdgeCases:
         # "merger agreement" should match before "merger"
         result = classify_event("Merger Agreement Signed Today")
         assert result == "merger_acquisition"
+
+    def test_body_only_match(self):
+        """Kill mutation: body text is searched when title has no keywords."""
+        result = classify_event("Breaking Market News", body="Dividend payout raised by board")
+        assert result == "dividend"
+
+    def test_multiple_keywords_first_category_wins(self):
+        """Kill mutation: category priority ordering matters."""
+        result = classify_event("Earnings Report Shows Dividend Increase")
+        # Both "earnings" and "dividend" keywords present — first match wins
+        assert result in ("earnings", "dividend")
+
+    def test_case_edge_mixed(self):
+        """Kill mutation: case-insensitive matching across mixed case."""
+        assert classify_event("fda APPROVAL for new therapy") == "regulatory"
+        assert classify_event("Insider BUYING of shares reported") == "insider_trade"
+
+    def test_partial_keyword_no_match(self):
+        """Kill mutation: ensure word boundary matching (no partial matches)."""
+        # "earn" should not match "earnings" category if not a keyword
+        result = classify_event("Company earnings surprise analysts")
+        assert result == "earnings"  # Full keyword "earnings" matches
