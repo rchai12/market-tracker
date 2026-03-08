@@ -6,6 +6,7 @@ and options weight redistribution.
 
 from worker.tasks.signals.signal_generator import (
     MODERATE_THRESHOLD,
+    SIGNAL_DEDUP_THRESHOLD,
     STRONG_THRESHOLD,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
@@ -136,3 +137,13 @@ class TestWeightLookupCascade:
         """Kill mutation: None weights_map falls through to defaults."""
         result = _get_weights(None, sector_id=1)
         assert result["source"] == "default"
+
+
+class TestSignalDedupThreshold:
+    def test_dedup_threshold_value(self):
+        """Kill mutation: SIGNAL_DEDUP_THRESHOLD changed."""
+        assert SIGNAL_DEDUP_THRESHOLD == 0.005
+
+    def test_dedup_threshold_positive(self):
+        """Kill mutation: threshold sign flipped."""
+        assert SIGNAL_DEDUP_THRESHOLD > 0

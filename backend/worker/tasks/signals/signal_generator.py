@@ -56,6 +56,7 @@ WEIGHT_OPTIONS = 0.08
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.35
+SIGNAL_DEDUP_THRESHOLD = 0.005  # Skip new signal if score moved less than this
 
 
 @celery_app.task(
@@ -81,6 +82,7 @@ async def _generate_signals_async() -> dict:
 
     signals_created = 0
     alerts_dispatched = 0
+    skipped = 0
     errors = 0
 
     async with async_session() as session:
@@ -111,6 +113,23 @@ async def _generate_signals_async() -> dict:
                 composite = score_data["composite"]
                 direction = classify_direction(composite)
                 strength = classify_strength(composite)
+
+                # ── Dedup: skip if previous signal is materially identical ──
+                last_result = await session.execute(
+                    select(Signal)
+                    .where(Signal.stock_id == stock.id)
+                    .order_by(Signal.generated_at.desc())
+                    .limit(1)
+                )
+                last_signal = last_result.scalars().first()
+
+                if last_signal is not None and (
+                    last_signal.direction == direction
+                    and last_signal.strength == strength
+                    and abs(float(last_signal.composite_score) - composite) < SIGNAL_DEDUP_THRESHOLD
+                ):
+                    skipped += 1
+                    continue
 
                 reasoning = _build_reasoning(
                     stock.ticker, score_data, direction, strength
@@ -166,9 +185,10 @@ async def _generate_signals_async() -> dict:
 
     logger.info(
         f"Signal generation complete: {signals_created} signals, "
+        f"{skipped} skipped (unchanged), "
         f"{alerts_dispatched} alerts dispatched, {errors} errors"
     )
-    return {"signals": signals_created, "alerts": alerts_dispatched, "errors": errors}
+    return {"signals": signals_created, "alerts": alerts_dispatched, "skipped": skipped, "errors": errors}
 
 
 def _dispatch_alert_task(signal_id: int):
