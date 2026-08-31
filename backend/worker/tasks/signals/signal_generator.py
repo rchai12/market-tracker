@@ -25,6 +25,7 @@ from worker.celery_app import celery_app
 from worker.tasks.signals.component_scores import (
     calc_options_score,
     calc_price_momentum,
+    calc_retail_sentiment_score,
     calc_rsi_score,
     calc_sentiment_momentum,
     calc_sentiment_volume,
@@ -140,6 +141,8 @@ async def _generate_signals_async() -> dict:
                     score_data, ml_models_map, stock.sector_id, direction
                 ) if ml_models_map else None
 
+                retail_sentiment = await calc_retail_sentiment_score(session, stock.id, now)
+
                 opts_raw = score_data["options_score"]
                 signal = Signal(
                     stock_id=stock.id,
@@ -158,6 +161,7 @@ async def _generate_signals_async() -> dict:
                     ml_score=round(ml_result.ml_score, 5) if ml_result else None,
                     ml_direction=ml_result.ml_direction if ml_result else None,
                     ml_confidence=round(ml_result.ml_confidence, 4) if ml_result else None,
+                    retail_sentiment_score=round(retail_sentiment, 5) if retail_sentiment is not None else None,
                     generated_at=now,
                     window_start=window_start,
                     window_end=window_end,

@@ -126,6 +126,46 @@ async def trigger_backfill_duplicate_groups(
     return {"task_id": task.id, "days": days, "status": "queued"}
 
 
+@router.post("/backfill-quality-scores", status_code=202)
+async def trigger_backfill_quality_scores(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger quality score backfill for all articles missing quality_score."""
+    from worker.tasks.scraping.article_cleanup import backfill_article_quality_scores
+
+    task = backfill_article_quality_scores.delay()
+    await record_audit(
+        db,
+        _admin.id,
+        "backfill_quality_scores",
+        "admin/backfill-quality-scores",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/assign-canonical-articles", status_code=202)
+async def trigger_assign_canonical(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually trigger canonical article assignment for the last 48h."""
+    from worker.tasks.scraping.article_cleanup import assign_canonical_articles
+
+    task = assign_canonical_articles.delay()
+    await record_audit(
+        db,
+        _admin.id,
+        "assign_canonical_articles",
+        "admin/assign-canonical-articles",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.post("/fetch-options")
 async def trigger_options_fetch(
     request: Request,

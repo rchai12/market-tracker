@@ -25,6 +25,7 @@ async def _load_active_tickers() -> list[str]:
 @celery_app.task(name="worker.tasks.scraping.orchestrate_scraping", bind=True, max_retries=0)
 def orchestrate_scraping(self):
     """Fan out all scrapers in parallel, then chain sentiment processing."""
+    from worker.tasks.scraping.article_cleanup import assign_canonical_articles
     from worker.tasks.sentiment.sentiment_task import process_new_articles_sentiment
 
     logger.info("Starting scrape orchestration")
@@ -48,6 +49,10 @@ def orchestrate_scraping(self):
 
     total_new = sum(r for r in result.results if isinstance(r.result, int))
     logger.info(f"Scrape orchestration complete: {total_new} total new articles")
+
+    # Assign canonical articles before sentiment processing
+    logger.info("Running canonical article assignment")
+    assign_canonical_articles.apply_async().get(timeout=120, disable_sync_subtasks=False)
 
     # Chain sentiment processing if new articles were found
     if total_new > 0:

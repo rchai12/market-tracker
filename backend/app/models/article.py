@@ -23,6 +23,10 @@ class Article(Base):
     key_phrases: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     event_category: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     duplicate_group_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    quality_score: Mapped[float | None] = mapped_column(nullable=True)
+    canonical_article_id: Mapped[int | None] = mapped_column(
+        ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
     article_stocks = relationship("ArticleStock", back_populates="article", cascade="all, delete-orphan")

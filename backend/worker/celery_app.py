@@ -60,6 +60,7 @@ def on_task_failure(sender=None, task_id=None, exception=None, args=None, kwargs
 
 celery_app.conf.include = [
     "worker.tasks.scraping.orchestrate",
+    "worker.tasks.scraping.article_cleanup",
     "worker.tasks.scraping.market_data",
     "worker.tasks.scraping.yahoo_news",
     "worker.tasks.scraping.finviz",

@@ -5,11 +5,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.config import settings
+from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.database import async_session
 from app.models.article import Article, ArticleStock
 from app.models.scrape_log import ScrapeLog
 from app.models.stock import Stock
+from worker.utils.article_quality import compute_article_quality
 from worker.utils.async_task import run_async
 from worker.utils.duplicate_detector import find_duplicate_group
 from worker.utils.event_classifier import classify_event
@@ -146,6 +147,16 @@ class BaseScraper(ABC):
                         )
                         if group_id is not None:
                             article.duplicate_group_id = group_id
+
+                # Compute quality score using already-extracted data
+                max_ticker_confidence = max((conf for _, conf in tickers), default=0.0) if tickers else 0.0
+                article.quality_score = compute_article_quality(
+                    source=self.source_name,
+                    raw_text=raw_text,
+                    max_ticker_confidence=max_ticker_confidence,
+                    source_credibility_map=SOURCE_CREDIBILITY,
+                    default_credibility=DEFAULT_SOURCE_CREDIBILITY,
+                )
 
                 new_count += 1
 

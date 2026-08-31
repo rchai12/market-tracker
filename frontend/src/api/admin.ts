@@ -70,6 +70,16 @@ export async function triggerMLTraining(): Promise<TaskResponse> {
   return data;
 }
 
+export async function triggerBackfillQualityScores(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/backfill-quality-scores");
+  return data;
+}
+
+export async function triggerAssignCanonicalArticles(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/assign-canonical-articles");
+  return data;
+}
+
 export async function getMLModelStatus(): Promise<MLModelStatus[]> {
   const { data } = await apiClient.get<MLModelStatus[]>("/admin/ml-models");
   return data;

@@ -10,6 +10,8 @@ export interface Article {
   is_processed: boolean;
   event_category: string | null;
   duplicate_group_id: number | null;
+  quality_score: number | null;
+  canonical_article_id: number | null;
 }
 
 export interface EventCategorySummary {

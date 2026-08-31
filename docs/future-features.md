@@ -19,6 +19,7 @@ Context document for planned features and improvements. Each section captures th
 | 17 | ML signal ensemble | LightGBM binary classifier per-sector, A/B comparison with rule-based, admin training trigger, ML accuracy dashboard |
 | 18 | Options flow | yfinance options chain data, CBOE P/C ratio, 7th signal component (options score), P/C ratio & IV skew display |
 | 19 | Infrastructure | Redis caching (5 endpoints), dead letter queue, API key auth, admin audit logging, health alerts (Discord), slow query detection |
+| 20 | Comprehensive testing | Coverage reporting, mutation tests (3 tiers), integration test suite (34 tests), E2E tests (Playwright), Vitest config, signal dedup fix |
 
 ---
 

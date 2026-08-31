@@ -17,10 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
-from app.models.article import Article
+from app.models.article import Article, ArticleStock
 from app.models.market_data import MarketDataDaily
 from app.models.options_activity import OptionsActivity
 from app.models.sentiment import SentimentScore
+from worker.utils.article_quality import (
+    QUALITY_THRESHOLD,
+    SIGNAL_EXCLUDED_SOURCES,
+    SIGNAL_MIN_TICKER_CONFIDENCE,
+)
 from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
 # ── Parameters ──
@@ -50,8 +55,19 @@ async def calc_sentiment_momentum(
             Article.duplicate_group_id,
         )
         .join(Article, SentimentScore.article_id == Article.id)
+        .join(
+            ArticleStock,
+            (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
+        )
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since)
+        .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
+        .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))
+        .where(
+            (Article.quality_score >= QUALITY_THRESHOLD)
+            | (Article.quality_score.is_(None))
+        )
+        .where(Article.canonical_article_id.is_(None))
         .order_by(SentimentScore.processed_at.desc())
     )
     rows = result.all()
@@ -109,8 +125,19 @@ async def calc_sentiment_volume(
             Article.duplicate_group_id,
         )
         .join(Article, SentimentScore.article_id == Article.id)
+        .join(
+            ArticleStock,
+            (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
+        )
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since_24h)
+        .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
+        .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))
+        .where(
+            (Article.quality_score >= QUALITY_THRESHOLD)
+            | (Article.quality_score.is_(None))
+        )
+        .where(Article.canonical_article_id.is_(None))
     )
     recent_rows = recent_result.all()
 
@@ -138,9 +165,20 @@ async def calc_sentiment_volume(
     baseline_result = await session.execute(
         select(SentimentScore.id, Article.duplicate_group_id)
         .join(Article, SentimentScore.article_id == Article.id)
+        .join(
+            ArticleStock,
+            (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
+        )
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since_20d)
         .where(SentimentScore.processed_at < since_24h)
+        .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
+        .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))
+        .where(
+            (Article.quality_score >= QUALITY_THRESHOLD)
+            | (Article.quality_score.is_(None))
+        )
+        .where(Article.canonical_article_id.is_(None))
     )
     baseline_rows = baseline_result.all()
     baseline_groups: set[int] = set()
@@ -368,8 +406,19 @@ async def get_recent_article_count(
     result = await session.execute(
         select(Article.duplicate_group_id)
         .join(SentimentScore, SentimentScore.article_id == Article.id)
+        .join(
+            ArticleStock,
+            (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
+        )
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since)
+        .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
+        .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))
+        .where(
+            (Article.quality_score >= QUALITY_THRESHOLD)
+            | (Article.quality_score.is_(None))
+        )
+        .where(Article.canonical_article_id.is_(None))
     )
     rows = result.all()
     seen_groups: set[int] = set()
@@ -381,3 +430,49 @@ async def get_recent_article_count(
             seen_groups.add(row.duplicate_group_id)
         unique_count += 1
     return unique_count
+
+
+async def calc_retail_sentiment_score(
+    session: AsyncSession, stock_id: int, now: datetime
+) -> float | None:
+    """Exponentially weighted sentiment from Reddit-only articles.
+
+    Tracks retail investor sentiment separately from institutional signal scoring.
+    Uses the same decay as calc_sentiment_momentum but with no quality gate —
+    we want all retail opinion, not just high-quality articles.
+
+    Returns value in [-1, 1] or None if no Reddit articles exist in window.
+    """
+    since = now - timedelta(hours=48)
+    result = await session.execute(
+        select(
+            SentimentScore.positive_score,
+            SentimentScore.negative_score,
+            SentimentScore.processed_at,
+        )
+        .join(Article, SentimentScore.article_id == Article.id)
+        .where(SentimentScore.stock_id == stock_id)
+        .where(SentimentScore.processed_at >= since)
+        .where(Article.source.in_(SIGNAL_EXCLUDED_SOURCES))
+    )
+    rows = result.all()
+
+    if not rows:
+        return None
+
+    decay_rate = math.log(2) / SENTIMENT_HALF_LIFE_HOURS
+    weighted_sum = 0.0
+    weight_total = 0.0
+
+    for row in rows:
+        sentiment_value = float(row.positive_score) - float(row.negative_score)
+        hours_ago = (now - row.processed_at).total_seconds() / 3600
+        weight = math.exp(-decay_rate * hours_ago)
+        weighted_sum += sentiment_value * weight
+        weight_total += weight
+
+    if weight_total == 0:
+        return None
+
+    return weighted_sum / weight_total
+

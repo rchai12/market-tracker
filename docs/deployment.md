@@ -265,6 +265,50 @@ cd /opt/stock-predictor/backend
 .venv/bin/celery -A worker.celery_app call worker.tasks.signals.backtest_task.run_backtest_task --args='[1]' --queue signals
 ```
 
+## Running Tests
+
+### Local Development
+
+```bash
+# Unit tests (all)
+make test
+
+# Unit tests with coverage
+make test-cov
+
+# Unit tests only (skip integration)
+make test-unit
+
+# Integration tests (requires Postgres)
+make test-integration
+
+# Mutation tests
+make mutmut-run
+make mutmut-results
+
+# E2E tests (requires running frontend)
+make test-e2e
+
+# Lint
+make lint
+```
+
+### Docker VM
+
+```bash
+cd ~/market-tracker
+docker compose exec backend python -m pytest tests/ -v -m "not integration"
+docker compose exec backend python -m pytest tests/integration/ -v -m integration
+```
+
+### Compute VM
+
+```bash
+cd /opt/stock-predictor/backend
+source .venv/bin/activate
+python -m pytest tests/ -v -m "not integration"
+```
+
 ## Backup
 
 ```bash

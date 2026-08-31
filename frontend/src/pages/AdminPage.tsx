@@ -8,6 +8,8 @@ import {
   triggerWeightCompute,
   triggerMLTraining,
   triggerOptionsFetch,
+  triggerBackfillQualityScores,
+  triggerAssignCanonicalArticles,
   getDbStats,
   getTaskFailures,
   retryFailedTask,
@@ -124,6 +126,8 @@ export default function AdminPage() {
           <TaskButton label="Compute Weights" onTrigger={triggerWeightCompute} />
           <TaskButton label="Fetch Options Data" onTrigger={triggerOptionsFetch} />
           <TaskButton label="Train ML Models" onTrigger={triggerMLTraining} />
+          <TaskButton label="Backfill Quality Scores" onTrigger={triggerBackfillQualityScores} />
+          <TaskButton label="Assign Canonical Articles" onTrigger={triggerAssignCanonicalArticles} />
         </div>
       </section>
 

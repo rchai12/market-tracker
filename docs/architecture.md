@@ -270,7 +270,7 @@ Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions"
 
 ## Signal Generation + Alert Dispatch
 
-At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from six components:
+At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from six components. **Deduplication:** before creating a new signal, the generator queries the most recent signal for each stock and skips creation if the direction, strength, and composite score (within a `SIGNAL_DEDUP_THRESHOLD` of 0.005) are unchanged — preventing near-identical signals from accumulating when underlying data barely moves between hourly runs.
 
 | Component (default weight) | Source | Calculation |
 |---------------------|--------|-------------|
@@ -436,3 +436,54 @@ When targeting a sector, capital is divided equally across tickers. Each ticker 
 - Celery workers (2): ~2 GB
 - Python runtime: ~0.5 GB
 - Buffer: ~7 GB free
+
+## Testing
+
+### Test Pyramid
+
+| Layer | Framework | Count | Location |
+|-------|-----------|-------|----------|
+| Unit tests | pytest | 555+ | `backend/tests/` (excluding `integration/`) |
+| Mutation tests | mutmut | 3 tiers | `backend/tests/test_mutation/` |
+| Integration tests | pytest + httpx | 34 | `backend/tests/integration/` |
+| E2E tests | Playwright | 10 | `frontend/e2e/` |
+| Frontend unit | Vitest + Testing Library | — | `frontend/src/**/*.test.ts` |
+
+### Unit Tests
+
+Cover ticker extraction, text cleaning, scraper parsers, sentiment analysis, signal scoring, signal intelligence, event classification, duplicate detection, technical indicators, feedback loop, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, password validation, and secret key security.
+
+### Mutation Tests (3 Tiers)
+
+Mutation testing verifies that tests detect real code changes. Run via `mutmut` on critical calculation modules:
+
+- **Tier 1**: `technical_indicators.py` — RSI, SMA, MACD, Bollinger Bands
+- **Tier 2**: `backtester/metrics.py`, `backtester/engine.py`, `component_scores.py` — Sharpe ratio, drawdown, scoring functions
+- **Tier 3**: `duplicate_detector.py`, `ticker_extractor.py`, `signal_generator.py` — threshold boundaries, dedup logic
+
+### Integration Tests
+
+Full HTTP → FastAPI → SQLAlchemy → PostgreSQL cycle using `httpx.AsyncClient` with `ASGITransport`. Uses `NullPool` for test isolation across event loops.
+
+**Suites:** auth flow (register/login/refresh/profile/password), stocks & watchlist CRUD, signals & admin endpoints, error handling (auth failures, pagination bounds, API keys).
+
+Requires a running Postgres instance (`TEST_DATABASE_URL` env var). Tables are truncated between tests for isolation.
+
+### E2E Tests (Playwright)
+
+Browser-based tests with custom fixtures for authenticated and admin page contexts:
+
+- Auth: login form, invalid credentials, unauthenticated redirect, successful login
+- Navigation: sidebar links, page transitions
+- Signals: page load, tab structure
+- Admin: admin access, non-admin redirect
+
+### CI Pipeline
+
+GitHub Actions runs on every push/PR:
+1. **Lint** — ruff check + format
+2. **Unit tests** — pytest with coverage reporting (`fail_under=60%`)
+3. **Integration tests** — pytest with Postgres service container
+4. **Docker build** — validates container builds
+
+Weekly mutation testing runs on Sunday at 3 AM UTC (`.github/workflows/mutation.yml`).
