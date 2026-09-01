@@ -32,7 +32,7 @@ class Backtest(Base):
     annualized_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     sharpe_ratio: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
     max_drawdown_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
-    win_rate_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    win_rate_pct: Mapped[float | None] = mapped_column(Numeric(7, 4), nullable=True)
     total_trades: Mapped[int | None] = mapped_column(Integer, nullable=True)
     avg_win_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
     avg_loss_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
