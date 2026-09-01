@@ -5,22 +5,22 @@ import LoadingSkeleton from "../common/LoadingSkeleton";
 import ErrorRetry from "../common/ErrorRetry";
 
 const WEIGHT_COLUMNS = [
-  { key: "sentiment_momentum", label: "Sentiment" },
-  { key: "sentiment_volume", label: "Sent. Vol" },
-  { key: "price_momentum", label: "Price" },
-  { key: "volume_anomaly", label: "Volume" },
-  { key: "rsi", label: "RSI" },
-  { key: "trend", label: "Trend" },
-  { key: "options", label: "Options" },
+  { key: "sentiment_momentum", label: "Sentiment", regime: false },
+  { key: "sentiment_volume", label: "Sent. Vol", regime: false },
+  { key: "price_momentum", label: "Price", regime: false },
+  { key: "volume_anomaly", label: "Volume", regime: false },
+  { key: "rsi", label: "RSI", regime: true },
+  { key: "trend", label: "Trend", regime: true },
+  { key: "options", label: "Options", regime: false },
 ] as const;
 
 const DEFAULT_WEIGHTS: Record<string, number> = {
-  sentiment_momentum: 0.30,
-  sentiment_volume: 0.20,
-  price_momentum: 0.15,
-  volume_anomaly: 0.10,
-  rsi: 0.15,
-  trend: 0.10,
+  sentiment_momentum: 0.40,
+  sentiment_volume: 0.25,
+  price_momentum: 0.20,
+  volume_anomaly: 0.15,
+  rsi: 0.0,
+  trend: 0.0,
   options: 0.08,
 };
 
@@ -63,8 +63,16 @@ export default function WeightsTable() {
         <thead>
           <tr className="border-b border-gray-200 dark:border-gray-700">
             <th className="text-left py-2 px-3 font-medium text-gray-600 dark:text-gray-400">Sector</th>
-            {WEIGHT_COLUMNS.map(({ label }) => (
-              <th key={label} className="text-center py-2 px-2 font-medium text-gray-600 dark:text-gray-400">{label}</th>
+            {WEIGHT_COLUMNS.map(({ label, regime }) => (
+              <th
+                key={label}
+                className={`text-center py-2 px-2 font-medium ${
+                  regime ? "text-gray-400 dark:text-gray-500" : "text-gray-600 dark:text-gray-400"
+                }`}
+                title={regime ? "Regime context only — not weighted in composite" : undefined}
+              >
+                {label}
+              </th>
             ))}
             <th className="text-center py-2 px-2 font-medium text-gray-600 dark:text-gray-400">Accuracy</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600 dark:text-gray-400">Samples</th>
@@ -82,8 +90,13 @@ export default function WeightsTable() {
                   <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">(fallback)</span>
                 )}
               </td>
-              {WEIGHT_COLUMNS.map(({ key }) => (
-                <td key={key} className={`text-center py-2 px-2 ${deviationClass(w[key], key)}`}>
+              {WEIGHT_COLUMNS.map(({ key, regime }) => (
+                <td
+                  key={key}
+                  className={`text-center py-2 px-2 ${
+                    regime ? "text-gray-400 dark:text-gray-500" : deviationClass(w[key], key)
+                  }`}
+                >
                   {formatPct(w[key])}
                 </td>
               ))}

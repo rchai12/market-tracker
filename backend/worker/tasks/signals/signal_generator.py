@@ -1,13 +1,15 @@
 """Signal generation Celery task.
 
 Computes composite signal scores for all active stocks by combining:
-- Sentiment momentum (30%): exponentially weighted avg of sentiment, half-life 6h
-- Sentiment volume (20%): article count vs 20-day baseline, signed by net sentiment
-- Price momentum (15%): 5-day price change, tanh-scaled to [-1, 1]
-- Volume anomaly (10%): trading volume vs 20-day avg, signed by price direction
-- RSI (15%): 14-period RSI mapped to oversold(+)/overbought(-) score
-- Trend (10%): SMA crossover + MACD histogram combined score
+- Sentiment momentum (40%): exponentially weighted avg of sentiment, half-life 6h
+- Sentiment volume (25%): article count vs 20-day baseline, signed by net sentiment
+- Price momentum (20%): 5-day price change, tanh-scaled to [-1, 1]
+- Volume anomaly (15%): trading volume vs 20-day avg, signed by price direction
 - Options (8%): put/call ratio anomaly + IV skew vs baseline (when enabled)
+
+RSI and trend are not additive components. They classify market regime and apply
+a confidence multiplier to the composite (boost when trend confirms, dampen when
+the stock is technically extended or trend opposes the signal).
 """
 
 import logging
@@ -37,27 +39,72 @@ from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
-# ── Scoring weights (6 components without options, 7 with options, sum to 1.0) ──
-WEIGHT_SENTIMENT_MOMENTUM = 0.30
-WEIGHT_SENTIMENT_VOLUME = 0.20
-WEIGHT_PRICE_MOMENTUM = 0.15
-WEIGHT_VOLUME_ANOMALY = 0.10
-WEIGHT_RSI = 0.15
-WEIGHT_TREND = 0.10
+# ── Base weights (4 predictive components; RSI and trend are regime-only) ──
+WEIGHT_SENTIMENT_MOMENTUM = 0.40
+WEIGHT_SENTIMENT_VOLUME = 0.25
+WEIGHT_PRICE_MOMENTUM = 0.20
+WEIGHT_VOLUME_ANOMALY = 0.15
 
-# When options flow is enabled, redistribute to accommodate 8% options weight
-WEIGHT_SENTIMENT_MOMENTUM_OPT = 0.28
-WEIGHT_SENTIMENT_VOLUME_OPT = 0.18
-WEIGHT_PRICE_MOMENTUM_OPT = 0.14
-WEIGHT_VOLUME_ANOMALY_OPT = 0.09
-WEIGHT_RSI_OPT = 0.14
-WEIGHT_TREND_OPT = 0.09
+# With options only (8% added; scale other 4 down proportionally)
+WEIGHT_SENTIMENT_MOMENTUM_OPT = 0.37
+WEIGHT_SENTIMENT_VOLUME_OPT = 0.23
+WEIGHT_PRICE_MOMENTUM_OPT = 0.18
+WEIGHT_VOLUME_ANOMALY_OPT = 0.14
 WEIGHT_OPTIONS = 0.08
 
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.35
 SIGNAL_DEDUP_THRESHOLD = 0.005  # Skip new signal if score moved less than this
+
+
+def apply_regime_multiplier(
+    composite: float,
+    rsi_score: float | None,
+    trend_score: float | None,
+) -> tuple[float, str]:
+    """Apply a regime-based confidence multiplier to the composite score.
+
+    RSI and trend are no longer additive components — instead they provide
+    context about market conditions and adjust how much we trust the signal.
+
+    RSI score is tanh-scaled: positive → oversold, negative → overbought.
+    Threshold |0.4| ≈ raw RSI of 35/65 (moderately extended).
+
+    Trend score > 0.3 indicates a meaningful uptrend (SMA20 > SMA50 + positive MACD).
+    Trend score < -0.3 indicates a meaningful downtrend.
+
+    Priority order:
+    1. RSI extreme (|rsi_score| > 0.4): dampen 15% regardless of trend.
+       Stock is technically stretched in either direction — lower confidence.
+    2. Strong trend confirming signal: boost 15%.
+       The market structure agrees with our signal direction.
+    3. Strong trend opposing signal: dampen 15%.
+       The market structure fights our signal — be cautious.
+    4. Sideways / neutral: no change.
+
+    Returns (adjusted_composite, regime_label).
+    regime_label: "overbought" | "oversold" | "trending_up" | "trending_down" | "sideways"
+    """
+    rsi_val = rsi_score if rsi_score is not None else 0.0
+    trend_val = trend_score if trend_score is not None else 0.0
+
+    # Priority 1: technically extended RSI
+    if abs(rsi_val) > 0.4:
+        regime = "overbought" if rsi_val < 0 else "oversold"
+        return composite * 0.85, regime
+
+    # Priority 2 & 3: meaningful trend
+    if abs(trend_val) > 0.3:
+        composite_bullish = composite > 0
+        trend_bullish = trend_val > 0
+        regime = "trending_up" if trend_bullish else "trending_down"
+        if composite_bullish == trend_bullish:
+            return composite * 1.15, regime  # trend confirms signal
+        else:
+            return composite * 0.85, regime  # trend opposes signal
+
+    return composite, "sideways"
 
 
 @celery_app.task(
@@ -162,6 +209,7 @@ async def _generate_signals_async() -> dict:
                     ml_direction=ml_result.ml_direction if ml_result else None,
                     ml_confidence=round(ml_result.ml_confidence, 4) if ml_result else None,
                     retail_sentiment_score=round(retail_sentiment, 5) if retail_sentiment is not None else None,
+                    market_regime=score_data.get("market_regime"),
                     generated_at=now,
                     window_start=window_start,
                     window_end=window_end,
@@ -209,7 +257,12 @@ async def _compute_composite_score(
     weights_map: dict | None = None,
     sector_id: int | None = None,
 ) -> dict | None:
-    """Compute all components and the weighted composite for a stock."""
+    """Compute all components and the weighted composite for a stock.
+
+    RSI and trend are computed for regime classification and storage,
+    but their weights in the composite are 0.0.
+    apply_regime_multiplier adjusts the raw composite based on market conditions.
+    """
     sent_momentum = await calc_sentiment_momentum(session, stock_id, now)
     sent_volume = await calc_sentiment_volume(session, stock_id, now)
     price_mom = await calc_price_momentum(session, stock_id, now)
@@ -234,18 +287,20 @@ async def _compute_composite_score(
     trend_val = trend if trend is not None else 0.0
     opts_val = options if options is not None else 0.0
 
-    # Use adaptive weights if available, otherwise default
     w = _get_weights(weights_map, sector_id)
 
-    composite = (
+    # Raw composite: 4 predictive components (+ options when active)
+    # RSI and trend weights are 0.0 — they do not contribute here
+    raw_composite = (
         w["sentiment_momentum"] * sm
         + w["sentiment_volume"] * sv
         + w["price_momentum"] * pm
         + w["volume_anomaly"] * va
-        + w["rsi"] * rsi_val
-        + w["trend"] * trend_val
         + w.get("options", 0.0) * opts_val
     )
+
+    # Regime classification: RSI and trend as context, not signal components
+    composite, market_regime = apply_regime_multiplier(raw_composite, rsi_val, trend_val)
 
     return {
         "composite": composite,
@@ -256,6 +311,7 @@ async def _compute_composite_score(
         "rsi_score": rsi_val,
         "trend_score": trend_val,
         "options_score": opts_val,
+        "market_regime": market_regime,
         "article_count": article_count,
         "weights_source": w["source"],
     }
@@ -278,8 +334,8 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "sentiment_volume": float(row.sentiment_volume),
             "price_momentum": float(row.price_momentum),
             "volume_anomaly": float(row.volume_anomaly),
-            "rsi": float(row.rsi),
-            "trend": float(row.trend),
+            "rsi": 0.0,  # regime only — zero weight in composite
+            "trend": 0.0,  # regime only — zero weight in composite
             "options": float(row.options),
             "source": "sector" if row.sector_id else "global",
         }
@@ -288,24 +344,35 @@ async def _load_all_weights(session: AsyncSession) -> dict:
 
 
 def _get_weights(weights_map: dict | None, sector_id: int | None) -> dict:
-    """Look up adaptive weights: sector-specific -> global -> defaults."""
+    """Look up adaptive weights: sector-specific -> global -> defaults.
+
+    Adaptive weights (from SignalWeight table) contain rsi and trend columns
+    which are forced to 0.0 when loaded — they are regime-only.
+    """
     if weights_map:
         if sector_id is not None and sector_id in weights_map:
             return weights_map[sector_id]
         if None in weights_map:
             return weights_map[None]
-    return _default_weights()
+    return _default_weights(has_options=settings.options_flow_enabled)
 
 
-def _default_weights() -> dict:
-    if settings.options_flow_enabled:
+def _default_weights(has_options: bool | None = None) -> dict:
+    """Return default weights for 4-component base formula.
+
+    RSI and trend are set to 0.0 — they are no longer additive signal components.
+    They are used only for regime classification via apply_regime_multiplier.
+    """
+    if has_options is None:
+        has_options = settings.options_flow_enabled
+    if has_options:
         return {
             "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM_OPT,
             "sentiment_volume": WEIGHT_SENTIMENT_VOLUME_OPT,
             "price_momentum": WEIGHT_PRICE_MOMENTUM_OPT,
             "volume_anomaly": WEIGHT_VOLUME_ANOMALY_OPT,
-            "rsi": WEIGHT_RSI_OPT,
-            "trend": WEIGHT_TREND_OPT,
+            "rsi": 0.0,
+            "trend": 0.0,
             "options": WEIGHT_OPTIONS,
             "source": "default",
         }
@@ -314,8 +381,8 @@ def _default_weights() -> dict:
         "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
         "price_momentum": WEIGHT_PRICE_MOMENTUM,
         "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
-        "rsi": WEIGHT_RSI,
-        "trend": WEIGHT_TREND,
+        "rsi": 0.0,
+        "trend": 0.0,
         "options": 0.0,
         "source": "default",
     }
@@ -364,20 +431,15 @@ def _build_reasoning(
         vol_desc = "above" if va > 0 else "below"
         parts.append(f"Volume {vol_desc} average ({va:.3f})")
 
-    rsi_val = score_data.get("rsi_score", 0)
-    if abs(rsi_val) > 0.3:
-        rsi_desc = "oversold" if rsi_val > 0 else "overbought"
-        parts.append(f"RSI indicates {rsi_desc} ({rsi_val:.3f})")
-
-    trend_val = score_data.get("trend_score", 0)
-    if abs(trend_val) > 0.2:
-        trend_desc = "uptrend" if trend_val > 0 else "downtrend"
-        parts.append(f"Technical trend is {trend_desc} ({trend_val:.3f})")
-
     opts_val = score_data.get("options_score", 0)
     if abs(opts_val) > 0.3:
         opts_desc = "bullish" if opts_val > 0 else "bearish"
         parts.append(f"Options flow is {opts_desc} ({opts_val:.3f})")
+
+    regime = score_data.get("market_regime", "sideways")
+    if regime not in ("sideways", None):
+        regime_display = regime.replace("_", " ")
+        parts.append(f"Market regime: {regime_display}")
 
     return ". ".join(parts) + "."
 

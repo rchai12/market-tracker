@@ -11,14 +11,10 @@ from worker.tasks.signals.signal_generator import (
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
     WEIGHT_PRICE_MOMENTUM_OPT,
-    WEIGHT_RSI,
-    WEIGHT_RSI_OPT,
     WEIGHT_SENTIMENT_MOMENTUM,
     WEIGHT_SENTIMENT_MOMENTUM_OPT,
     WEIGHT_SENTIMENT_VOLUME,
     WEIGHT_SENTIMENT_VOLUME_OPT,
-    WEIGHT_TREND,
-    WEIGHT_TREND_OPT,
     WEIGHT_VOLUME_ANOMALY,
     WEIGHT_VOLUME_ANOMALY_OPT,
     _get_weights,
@@ -35,8 +31,6 @@ class TestDefaultWeightsSum:
             + WEIGHT_SENTIMENT_VOLUME
             + WEIGHT_PRICE_MOMENTUM
             + WEIGHT_VOLUME_ANOMALY
-            + WEIGHT_RSI
-            + WEIGHT_TREND
         )
         assert abs(total - 1.0) < 1e-10
 
@@ -47,8 +41,6 @@ class TestDefaultWeightsSum:
             + WEIGHT_SENTIMENT_VOLUME_OPT
             + WEIGHT_PRICE_MOMENTUM_OPT
             + WEIGHT_VOLUME_ANOMALY_OPT
-            + WEIGHT_RSI_OPT
-            + WEIGHT_TREND_OPT
             + WEIGHT_OPTIONS
         )
         assert abs(total - 1.0) < 1e-10
@@ -59,12 +51,10 @@ class TestDefaultWeightsSum:
 
     def test_each_base_weight_correct(self):
         """Kill mutation: individual weight values."""
-        assert WEIGHT_SENTIMENT_MOMENTUM == 0.30
-        assert WEIGHT_SENTIMENT_VOLUME == 0.20
-        assert WEIGHT_PRICE_MOMENTUM == 0.15
-        assert WEIGHT_VOLUME_ANOMALY == 0.10
-        assert WEIGHT_RSI == 0.15
-        assert WEIGHT_TREND == 0.10
+        assert WEIGHT_SENTIMENT_MOMENTUM == 0.40
+        assert WEIGHT_SENTIMENT_VOLUME == 0.25
+        assert WEIGHT_PRICE_MOMENTUM == 0.20
+        assert WEIGHT_VOLUME_ANOMALY == 0.15
 
 
 class TestClassifyDirectionBoundary:

@@ -28,6 +28,7 @@ class Signal(Base):
     ml_direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ml_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
     retail_sentiment_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
+    market_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

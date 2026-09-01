@@ -18,6 +18,7 @@ export interface Signal {
   ml_score: number | null;
   ml_direction: "bullish" | "bearish" | "neutral" | null;
   ml_confidence: number | null;
+  market_regime: string | null;
   generated_at: string;
   window_start: string;
   window_end: string;

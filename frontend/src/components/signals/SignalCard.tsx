@@ -26,9 +26,22 @@ export default function SignalCard({ signal, onDetailClick }: SignalCardProps) {
           <span className="text-lg font-semibold text-gray-900 dark:text-white">
             {signal.ticker}
           </span>
-          <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${dirColors.bg} ${dirColors.text}`}>
-            {signal.direction}
-          </span>
+          <div className="flex items-center gap-2">
+            {signal.market_regime && signal.market_regime !== "sideways" && (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                signal.market_regime === "trending_up"
+                  ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+                  : signal.market_regime === "trending_down"
+                    ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                    : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+              }`}>
+                {signal.market_regime.replace("_", " ")}
+              </span>
+            )}
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${dirColors.bg} ${dirColors.text}`}>
+              {signal.direction}
+            </span>
+          </div>
         </div>
 
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{signal.company_name}</p>
