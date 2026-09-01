@@ -6,14 +6,23 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from worker.tasks.signals.signal_generator import (
+    WEIGHT_EARNINGS,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
+    WEIGHT_PRICE_MOMENTUM_BOTH,
+    WEIGHT_PRICE_MOMENTUM_EARN,
     WEIGHT_PRICE_MOMENTUM_OPT,
     WEIGHT_SENTIMENT_MOMENTUM,
+    WEIGHT_SENTIMENT_MOMENTUM_BOTH,
+    WEIGHT_SENTIMENT_MOMENTUM_EARN,
     WEIGHT_SENTIMENT_MOMENTUM_OPT,
     WEIGHT_SENTIMENT_VOLUME,
+    WEIGHT_SENTIMENT_VOLUME_BOTH,
+    WEIGHT_SENTIMENT_VOLUME_EARN,
     WEIGHT_SENTIMENT_VOLUME_OPT,
     WEIGHT_VOLUME_ANOMALY,
+    WEIGHT_VOLUME_ANOMALY_BOTH,
+    WEIGHT_VOLUME_ANOMALY_EARN,
     WEIGHT_VOLUME_ANOMALY_OPT,
     _compute_composite_score,
     _default_weights,
@@ -86,6 +95,7 @@ class TestDefaultWeights:
         w = _default_weights(has_options=False)
         assert w["rsi"] == 0.0
         assert w["trend"] == 0.0
+        assert w["earnings"] == 0.0
         predictive = (
             w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"]
         )
@@ -96,6 +106,24 @@ class TestDefaultWeights:
     def test_options_enabled_sums_to_one(self):
         w = _default_weights(has_options=True)
         assert w["options"] == 0.08
+        assert w["rsi"] == 0.0
+        assert w["trend"] == 0.0
+        assert w["earnings"] == 0.0
+        numeric = sum(v for k, v in w.items() if k != "source")
+        assert abs(numeric - 1.0) < 1e-9
+
+    def test_earnings_enabled_sums_to_one(self):
+        w = _default_weights(has_options=False, has_earnings=True)
+        assert w["earnings"] == 0.10
+        assert w["rsi"] == 0.0
+        assert w["trend"] == 0.0
+        numeric = sum(v for k, v in w.items() if k != "source")
+        assert abs(numeric - 1.0) < 1e-9
+
+    def test_options_and_earnings_sum_to_one(self):
+        w = _default_weights(has_options=True, has_earnings=True)
+        assert w["options"] == 0.08
+        assert w["earnings"] == 0.10
         assert w["rsi"] == 0.0
         assert w["trend"] == 0.0
         numeric = sum(v for k, v in w.items() if k != "source")
@@ -117,6 +145,23 @@ class TestDefaultWeights:
             + WEIGHT_OPTIONS
             - 1.0
         ) < 1e-9
+        assert abs(
+            WEIGHT_SENTIMENT_MOMENTUM_EARN
+            + WEIGHT_SENTIMENT_VOLUME_EARN
+            + WEIGHT_PRICE_MOMENTUM_EARN
+            + WEIGHT_VOLUME_ANOMALY_EARN
+            + WEIGHT_EARNINGS
+            - 1.0
+        ) < 1e-9
+        assert abs(
+            WEIGHT_SENTIMENT_MOMENTUM_BOTH
+            + WEIGHT_SENTIMENT_VOLUME_BOTH
+            + WEIGHT_PRICE_MOMENTUM_BOTH
+            + WEIGHT_VOLUME_ANOMALY_BOTH
+            + WEIGHT_EARNINGS
+            + WEIGHT_OPTIONS
+            - 1.0
+        ) < 1e-9
 
 
 def _score_row(**overrides):
@@ -128,6 +173,7 @@ def _score_row(**overrides):
         direction="bullish",
         is_correct=True,
         price_change_pct=0.05,
+        earnings_score=None,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -151,7 +197,7 @@ class TestWeightOptimizerComponents:
         assert result is not None
         assert "rsi" not in result
         assert "trend" not in result
-        assert "earnings" not in result
+        assert "earnings" in result
         assert "sentiment_momentum" in result
         assert "volume_anomaly" in result
 
@@ -185,7 +231,7 @@ class TestWeightOptimizerComponents:
 
         assert captured["rsi"] == 0.0
         assert captured["trend"] == 0.0
-        assert "earnings" not in captured
+        assert captured["earnings"] == 0.10
 
 
 def _patch_components(**returns):
@@ -197,6 +243,7 @@ def _patch_components(**returns):
         "calc_rsi_score": None,
         "calc_trend_score": None,
         "calc_options_score": None,
+        "calc_earnings_surprise_score": None,
         "get_recent_article_count": 2,
     }
     defaults.update(returns)
@@ -284,3 +331,21 @@ class TestComputeCompositeScoreRegime:
         assert result is not None
         assert abs(result["composite"] - raw) < 1e-9
         assert result["market_regime"] == "sideways"
+
+    def test_earnings_in_window_included_in_composite(self):
+        patches = _patch_components(calc_earnings_surprise_score=0.8, calc_rsi_score=None, calc_trend_score=None)
+
+        async def _run():
+            for p in patches:
+                p.start()
+            try:
+                return await _compute_composite_score(AsyncMock(), 1, NOW)
+            finally:
+                for p in patches:
+                    p.stop()
+
+        result = asyncio.run(_run())
+        raw = 0.36 * 0.5 + 0.22 * 0.2 + 0.18 * 0.3 + 0.14 * 0.1 + 0.10 * 0.8
+        assert result is not None
+        assert abs(result["composite"] - raw) < 1e-9
+        assert result["earnings_score"] == 0.8

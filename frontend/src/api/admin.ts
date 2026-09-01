@@ -65,6 +65,11 @@ export async function triggerOptionsFetch(): Promise<TaskResponse> {
   return data;
 }
 
+export async function triggerEarningsFetch(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/fetch-earnings");
+  return data;
+}
+
 export async function triggerMLTraining(): Promise<TaskResponse> {
   const { data } = await apiClient.post<TaskResponse>("/admin/train-ml-models");
   return data;

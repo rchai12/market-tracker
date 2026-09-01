@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.models.article import Article, ArticleStock
+from app.models.earnings_estimate import EarningsEstimate
 from app.models.market_data import MarketDataDaily
 from app.models.options_activity import OptionsActivity
 from app.models.sentiment import SentimentScore
@@ -34,6 +35,7 @@ BASELINE_DAYS = 20
 PRICE_MOMENTUM_DAYS = 5
 RSI_LOOKBACK_DAYS = 30
 TREND_LOOKBACK_DAYS = 60
+EARNINGS_WINDOW_DAYS = 2  # Score is active up to 2 days after earnings_date
 
 
 async def calc_sentiment_momentum(
@@ -475,4 +477,52 @@ async def calc_retail_sentiment_score(
         return None
 
     return weighted_sum / weight_total
+
+
+async def calc_earnings_surprise_score(
+    session: AsyncSession, stock_id: int, now: datetime
+) -> float | None:
+    """Earnings surprise score based on EPS beat/miss vs analyst consensus.
+
+    Active only within EARNINGS_WINDOW_DAYS after earnings are reported.
+    Returns None outside this window — the composite weight redistributes.
+
+    Score formula:
+      base = tanh(surprise_pct / 5.0)
+      where surprise_pct is percentage (15.2 = 15.2% beat)
+
+    tanh scaling: ±5% surprise → ±0.46, ±10% → ±0.76, ±15%+ → ~±0.91
+    Result is bounded to [-1.0, 1.0].
+
+    guidance_change column is NULL in Phase 21b — populated by Phase 21d (LLM extraction).
+    When populated, a +0.2/-0.2 modifier will be added for raised/lowered guidance.
+    """
+    today = now.date() if hasattr(now, "date") else now
+
+    result = await session.execute(
+        select(EarningsEstimate)
+        .where(EarningsEstimate.stock_id == stock_id)
+        .where(EarningsEstimate.reported == True)  # noqa: E712
+        .where(EarningsEstimate.surprise_pct.isnot(None))
+        .where(EarningsEstimate.earnings_date >= today - timedelta(days=EARNINGS_WINDOW_DAYS))
+        .where(EarningsEstimate.earnings_date <= today)
+        .order_by(EarningsEstimate.earnings_date.desc())
+        .limit(1)
+    )
+    earnings = result.scalar_one_or_none()
+
+    if earnings is None:
+        return None
+
+    base = math.tanh(float(earnings.surprise_pct) / 5.0)
+
+    # Guidance modifier: populated by LLM phase (21d); 0.0 until then
+    guidance_boost = {
+        "raised": 0.2,
+        "lowered": -0.2,
+        "maintained": 0.0,
+        None: 0.0,
+    }.get(earnings.guidance_change, 0.0)
+
+    return max(-1.0, min(1.0, base + guidance_boost))
 

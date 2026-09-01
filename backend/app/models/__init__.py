@@ -4,6 +4,7 @@ from app.models.article import Article, ArticleStock
 from app.models.audit_log import AuditLog
 from app.models.backtest import Backtest, BacktestTrade
 from app.models.cboe_put_call import CboePutCallRatio
+from app.models.earnings_estimate import EarningsEstimate
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
 from app.models.ml_model import MLModel
 from app.models.options_activity import OptionsActivity
@@ -28,6 +29,7 @@ __all__ = [
     "Backtest",
     "BacktestTrade",
     "CboePutCallRatio",
+    "EarningsEstimate",
     "MarketDataDaily",
     "MarketDataIntraday",
     "MLModel",

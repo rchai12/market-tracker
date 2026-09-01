@@ -180,6 +180,26 @@ async def trigger_options_fetch(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/fetch-earnings", status_code=202)
+async def trigger_fetch_earnings(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger earnings calendar fetch for all active tickers."""
+    from worker.tasks.scraping.earnings_data import fetch_all_earnings_calendars
+
+    task = fetch_all_earnings_calendars.delay()
+    await record_audit(
+        db,
+        _admin.id,
+        "fetch_earnings",
+        "admin/fetch-earnings",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.post("/train-ml-models")
 async def trigger_ml_training(
     request: Request,

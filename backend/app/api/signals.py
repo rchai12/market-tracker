@@ -228,6 +228,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         ml_direction=signal.ml_direction,
         ml_confidence=float(signal.ml_confidence) if signal.ml_confidence else None,
         market_regime=signal.market_regime,
+        earnings_score=float(signal.earnings_score) if signal.earnings_score else None,
         generated_at=signal.generated_at,
         window_start=signal.window_start,
         window_end=signal.window_end,

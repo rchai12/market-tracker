@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.cboe_put_call import CboePutCallRatio
+from app.models.earnings_estimate import EarningsEstimate
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
 from app.models.options_activity import OptionsActivity
 from app.models.user import User
+from app.schemas.earnings import EarningsEstimateResponse
 from app.schemas.market_data import IndicatorDataResponse, MarketDataDailyResponse, MarketDataIntradayResponse
 from app.schemas.options import CboePutCallResponse, OptionsActivityResponse
 
@@ -32,6 +34,25 @@ async def get_cboe_put_call_ratio(
     )
     rows = result.scalars().all()
     return [CboePutCallResponse.model_validate(row) for row in rows]
+
+
+@router.get("/{ticker}/earnings", response_model=list[EarningsEstimateResponse])
+async def get_earnings_history(
+    ticker: str,
+    limit: int = Query(8, ge=1, le=20),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get earnings estimate history for a ticker (last N quarters)."""
+    stock = await get_stock_by_ticker(ticker, db)
+    result = await db.execute(
+        select(EarningsEstimate)
+        .where(EarningsEstimate.stock_id == stock.id)
+        .order_by(EarningsEstimate.earnings_date.desc())
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+    return [EarningsEstimateResponse.model_validate(row) for row in rows]
 
 
 @router.get("/{ticker}/daily", response_model=list[MarketDataDailyResponse])

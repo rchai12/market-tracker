@@ -19,6 +19,7 @@ export interface Signal {
   ml_direction: "bullish" | "bearish" | "neutral" | null;
   ml_confidence: number | null;
   market_regime: string | null;
+  earnings_score: number | null;
   generated_at: string;
   window_start: string;
   window_end: string;
@@ -45,6 +46,7 @@ export interface SignalWeights {
   rsi: number;
   trend: number;
   options: number;
+  earnings: number;
   sample_count: number;
   accuracy_pct: number | null;
   computed_at: string | null;

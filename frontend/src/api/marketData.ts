@@ -1,5 +1,6 @@
 import apiClient from "./client";
 import type { IndicatorData, MarketDataDaily } from "../types";
+import type { EarningsEstimateResponse } from "../types/earnings";
 import type { CboePutCallRatio, OptionsActivity } from "../types/options";
 
 export async function getDailyData(
@@ -32,5 +33,15 @@ export async function getCboePutCall(
   params?: { days?: number }
 ): Promise<CboePutCallRatio[]> {
   const { data } = await apiClient.get("/market-data/cboe/put-call-ratio", { params });
+  return data;
+}
+
+export async function getEarningsHistory(
+  ticker: string,
+  limit = 8
+): Promise<EarningsEstimateResponse[]> {
+  const { data } = await apiClient.get(`/market-data/${ticker}/earnings`, {
+    params: { limit },
+  });
   return data;
 }

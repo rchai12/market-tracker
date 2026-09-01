@@ -26,6 +26,11 @@ beat_schedule = {
         "task": "worker.tasks.scraping.options_data.fetch_cboe_ratio",
         "schedule": crontab(minute=12, day_of_week="1-5"),
     },
+    # Earnings calendar fetch - daily at 6 AM (after overnight data is available)
+    "fetch-earnings-calendars": {
+        "task": "worker.tasks.scraping.earnings_data.fetch_all_earnings_calendars",
+        "schedule": crontab(hour=6, minute=0),
+    },
     # Sentiment catch-up - runs at :15 to process any missed articles
     # (primary sentiment runs chained after scraping at :00)
     "sentiment-catchup": {

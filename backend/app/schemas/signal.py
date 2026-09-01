@@ -28,6 +28,7 @@ class SignalResponse(BaseModel):
     ml_direction: str | None = None
     ml_confidence: float | None = None
     market_regime: str | None = None
+    earnings_score: float | None = None
     generated_at: datetime
     window_start: datetime
     window_end: datetime
@@ -61,6 +62,7 @@ class SignalWeightsResponse(BaseModel):
     rsi: float
     trend: float
     options: float
+    earnings: float
     sample_count: int
     accuracy_pct: float | None
     computed_at: datetime | None

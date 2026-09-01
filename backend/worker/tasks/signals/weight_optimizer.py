@@ -1,8 +1,8 @@
 """Adaptive weight computation Celery task.
 
 Analyzes historical signal accuracy per sector to compute optimal weights
-for the 4 predictive signal components (+ options when enabled). RSI and trend
-are regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
+for the 4 predictive signal components (+ earnings when present, + options when enabled).
+RSI and trend are regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
 """
 
 import logging
@@ -95,6 +95,7 @@ async def _compute_sector_weights(
             Signal.price_score,
             Signal.volume_score,
             Signal.options_score,
+            Signal.earnings_score,
             Signal.direction,
             SignalOutcome.is_correct,
             SignalOutcome.price_change_pct,
@@ -115,7 +116,7 @@ async def _compute_sector_weights(
     if len(rows) < settings.feedback_min_samples:
         return None
 
-    components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly"]
+    components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "earnings"]
     if settings.options_flow_enabled:
         components.append("options")
     component_correct = {k: 0 for k in components}
@@ -142,6 +143,12 @@ async def _compute_sector_weights(
             if (1.0 if float(row.volume_score) > 0 else -1.0) == actual_dir:
                 component_correct["volume_anomaly"] += 1
             component_total["volume_anomaly"] += 1
+
+        # Earnings surprise
+        if row.earnings_score is not None and abs(float(row.earnings_score)) > 0.01:
+            if (1.0 if float(row.earnings_score) > 0 else -1.0) == actual_dir:
+                component_correct["earnings"] += 1
+            component_total["earnings"] += 1
 
         # Options score
         if settings.options_flow_enabled and row.options_score is not None:
@@ -178,6 +185,7 @@ async def _compute_sector_weights(
         "sentiment_volume": round(clamped["sentiment_volume"], 4),
         "price_momentum": round(clamped["price_momentum"], 4),
         "volume_anomaly": round(clamped["volume_anomaly"], 4),
+        "earnings": round(clamped.get("earnings", 0.10), 4),
         "sample_count": len(rows),
         "accuracy_pct": round(overall_accuracy, 2),
     }
@@ -249,6 +257,7 @@ async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights:
         "rsi": 0.0,  # regime only; always zero
         "trend": 0.0,  # regime only; always zero
         "options": weights.get("options", 0.08),
+        "earnings": weights.get("earnings", 0.10),
         "sample_count": weights["sample_count"],
         "accuracy_pct": weights["accuracy_pct"],
         "computed_at": datetime.now(timezone.utc),

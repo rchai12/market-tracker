@@ -9,6 +9,7 @@ const PREDICTIVE_COMPONENTS = [
   { key: "sentiment_volume_score", label: "Sent. Volume" },
   { key: "price_score", label: "Price" },
   { key: "volume_score", label: "Volume" },
+  { key: "earnings_score", label: "Earnings" },
   { key: "options_score", label: "Options" },
 ] as const;
 
