@@ -72,6 +72,7 @@ celery_app.conf.include = [
     "worker.tasks.scraping.options_data",
     "worker.tasks.scraping.earnings_data",
     "worker.tasks.sentiment.sentiment_task",
+    "worker.tasks.sentiment.llm_extraction_task",
     "worker.tasks.signals.signal_generator",
     "worker.tasks.signals.alert_dispatcher",
     "worker.tasks.signals.outcome_evaluator",

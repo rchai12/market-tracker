@@ -37,6 +37,11 @@ beat_schedule = {
         "task": "worker.tasks.sentiment.sentiment_task.process_new_articles_sentiment",
         "schedule": crontab(minute=15),
     },
+    # LLM extraction — earnings articles only, runs only when LLM_EXTRACTION_ENABLED=true
+    "run-llm-extraction": {
+        "task": "worker.tasks.sentiment.llm_extraction_task.run_llm_extraction",
+        "schedule": crontab(minute=20),
+    },
     # Signal generation - runs at :30 (after sentiment processing)
     "generate-signals": {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",

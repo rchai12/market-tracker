@@ -200,6 +200,26 @@ async def trigger_fetch_earnings(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/run-llm-extraction", status_code=202)
+async def trigger_llm_extraction(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger LLM extraction on recent unprocessed earnings articles."""
+    from worker.tasks.sentiment.llm_extraction_task import run_llm_extraction
+
+    task = run_llm_extraction.delay()
+    await record_audit(
+        db,
+        _admin.id,
+        "run_llm_extraction",
+        "admin/run-llm-extraction",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.post("/train-ml-models")
 async def trigger_ml_training(
     request: Request,

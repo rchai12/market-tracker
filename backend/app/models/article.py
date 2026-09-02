@@ -27,6 +27,7 @@ class Article(Base):
     canonical_article_id: Mapped[int | None] = mapped_column(
         ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    llm_extracted: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None, index=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
     article_stocks = relationship("ArticleStock", back_populates="article", cascade="all, delete-orphan")
