@@ -5,10 +5,11 @@ generation day by day, simulates trades, and returns an equity curve with
 performance metrics.
 
 Two modes:
-- "technical": Uses only OHLCV-derived components (price momentum, volume anomaly,
-  RSI, trend). Works for full 30+ year historical range.
-- "full": Uses all 6 components including sentiment momentum and sentiment volume.
-  Limited to the period since sentiment scraping began.
+- "technical": Same live formula as production (40/25/20/15 + regime multiplier)
+  with sentiment omitted. RSI/trend are regime context, not additive weights.
+  Works for full 30+ year historical range.
+- "full": Adds historical sentiment momentum + volume. Limited to the period
+  since sentiment scraping began. Earnings/options history is not replayed.
 """
 
 from datetime import date
@@ -27,9 +28,9 @@ from .models import (
     SentimentRow,
     TradeRecord,
 )
+from worker.utils.signal_formula import classify_direction, classify_strength, combine_component_scores
+
 from .signals import (
-    classify_direction,
-    classify_strength,
     compute_price_momentum_from_closes,
     compute_rsi_score_from_closes,
     compute_sentiment_momentum_from_data,
@@ -308,8 +309,11 @@ def _compute_components(
     weights: dict,
     sentiment_data: list[SentimentRow] | None,
 ) -> dict | None:
-    """Compute weighted composite score from signal components."""
-    # Technical components (always computed)
+    """Compute composite via the shared live formula (regime multiplier included).
+
+    Technical mode omits sentiment (None → 0.0). Earnings and options are not
+    replayed historically, so those gates stay inactive.
+    """
     price_mom = compute_price_momentum_from_closes(closes[-6:]) if len(closes) >= 6 else None
     vol_anomaly = (
         compute_volume_anomaly_from_data(closes[-21:], volumes[-21:])
@@ -323,56 +327,25 @@ def _compute_components(
         else None
     )
 
-    if mode == "technical":
-        # Need at least one component
-        pm = price_mom if price_mom is not None else 0.0
-        va = vol_anomaly if vol_anomaly is not None else 0.0
-        rv = rsi if rsi is not None else 0.0
-        tv = trend if trend is not None else 0.0
+    sent_mom = None
+    sent_vol = None
+    if mode != "technical" and sentiment_data:
+        sent_mom = compute_sentiment_momentum_from_data(sentiment_data, current_date)
+        sent_vol = compute_sentiment_volume_from_data(sentiment_data, current_date)
 
-        if price_mom is None and vol_anomaly is None and rsi is None and trend is None:
-            return None
-
-        composite = (
-            weights.get("price_momentum", 0.30) * pm
-            + weights.get("volume_anomaly", 0.20) * va
-            + weights.get("rsi", 0.30) * rv
-            + weights.get("trend", 0.20) * tv
-        )
-
-        return {"composite": composite}
-
-    else:
-        # Full mode: include sentiment
-        sent_mom = None
-        sent_vol = None
-        if sentiment_data:
-            sent_mom = compute_sentiment_momentum_from_data(sentiment_data, current_date)
-            sent_vol = compute_sentiment_volume_from_data(sentiment_data, current_date)
-
-        sm = sent_mom if sent_mom is not None else 0.0
-        sv = sent_vol if sent_vol is not None else 0.0
-        pm = price_mom if price_mom is not None else 0.0
-        va = vol_anomaly if vol_anomaly is not None else 0.0
-        rv = rsi if rsi is not None else 0.0
-        tv = trend if trend is not None else 0.0
-
-        has_sentiment = sent_mom is not None
-        has_market = price_mom is not None
-
-        if not has_sentiment and not has_market:
-            return None
-
-        composite = (
-            weights.get("sentiment_momentum", 0.30) * sm
-            + weights.get("sentiment_volume", 0.20) * sv
-            + weights.get("price_momentum", 0.15) * pm
-            + weights.get("volume_anomaly", 0.10) * va
-            + weights.get("rsi", 0.15) * rv
-            + weights.get("trend", 0.10) * tv
-        )
-
-        return {"composite": composite}
+    return combine_component_scores(
+        sentiment_momentum=sent_mom,
+        sentiment_volume=sent_vol,
+        price_momentum=price_mom,
+        volume_anomaly=vol_anomaly,
+        rsi_score=rsi,
+        trend_score=trend,
+        options_score=None,
+        earnings_score=None,
+        weights=weights,
+        has_options=False,
+        article_count=0,
+    )
 
 
 def _empty_result(starting_capital: float) -> BacktestResult:

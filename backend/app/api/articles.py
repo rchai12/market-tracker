@@ -11,6 +11,7 @@ from app.models.stock import Stock
 from app.models.user import User
 from app.schemas.article import ArticleResponse, PaginatedArticles
 from app.schemas.common import PaginationMeta, calc_total_pages, get_total_count
+from worker.utils.article_quality import ARTICLE_UI_MIN_TICKER_CONFIDENCE
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -26,7 +27,11 @@ async def list_articles(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List articles with optional filters and pagination."""
+    """List articles with optional filters and pagination.
+
+    When `ticker` is set, only articles linked at company-name confidence
+    or higher (0.60+) are returned — industry-keyword sector spray (0.45) is excluded.
+    """
     base_query = select(Article)
 
     if source:
@@ -39,8 +44,10 @@ async def list_articles(
         base_query = base_query.where(Article.event_category == event_category)
 
     if ticker:
+        # Drop industry-keyword sector spray (0.45); keep company-name matches (0.60+).
         base_query = base_query.join(ArticleStock).join(Stock).where(
-            func.upper(Stock.ticker) == ticker.upper()
+            func.upper(Stock.ticker) == ticker.upper(),
+            ArticleStock.confidence >= ARTICLE_UI_MIN_TICKER_CONFIDENCE,
         )
 
     total = await get_total_count(db, base_query)

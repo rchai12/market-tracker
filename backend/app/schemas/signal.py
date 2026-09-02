@@ -29,6 +29,7 @@ class SignalResponse(BaseModel):
     ml_confidence: float | None = None
     market_regime: str | None = None
     earnings_score: float | None = None
+    retail_sentiment_score: float | None = None
     generated_at: datetime
     window_start: datetime
     window_end: datetime

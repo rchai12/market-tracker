@@ -20,22 +20,26 @@ VALID_JSON = '{"guidance_change": "raised", "management_tone": "confident"}'
 
 
 def _install_genai(response_text: str | None = VALID_JSON, error: Exception | None = None):
-    """Inject a fake google.generativeai module and return the model mock."""
+    """Inject a fake google.genai module matching extract_earnings_context imports."""
     genai = MagicMock()
-    model = MagicMock()
+    types_mod = MagicMock()
+    types_mod.GenerateContentConfig = MagicMock(return_value={})
+    client = MagicMock()
+    models = MagicMock()
     if error is not None:
-        model.generate_content.side_effect = error
+        models.generate_content.side_effect = error
     else:
         resp = MagicMock()
         resp.text = response_text
-        model.generate_content.return_value = resp
-    genai.GenerativeModel.return_value = model
-    genai.GenerationConfig = MagicMock(return_value={})
+        models.generate_content.return_value = resp
+    client.models = models
+    genai.Client.return_value = client
     google = MagicMock()
-    google.generativeai = genai
+    google.genai = genai
     sys.modules["google"] = google
-    sys.modules["google.generativeai"] = genai
-    return model
+    sys.modules["google.genai"] = genai
+    sys.modules["google.genai.types"] = types_mod
+    return models
 
 
 def _extract(text="Apple raised full-year guidance.", title="AAPL earnings", max_chars=1500, api_key="fake-key"):
@@ -46,6 +50,8 @@ def _extract(text="Apple raised full-year guidance.", title="AAPL earnings", max
 
 class TestExtractEarningsContext:
     def teardown_method(self):
+        sys.modules.pop("google.genai.types", None)
+        sys.modules.pop("google.genai", None)
         sys.modules.pop("google.generativeai", None)
         sys.modules.pop("google", None)
 
@@ -80,14 +86,14 @@ class TestExtractEarningsContext:
         model = _install_genai(VALID_JSON)
         result = _extract(text="")
         assert result is not None
-        prompt = model.generate_content.call_args[0][0]
+        prompt = model.generate_content.call_args.kwargs["contents"]
         assert "Article text (may be truncated): " in prompt
 
     def test_text_truncated_to_max_chars(self):
         model = _install_genai(VALID_JSON)
         long_text = "A" * 500
         _extract(text=long_text, max_chars=20)
-        prompt = model.generate_content.call_args[0][0]
+        prompt = model.generate_content.call_args.kwargs["contents"]
         assert ("A" * 20) in prompt
         assert ("A" * 21) not in prompt
 
@@ -278,14 +284,25 @@ class TestRunExtractionAsync:
         art = _article()
         ee = SimpleNamespace(id=1, stock_id=7, earnings_date=date(2026, 9, 1), guidance_change=None)
         update = UpdateSession(art, stock_ids=[7], estimates=[ee])
-        _run_loop(
+        result = _run_loop(
             [art],
             {"guidance_change": "none", "management_tone": "neutral"},
             update,
         )
         assert ee.guidance_change is None
         assert art.llm_extracted is True
+        assert result["extracted"] == 1
+        assert result["skipped"] == 1
         assert update.stmts == []  # skipped _update_earnings_guidance
+
+    def test_empty_text_increments_skipped_without_api(self):
+        art = _article(raw_text="", summary=None)
+        update = UpdateSession(art)
+        result = _run_loop([art], {"guidance_change": "raised", "management_tone": "confident"}, update)
+        assert art.llm_extracted is False
+        assert result["skipped"] == 1
+        assert result["extracted"] == 0
+        assert result["errors"] == 0
 
 
 class TestUpdateEarningsGuidance:

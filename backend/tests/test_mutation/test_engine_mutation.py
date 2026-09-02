@@ -154,25 +154,19 @@ class TestStopLossThreshold:
     def test_stop_loss_triggers_on_drop(self):
         """Kill mutation: `pct_change <= -stop_loss_pct` vs `<` or boundary off."""
         start = date(2023, 1, 1)
-        # Strong uptrend to trigger early buy, then crash
         rows = []
-        for i in range(WARMUP_DAYS + 30):
+        # Flat warmup so the first buy is near the local high, then crash below entry.
+        for i in range(WARMUP_DAYS):
             d = start + timedelta(days=i)
-            price = 100.0 + i * 1.0  # Strong uptrend $1/day
+            rows.append(OHLCVRow(date=d, open=100.0, high=101.0, low=99.0, close=100.0, volume=1000000))
+        for i in range(4):
+            d = start + timedelta(days=WARMUP_DAYS + i)
+            price = 100.0 + i * 1.5
             rows.append(OHLCVRow(date=d, open=price, high=price * 1.01, low=price * 0.99, close=price, volume=1000000))
-
-        # Now crash 30% over 5 days
-        peak_price = rows[-1].close
-        for i in range(1, 6):
-            d = start + timedelta(days=WARMUP_DAYS + 30 + i)
-            price = peak_price * (1 - 0.06 * i)  # 6% per day drop
-            rows.append(OHLCVRow(date=d, open=price, high=price * 1.01, low=price * 0.99, close=price, volume=1000000))
-
-        # Flat at bottom for a while
-        bottom = rows[-1].close
-        for i in range(30):
-            d = start + timedelta(days=WARMUP_DAYS + 36 + i)
-            rows.append(OHLCVRow(date=d, open=bottom, high=bottom * 1.01, low=bottom * 0.99, close=bottom, volume=1000000))
+        crash_start = start + timedelta(days=WARMUP_DAYS + 4)
+        for i in range(20):
+            d = crash_start + timedelta(days=i)
+            rows.append(OHLCVRow(date=d, open=95.0, high=95.95, low=94.05, close=95.0, volume=1000000))
 
         config = BacktestConfig(
             mode="technical", starting_capital=10000,
@@ -185,7 +179,7 @@ class TestStopLossThreshold:
         sl_exits = [t for t in result.trades if t.exit_reason == "stop_loss"]
         if buys:
             # Find if any buy happened before the crash
-            crash_start = start + timedelta(days=WARMUP_DAYS + 30)
+            crash_start = start + timedelta(days=WARMUP_DAYS + 4)
             buys_before_crash = [t for t in buys if t.trade_date < crash_start]
             if buys_before_crash:
                 assert len(sl_exits) >= 1

@@ -20,6 +20,7 @@ export interface Signal {
   ml_confidence: number | null;
   market_regime: string | null;
   earnings_score: number | null;
+  retail_sentiment_score: number | null;
   generated_at: string;
   window_start: string;
   window_end: string;

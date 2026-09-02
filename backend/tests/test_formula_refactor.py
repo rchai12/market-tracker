@@ -349,3 +349,21 @@ class TestComputeCompositeScoreRegime:
         assert result is not None
         assert abs(result["composite"] - raw) < 1e-9
         assert result["earnings_score"] == 0.8
+
+    def test_zero_earnings_score_is_not_treated_as_missing(self):
+        patches = _patch_components(calc_earnings_surprise_score=0.0, calc_rsi_score=None, calc_trend_score=None)
+
+        async def _run():
+            for p in patches:
+                p.start()
+            try:
+                return await _compute_composite_score(AsyncMock(), 1, NOW)
+            finally:
+                for p in patches:
+                    p.stop()
+
+        result = asyncio.run(_run())
+        assert result is not None
+        assert result["earnings_score"] == 0.0
+        raw = 0.36 * 0.5 + 0.22 * 0.2 + 0.18 * 0.3 + 0.14 * 0.1 + 0.10 * 0.0
+        assert abs(result["composite"] - raw) < 1e-9

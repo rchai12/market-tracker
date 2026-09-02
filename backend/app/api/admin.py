@@ -26,7 +26,7 @@ from app.schemas.ml_model import MLModelStatusResponse
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.post("/seed-history")
+@router.post("/seed-history", status_code=202)
 async def trigger_historical_seed(
     request: Request,
     period: str = Query("max", description="yfinance period: 1y, 2y, 5y, 10y, max"),
@@ -37,11 +37,18 @@ async def trigger_historical_seed(
     from worker.tasks.scraping.market_data import seed_historical_market_data
 
     task = seed_historical_market_data.delay(period)
-    await record_audit(db, _admin.id, "seed_history", "admin/seed-history", {"period": period}, request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "seed_history",
+        "admin/seed-history",
+        detail={"period": period},
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "period": period, "status": "queued"}
 
 
-@router.post("/scrape-now")
+@router.post("/scrape-now", status_code=202)
 async def trigger_scrape(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -51,11 +58,17 @@ async def trigger_scrape(
     from worker.tasks.scraping.orchestrate import orchestrate_scraping
 
     task = orchestrate_scraping.delay()
-    await record_audit(db, _admin.id, "trigger_scrape", "admin/scrape-now", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "trigger_scrape",
+        "admin/scrape-now",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/maintenance")
+@router.post("/maintenance", status_code=202)
 async def trigger_maintenance(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -65,11 +78,17 @@ async def trigger_maintenance(
     from worker.tasks.maintenance.tasks import run_all_maintenance
 
     task = run_all_maintenance.delay()
-    await record_audit(db, _admin.id, "trigger_maintenance", "admin/maintenance", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "trigger_maintenance",
+        "admin/maintenance",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/evaluate-outcomes")
+@router.post("/evaluate-outcomes", status_code=202)
 async def trigger_outcome_evaluation(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -79,11 +98,17 @@ async def trigger_outcome_evaluation(
     from worker.tasks.signals.outcome_evaluator import evaluate_signal_outcomes
 
     task = evaluate_signal_outcomes.delay()
-    await record_audit(db, _admin.id, "evaluate_outcomes", "admin/evaluate-outcomes", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "evaluate_outcomes",
+        "admin/evaluate-outcomes",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/compute-weights")
+@router.post("/compute-weights", status_code=202)
 async def trigger_weight_computation(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -93,11 +118,17 @@ async def trigger_weight_computation(
     from worker.tasks.signals.weight_optimizer import compute_adaptive_weights
 
     task = compute_adaptive_weights.delay()
-    await record_audit(db, _admin.id, "compute_weights", "admin/compute-weights", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "compute_weights",
+        "admin/compute-weights",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/backfill-event-categories")
+@router.post("/backfill-event-categories", status_code=202)
 async def trigger_backfill_event_categories(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -107,11 +138,17 @@ async def trigger_backfill_event_categories(
     from worker.tasks.maintenance.tasks import backfill_event_categories
 
     task = backfill_event_categories.delay()
-    await record_audit(db, _admin.id, "backfill_events", "admin/backfill-event-categories", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "backfill_events",
+        "admin/backfill-event-categories",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/backfill-duplicate-groups")
+@router.post("/backfill-duplicate-groups", status_code=202)
 async def trigger_backfill_duplicate_groups(
     request: Request,
     days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
@@ -122,7 +159,14 @@ async def trigger_backfill_duplicate_groups(
     from worker.tasks.maintenance.tasks import backfill_duplicate_groups
 
     task = backfill_duplicate_groups.delay(days)
-    await record_audit(db, _admin.id, "backfill_duplicates", "admin/backfill-duplicate-groups", {"days": days}, request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "backfill_duplicates",
+        "admin/backfill-duplicate-groups",
+        detail={"days": days},
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "days": days, "status": "queued"}
 
 
@@ -166,7 +210,7 @@ async def trigger_assign_canonical(
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/fetch-options")
+@router.post("/fetch-options", status_code=202)
 async def trigger_options_fetch(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -176,7 +220,13 @@ async def trigger_options_fetch(
     from worker.tasks.scraping.options_data import fetch_all_options_data
 
     task = fetch_all_options_data.delay()
-    await record_audit(db, _admin.id, "fetch_options", "admin/fetch-options", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "fetch_options",
+        "admin/fetch-options",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
@@ -220,7 +270,7 @@ async def trigger_llm_extraction(
     return {"task_id": task.id, "status": "queued"}
 
 
-@router.post("/train-ml-models")
+@router.post("/train-ml-models", status_code=202)
 async def trigger_ml_training(
     request: Request,
     _admin: User = Depends(get_current_admin),
@@ -230,7 +280,13 @@ async def trigger_ml_training(
     from worker.tasks.signals.ml_trainer_task import train_ml_models
 
     task = train_ml_models.delay()
-    await record_audit(db, _admin.id, "train_ml_models", "admin/train-ml-models", ip_address=request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "train_ml_models",
+        "admin/train-ml-models",
+        ip_address=request.client.host if request.client else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
@@ -334,7 +390,7 @@ async def get_task_failures(
     )
 
 
-@router.post("/task-failures/{failure_id}/retry")
+@router.post("/task-failures/{failure_id}/retry", status_code=202)
 async def retry_failed_task(
     failure_id: int,
     request: Request,
@@ -361,7 +417,14 @@ async def retry_failed_task(
 
     failure.retried_at = datetime.now(timezone.utc)
     failure.retry_task_id = task_result.id
-    await record_audit(db, _admin.id, "retry_task", "admin/task-failures/retry", {"failure_id": failure_id, "task_name": failure.task_name}, request.client.host if request.client else None)
+    await record_audit(
+        db,
+        _admin.id,
+        "retry_task",
+        "admin/task-failures/retry",
+        detail={"failure_id": failure_id, "task_name": failure.task_name},
+        ip_address=request.client.host if request.client else None,
+    )
     await db.commit()
 
     return {"task_id": task_result.id, "status": "queued"}

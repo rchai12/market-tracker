@@ -15,7 +15,8 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Options Flow**: yfinance options chain data (P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio
 
 ### Signal Generation
-- **7-Component Scoring**: Sentiment momentum, sentiment volume, price momentum, volume anomaly, options flow — each weighted adaptively per sector
+- **4 Base Components**: Sentiment momentum, sentiment volume, price momentum, volume anomaly — weighted adaptively per sector
+- **2 Gated Components**: Earnings surprise (48h window, yfinance EPS data) and options flow (OPTIONS_FLOW_ENABLED) — weights renormalized when inactive
 - **Regime Multiplier**: RSI and trend act as context (not additive components) — dampen or boost the composite score by ±15% based on overbought/oversold/trending conditions
 - **Market Regime Labels**: Each signal tagged with `trending_up`, `trending_down`, `overbought`, `oversold`, or `sideways`
 - **Earnings Surprise**: yfinance EPS beat/miss data — 48h gated signal scored via `tanh(surprise_pct / 5.0)`
@@ -48,7 +49,7 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Nginx Rate Limiting**: 5 req/min per IP on `/api/auth/` (brute-force protection)
 - **Pagination Bounds**: All list endpoints enforce `per_page` max 100
 - **SSL/TLS**: Let's Encrypt with HSTS, CSP, and security headers via Nginx
-- **Comprehensive Tests**: 553 unit tests + 34 integration tests + 10 Playwright E2E tests, coverage enforcement (60% floor)
+- **Comprehensive Tests**: 670 unit tests + 34 integration tests + 10 Playwright E2E tests, coverage enforcement (60% floor)
 
 ## Architecture
 
@@ -159,7 +160,7 @@ make lint           # ruff check + format
 - **Tailwind CSS** — dark mode styling
 
 ### Infrastructure
-- **PostgreSQL 16** — primary database (21 tables)
+- **PostgreSQL 16** — primary database (24 tables)
 - **Redis 7** — Celery broker + response cache
 - **Nginx** — reverse proxy, SSL/TLS, rate limiting
 - **Docker Compose** — container orchestration with resource limits and health checks
@@ -170,7 +171,7 @@ make lint           # ruff check + format
 backend/
   app/api/         Route handlers (auth, stocks, watchlist, market_data, articles,
                    sentiment, signals, alerts, backtests, admin, api_keys, health)
-  app/models/      SQLAlchemy ORM (21 tables)
+  app/models/      SQLAlchemy ORM (24 tables)
   app/schemas/     Pydantic request/response schemas
   app/core/        Security, caching, audit logging, slow query detection, middleware
   worker/tasks/
@@ -180,9 +181,10 @@ backend/
                    outcome evaluator + weight optimizer + ML trainer + backtest task
     maintenance/   Retention, matview refresh, health check
   worker/utils/    Ticker extractor, event classifier, duplicate detector,
-                   technical indicators, ML trainer, backtester/, llm_extractor
+                   technical indicators, ML trainer, backtester/, llm_extractor,
+                   signal_formula (shared weights + regime multiplier + classification)
   alembic/         12 migration versions
-  tests/           553 unit + 34 integration tests + mutation tests
+  tests/           670 unit + 34 integration tests + mutation tests
 frontend/
   src/pages/       Dashboard, StockDetail, Sentiment, Signals, Backtest,
                    Alerts, Admin, Settings, Login, Register

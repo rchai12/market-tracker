@@ -1,5 +1,7 @@
 # Phase 21b: Earnings Surprise Signal — Implementation Specification
 
+> **As implemented:** Shipped **after** Phase 21c (formula refactor). Migration is `012_earnings_surprise` (`down_revision = "011"`), **not** `009`. There is no Alembic revision `009` — do not invent one in Phase 22. Earnings is a gated 5th predictive component on the 21c formula (40/25/20/15 + regime multiplier), not a restoration of additive RSI/trend. Weight optimizer tracks `signal_weights.earnings`.
+
 ## Overview
 
 The single largest driver of short-term stock price movement is the delta between reported

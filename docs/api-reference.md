@@ -173,6 +173,8 @@ Query params: `?days=365` (default 365)
 
 Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=false&event_category=earnings&page=1&per_page=20`
 
+When `ticker` is set, only articles linked at confidence ≥ 0.60 are returned (company-name matches and above). Industry-keyword sector spray (0.45) is excluded. The unfiltered articles list is unchanged.
+
 ### GET /articles response
 ```json
 {
@@ -239,6 +241,8 @@ Query params: `?days=30` (default 30)
 ### GET /sentiment/{ticker}/articles
 
 Query params: `?page=1&per_page=20`
+
+Only articles linked to the ticker at confidence ≥ 0.60 are included (same floor as `GET /articles?ticker=`). Industry-keyword sector spray (0.45) is excluded.
 
 ```json
 {
@@ -406,9 +410,9 @@ Articles are linked at query time via `SentimentScore.stock_id` + `processed_at`
 [
   {
     "sector_name": null,
-    "sentiment_momentum": 0.30, "sentiment_volume": 0.20,
-    "price_momentum": 0.15, "volume_anomaly": 0.10,
-    "rsi": 0.15, "trend": 0.10,
+    "sentiment_momentum": 0.40, "sentiment_volume": 0.25,
+    "price_momentum": 0.20, "volume_anomaly": 0.15,
+    "rsi": 0.0, "trend": 0.0, "options": 0.0, "earnings": 0.0,
     "sample_count": 500, "accuracy_pct": 58.2,
     "computed_at": "2025-06-15T04:00:00Z", "source": "global"
   }

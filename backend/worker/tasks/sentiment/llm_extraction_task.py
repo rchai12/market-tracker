@@ -95,6 +95,16 @@ async def _run_extraction_async() -> dict:
     for article in articles:
         try:
             text = article.raw_text or article.summary or ""
+            if not text.strip():
+                async with async_session() as session:
+                    art = await session.get(Article, article.id)
+                    if art is None:
+                        continue
+                    art.llm_extracted = False
+                    skipped += 1
+                    await session.commit()
+                continue
+
             result = extract_earnings_context(
                 title=article.title,
                 article_text=text,
@@ -123,6 +133,8 @@ async def _run_extraction_async() -> dict:
                     # Update matching EarningsEstimate if guidance was found
                     if guidance and guidance != "none":
                         await _update_earnings_guidance(session, article, guidance)
+                    else:
+                        skipped += 1
 
                     art.llm_extracted = True
                     extracted += 1

@@ -22,9 +22,9 @@ export default function MethodologyTab() {
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w5 * earnings + w6 * options<br />
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; × regime_multiplier(RSI, trend)
         </div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
           <div>
-            <p className="font-medium text-gray-900 dark:text-white">Default Weights:</p>
+            <p className="font-medium text-gray-900 dark:text-white">Predictive (always on):</p>
             <ul className="mt-1 space-y-1 text-gray-600 dark:text-gray-400">
               <li>Sentiment Momentum: 40%</li>
               <li>Sentiment Volume: 25%</li>
@@ -33,13 +33,19 @@ export default function MethodologyTab() {
             </ul>
           </div>
           <div>
-            <p className="font-medium text-gray-900 dark:text-white">Regime Context:</p>
+            <p className="font-medium text-gray-900 dark:text-white">Gated (when active):</p>
+            <ul className="mt-1 space-y-1 text-gray-600 dark:text-gray-400">
+              <li>Earnings Surprise: 10% (within 48h of report)</li>
+              <li>Options Flow: 8% (when enabled)</li>
+              <li className="text-xs">Other weights scale down so they still sum to 100%</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-medium text-gray-900 dark:text-white">Regime context (not additive):</p>
             <ul className="mt-1 space-y-1 text-gray-600 dark:text-gray-400">
               <li>RSI extreme: dampen 15%</li>
               <li>Trend confirms: boost 15%</li>
               <li>Trend opposes: dampen 15%</li>
-              <li>Earnings Surprise: 10% (within 48h of report)</li>
-              <li>Options Flow: 8% (when enabled)</li>
             </ul>
           </div>
         </div>

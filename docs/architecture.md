@@ -184,25 +184,37 @@ backtests >── sectors (nullable)
 | task_failures | Dead letter queue for failed Celery tasks | task_name, task_args, exception_type, exception_message, traceback, failed_at, retried_at |
 | api_keys | API key authentication (per-user) | user_id, key_hash (SHA-256), key_prefix, name, is_active, last_used_at, expires_at |
 | audit_logs | Admin action audit trail | user_id, action, resource, detail (JSON), ip_address, created_at |
+| options_activity | Daily per-ticker options aggregates | stock_id, date, put_call_ratio, iv_skew, volume/OI, data_quality |
+| cboe_put_call_ratio | Market-wide CBOE put/call ratio | date, put_call_ratio, equity_pc_ratio |
+| earnings_estimates | Consensus vs actual EPS per ticker/quarter | stock_id, earnings_date, eps_estimate, eps_actual, surprise_pct, guidance_change |
 
 ## Signal Scoring Algorithm
 
-The composite signal combines six components:
+Live scoring and backtests share `worker/utils/signal_formula.py` (`combine_component_scores`) so they cannot drift.
+
+Four predictive components, plus gated earnings/options. RSI and trend are **not** additive — they apply a regime multiplier to the composite.
 
 ```
-composite = 0.30 * sentiment_momentum + 0.20 * sentiment_volume
-          + 0.15 * price_momentum    + 0.10 * volume_anomaly
-          + 0.15 * rsi_score         + 0.10 * trend_score
+raw = 0.40 * sentiment_momentum + 0.25 * sentiment_volume
+    + 0.20 * price_momentum    + 0.15 * volume_anomaly
+    + 0.10 * earnings_score   (when a report is within 48h; other weights scale down)
+    + 0.08 * options_score    (when OPTIONS_FLOW_ENABLED; other weights scale down)
+
+composite, market_regime = apply_regime_multiplier(raw, rsi_score, trend_score)
 ```
 
-| Component | Weight | Description | Range |
-|-----------|--------|-------------|-------|
-| sentiment_momentum | 0.30 | Exponentially weighted avg of sentiment scores (half-life 6h) | [-1, 1] |
-| sentiment_volume | 0.20 | Article count vs 20-day baseline, amplifies direction | [0, 1] |
-| price_momentum | 0.15 | 5-day price change, tanh scaled | [-1, 1] |
-| volume_anomaly | 0.10 | Trading volume vs 20-day avg, amplifies direction | [0, 1] |
-| rsi_score | 0.15 | RSI(14) mapped to [-1,1] via `tanh((50 - rsi) / 50 * 2.5)` — oversold = bullish | [-1, 1] |
-| trend_score | 0.10 | 60% SMA crossover (SMA20 vs SMA50) + 40% MACD histogram signal | [-1, 1] |
+| Component | Default weight | Description | Range |
+|-----------|----------------|-------------|-------|
+| sentiment_momentum | 0.40 | Exponentially weighted avg of sentiment scores (half-life 6h) | [-1, 1] |
+| sentiment_volume | 0.25 | Article count vs 20-day baseline, signed by net sentiment | [-1, 1] |
+| price_momentum | 0.20 | 5-day price change, tanh scaled | [-1, 1] |
+| volume_anomaly | 0.15 | Trading volume vs 20-day avg, signed by price direction | [-1, 1] |
+| earnings_score | 0.10 (gated) | EPS beat/miss vs consensus; active only within 48h of report | [-1, 1] |
+| options_score | 0.08 (gated) | P/C ratio + IV skew z-scores vs 20-day baseline | [-1, 1] |
+| rsi_score | regime only | RSI(14) mapped to [-1,1]; extreme → dampen composite 15% | [-1, 1] |
+| trend_score | regime only | 60% SMA crossover + 40% MACD; confirm ×1.15 / oppose ×0.85 | [-1, 1] |
+
+**Regime multiplier:** `|rsi| > 0.4` → overbought/oversold (×0.85). Else `|trend| > 0.3` confirming → ×1.15, opposing → ×0.85. Otherwise sideways (×1.0).
 
 **Thresholds:**
 - Strong: |composite| > 0.6
@@ -270,16 +282,17 @@ Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions"
 
 ## Signal Generation + Alert Dispatch
 
-At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from six components. **Deduplication:** before creating a new signal, the generator queries the most recent signal for each stock and skips creation if the direction, strength, and composite score (within a `SIGNAL_DEDUP_THRESHOLD` of 0.005) are unchanged — preventing near-identical signals from accumulating when underlying data barely moves between hourly runs.
+At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from four predictive components (sentiment momentum/volume, price momentum, volume anomaly), plus gated earnings surprise and options flow. RSI and trend classify market regime and apply a ±15% multiplier. **Deduplication:** before creating a new signal, the generator queries the most recent signal for each stock and skips creation if the direction, strength, and composite score (within a `SIGNAL_DEDUP_THRESHOLD` of 0.005) are unchanged — preventing near-identical signals from accumulating when underlying data barely moves between hourly runs.
 
 | Component (default weight) | Source | Calculation |
 |---------------------|--------|-------------|
-| Sentiment momentum (30%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
-| Sentiment volume (20%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
-| Price momentum (15%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
-| Volume anomaly (10%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
-| RSI score (15%) | `market_data_daily` (30d) | 14-period RSI mapped to [-1,1] — oversold = bullish |
-| Trend score (10%) | `market_data_daily` (60d) | SMA crossover (60%) + MACD histogram (40%) |
+| Sentiment momentum (40%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
+| Sentiment volume (25%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
+| Price momentum (20%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
+| Volume anomaly (15%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
+| Earnings surprise (10%, gated) | `earnings_estimates` | `tanh(surprise_pct / 5.0)` within 48h of report |
+| Options flow (8%, gated) | `options_activity` | P/C + IV skew z-scores vs 20-day baseline |
+| RSI / trend (regime only) | `market_data_daily` | Multiplier: extreme RSI dampens 15%; confirming trend boosts 15% |
 
 Weights are loaded from `signal_weights` table (per-sector or global fallback), falling back to defaults if no adaptive weights exist yet.
 
@@ -336,15 +349,14 @@ The backtesting engine replays signal generation over historical OHLCV data to v
 
 | Mode | Components | Data Range |
 |------|-----------|------------|
-| **Technical** | Price momentum, volume anomaly, RSI, trend (4 components, renormalized) | Full historical (~30+ years) |
-| **Full** | All 6 components including sentiment momentum + volume | Limited to period since sentiment scraping began |
+| **Technical** | Live formula with sentiment omitted (price + volume predictive; RSI/trend as regime multiplier) | Full historical (~30+ years) |
+| **Full** | Same formula plus historical sentiment momentum + volume. Earnings/options are not replayed. | Limited to period since sentiment scraping began |
 
-### Technical Mode Weights (renormalized to sum to 1.0)
+Both modes import `combine_component_scores` from `worker/utils/signal_formula.py` — the same combiner used by live signal generation.
 
-```
-composite = 0.30 * price_momentum + 0.20 * volume_anomaly
-          + 0.30 * rsi_score       + 0.20 * trend_score
-```
+### Technical Mode
+
+Sentiment inputs are `None` (treated as 0.0). Default weights are 40/25/20/15 with earnings and options gated off. Strong signals are rarer than the old RSI/trend-additive formula; that is intentional so backtests compare against live scoring.
 
 ### Engine Flow
 

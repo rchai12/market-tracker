@@ -23,6 +23,19 @@ FEATURE_NAMES = [
     "trend_score",
 ]
 
+def build_feature_vector(score_data: dict) -> list[float]:
+    """Build the 6-element feature vector used for both training and inference.
+
+    Missing values become 0.0. 0.0 is a valid score and is preserved.
+    Do not append options/earnings — trained models expect FEATURE_NAMES only.
+    """
+    features: list[float] = []
+    for name in FEATURE_NAMES:
+        val = score_data.get(name)
+        features.append(float(val) if val is not None else 0.0)
+    return features
+
+
 # Conservative params for ARM free tier + small datasets
 DEFAULT_PARAMS = {
     "objective": "binary",

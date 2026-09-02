@@ -1,5 +1,7 @@
 # Phase 21c: Signal Formula Refactor — Implementation Specification
 
+> **As implemented:** Migration `010_formula_refactor` (`down_revision = "008"`, skipping the unused `009` slot). Adds `signals.market_regime` only. The `signal_weights.earnings` column landed later with Phase 21b as `012`. Live scoring and backtests now share `worker/utils/signal_formula.py`.
+
 ## Overview
 
 RSI and technical trend indicators are **lagging** — by the time SMA20 crosses above SMA50 or MACD

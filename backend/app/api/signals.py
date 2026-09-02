@@ -215,21 +215,27 @@ def _to_response(signal: Signal) -> SignalResponse:
         direction=signal.direction,
         strength=signal.strength,
         composite_score=float(signal.composite_score),
-        sentiment_score=float(signal.sentiment_score) if signal.sentiment_score else None,
-        sentiment_volume_score=float(signal.sentiment_volume_score) if signal.sentiment_volume_score else None,
-        price_score=float(signal.price_score) if signal.price_score else None,
-        volume_score=float(signal.volume_score) if signal.volume_score else None,
-        rsi_score=float(signal.rsi_score) if signal.rsi_score else None,
-        trend_score=float(signal.trend_score) if signal.trend_score else None,
-        options_score=float(signal.options_score) if signal.options_score else None,
+        sentiment_score=_f(signal.sentiment_score),
+        sentiment_volume_score=_f(signal.sentiment_volume_score),
+        price_score=_f(signal.price_score),
+        volume_score=_f(signal.volume_score),
+        rsi_score=_f(signal.rsi_score),
+        trend_score=_f(signal.trend_score),
+        options_score=_f(signal.options_score),
         article_count=signal.article_count,
         reasoning=signal.reasoning,
-        ml_score=float(signal.ml_score) if signal.ml_score else None,
+        ml_score=_f(signal.ml_score),
         ml_direction=signal.ml_direction,
-        ml_confidence=float(signal.ml_confidence) if signal.ml_confidence else None,
+        ml_confidence=_f(signal.ml_confidence),
         market_regime=signal.market_regime,
-        earnings_score=float(signal.earnings_score) if signal.earnings_score else None,
+        earnings_score=_f(signal.earnings_score),
+        retail_sentiment_score=_f(signal.retail_sentiment_score),
         generated_at=signal.generated_at,
         window_start=signal.window_start,
         window_end=signal.window_end,
     )
+
+
+def _f(val) -> float | None:
+    """Preserve 0.0; only missing values become None."""
+    return float(val) if val is not None else None

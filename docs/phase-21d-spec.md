@@ -1,5 +1,7 @@
 # Phase 21d: LLM Extraction via Google Gemini Flash — Implementation Specification
 
+> **As implemented:** Migration `013_llm_extraction` (`down_revision = "012"`). Uses `google-genai` with model `gemini-3.6-flash` (not Anthropic). Rate limit default is `llm_rate_limit_seconds = 5.0`. Task processes at most 15 articles per run. Depends on Phase 21b's `earnings_estimates` table (`012`), not a `009` migration.
+
 ## Overview
 
 FinBERT classifies articles as positive/negative/neutral but cannot understand **what** happened.

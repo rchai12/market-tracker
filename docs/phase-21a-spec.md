@@ -1,5 +1,7 @@
 # Phase 21a: Data Quality Gates — Implementation Specification
 
+> **As implemented:** Migration `008_data_quality` (`down_revision = "007"`). Adds `articles.quality_score`, `articles.canonical_article_id`, and `signals.retail_sentiment_score`. Reddit isolation stores retail sentiment separately; it is not a composite-score component.
+
 ## Overview
 
 Four changes to the data pipeline, each independently deployable:

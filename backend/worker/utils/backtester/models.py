@@ -3,27 +3,13 @@
 from dataclasses import dataclass
 from datetime import date
 
-# ── Default weights (mirror signal_generator.py) ──
-DEFAULT_WEIGHTS = {
-    "sentiment_momentum": 0.30,
-    "sentiment_volume": 0.20,
-    "price_momentum": 0.15,
-    "volume_anomaly": 0.10,
-    "rsi": 0.15,
-    "trend": 0.10,
-}
+from worker.utils.signal_formula import MODERATE_THRESHOLD, STRONG_THRESHOLD, default_weights
 
-# Technical-only weights (renormalized: price_momentum + volume_anomaly + rsi + trend)
-TECHNICAL_WEIGHTS = {
-    "price_momentum": 0.30,
-    "volume_anomaly": 0.20,
-    "rsi": 0.30,
-    "trend": 0.20,
-}
-
-# ── Thresholds (mirror signal_generator.py) ──
-STRONG_THRESHOLD = 0.6
-MODERATE_THRESHOLD = 0.35
+# Live formula defaults (40/25/20/15). Technical mode uses the same weights
+# with sentiment inputs omitted (treated as 0.0) — "live scoring without news".
+_LIVE_DEFAULTS = default_weights(has_options=False, has_earnings=False)
+DEFAULT_WEIGHTS = {k: v for k, v in _LIVE_DEFAULTS.items() if k != "source"}
+TECHNICAL_WEIGHTS = DEFAULT_WEIGHTS
 
 # ── Parameters ──
 WARMUP_DAYS = 60  # Need 50 for SMA50 + buffer

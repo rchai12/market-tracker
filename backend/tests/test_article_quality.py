@@ -2,6 +2,7 @@
 
 from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY
 from worker.utils.article_quality import (
+    ARTICLE_UI_MIN_TICKER_CONFIDENCE,
     QUALITY_THRESHOLD,
     SIGNAL_EXCLUDED_SOURCES,
     SIGNAL_MIN_TICKER_CONFIDENCE,
@@ -54,6 +55,10 @@ class TestComputeArticleQuality:
             source_credibility_map=_SEC_MAP,
         )
         assert isinstance(score, float)
+
+    def test_reuters_scraper_key_uses_high_credibility(self):
+        assert SOURCE_CREDIBILITY["reuters"] == 0.9
+        assert SOURCE_CREDIBILITY["reuters_rss"] == 0.9
 
     def test_score_always_bounded(self):
         cases = [
@@ -120,7 +125,28 @@ class TestGateConstants:
     def test_confidence_floor(self):
         assert SIGNAL_MIN_TICKER_CONFIDENCE == 0.70
 
+    def test_ui_confidence_floor_keeps_company_name_drops_industry(self):
+        assert ARTICLE_UI_MIN_TICKER_CONFIDENCE == 0.60
+        assert ARTICLE_UI_MIN_TICKER_CONFIDENCE < SIGNAL_MIN_TICKER_CONFIDENCE
+
     def test_reddit_sources_excluded(self):
         assert "reddit" in SIGNAL_EXCLUDED_SOURCES
         assert "reddit_stocks" in SIGNAL_EXCLUDED_SOURCES
         assert "reddit_wallstreetbets" in SIGNAL_EXCLUDED_SOURCES
+
+    def test_articles_endpoint_filters_ticker_by_ui_floor(self):
+        import inspect
+
+        from app.api.articles import list_articles
+
+        src = inspect.getsource(list_articles)
+        assert "ARTICLE_UI_MIN_TICKER_CONFIDENCE" in src
+
+    def test_sentiment_articles_endpoint_filters_by_ui_floor(self):
+        import inspect
+
+        from app.api.sentiment import get_ticker_sentiment_articles
+
+        src = inspect.getsource(get_ticker_sentiment_articles)
+        assert "ARTICLE_UI_MIN_TICKER_CONFIDENCE" in src
+        assert "exists" in src.lower()

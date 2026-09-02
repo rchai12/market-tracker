@@ -12,6 +12,7 @@ from worker.utils.ml_trainer import (
     TrainingResult,
     _accuracy,
     _f1,
+    build_feature_vector,
     clear_cache,
     load_model,
     predict,
@@ -211,3 +212,30 @@ class TestModelCache:
         clear_cache()
         model = load_model("/nonexistent/path.txt")
         assert model is None
+
+
+class TestBuildFeatureVector:
+    def test_length_matches_feature_names(self):
+        vec = build_feature_vector({
+            "sentiment_momentum": 0.1,
+            "sentiment_volume": 0.2,
+            "price_momentum": 0.3,
+            "volume_anomaly": 0.4,
+            "rsi_score": 0.5,
+            "trend_score": 0.6,
+            "options_score": 0.9,
+            "earnings_score": -0.4,
+        })
+        assert len(vec) == len(FEATURE_NAMES) == 6
+        assert vec == [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+
+    def test_zero_is_preserved_not_treated_as_missing(self):
+        vec = build_feature_vector({
+            "sentiment_momentum": 0.0,
+            "sentiment_volume": 0.0,
+            "price_momentum": 0.0,
+            "volume_anomaly": 0.0,
+            "rsi_score": 0.0,
+            "trend_score": 0.0,
+        })
+        assert vec == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

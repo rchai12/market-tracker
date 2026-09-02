@@ -7,17 +7,14 @@ data. No database dependencies.
 import math
 from datetime import date, timedelta
 
+from worker.utils.signal_formula import classify_direction, classify_strength
 from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
 from .models import (
     BASELINE_DAYS,
-    MODERATE_THRESHOLD,
     PRICE_MOMENTUM_DAYS,
-    RSI_LOOKBACK,
     RSI_PERIOD,
     SENTIMENT_HALF_LIFE_HOURS,
-    STRONG_THRESHOLD,
-    TREND_LOOKBACK,
     SentimentRow,
 )
 
@@ -201,21 +198,4 @@ def compute_sentiment_volume_from_data(
     return magnitude * direction_sign
 
 
-# ── Signal classification (mirrors signal_generator.py) ──
-
-
-def classify_direction(composite: float) -> str:
-    if composite > 0.01:
-        return "bullish"
-    elif composite < -0.01:
-        return "bearish"
-    return "neutral"
-
-
-def classify_strength(composite: float) -> str:
-    abs_score = abs(composite)
-    if abs_score > STRONG_THRESHOLD:
-        return "strong"
-    elif abs_score > MODERATE_THRESHOLD:
-        return "moderate"
-    return "weak"
+# classify_direction / classify_strength imported from signal_formula.

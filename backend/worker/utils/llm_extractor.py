@@ -6,7 +6,7 @@ from earnings-related articles. Returns structured JSON.
 Cost control:
 - Only called for articles with event_category = "earnings"
 - Article text capped at settings.llm_max_article_chars (default 1500 chars)
-- Rate limited by caller (llm_rate_limit_seconds, default 2.0s → ~30 RPM max,
+- Rate limited by caller (llm_rate_limit_seconds, default 5.0s → 12 RPM,
   safely under the free-tier limit of 15 RPM with 2s delay)
 - Fails silently (returns None) on any API or parsing error
 

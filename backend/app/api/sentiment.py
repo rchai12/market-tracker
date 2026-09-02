@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, cast, Date, func, select
+from sqlalchemy import case, cast, Date, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +21,7 @@ from app.schemas.sentiment import (
     SentimentSummary,
     SentimentTimePoint,
 )
+from worker.utils.article_quality import ARTICLE_UI_MIN_TICKER_CONFIDENCE
 
 router = APIRouter(prefix="/sentiment", tags=["sentiment"])
 
@@ -74,10 +75,22 @@ async def get_ticker_sentiment_articles(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get sentiment-scored articles for a specific ticker."""
+    """Get sentiment-scored articles for a specific ticker.
+
+    Excludes industry-keyword associations (confidence 0.45) so stock detail
+    pages only show company-name matches and above (0.60+).
+    """
     stock = await get_stock_by_ticker(ticker, db)
 
-    base_query = select(SentimentScore).where(SentimentScore.stock_id == stock.id)
+    ticker_link = exists().where(
+        ArticleStock.article_id == SentimentScore.article_id,
+        ArticleStock.stock_id == SentimentScore.stock_id,
+        ArticleStock.confidence >= ARTICLE_UI_MIN_TICKER_CONFIDENCE,
+    )
+    base_query = select(SentimentScore).where(
+        SentimentScore.stock_id == stock.id,
+        ticker_link,
+    )
 
     total = await get_total_count(db, base_query)
 

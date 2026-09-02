@@ -86,6 +86,15 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
         return <ComponentBar key={key} label={label} value={value} />;
       })}
 
+      {signal.retail_sentiment_score != null && (
+        <>
+          <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-3 mb-1">
+            Retail (Reddit only, not in composite)
+          </p>
+          <ComponentBar label="Retail" value={signal.retail_sentiment_score} muted />
+        </>
+      )}
+
       {(signal.rsi_score != null || signal.trend_score != null) && (
         <>
           <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-3 mb-1">

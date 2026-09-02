@@ -11,6 +11,9 @@ QUALITY_THRESHOLD = 0.40  # Articles below this are excluded from signal scoring
 
 # ── Signal pipeline gates ──
 SIGNAL_MIN_TICKER_CONFIDENCE = 0.70  # ArticleStock.confidence floor for signal inclusion
+# UI floor for ticker-specific article lists. Keeps company-name matches (0.60)
+# and drops industry-keyword sector spray (0.45).
+ARTICLE_UI_MIN_TICKER_CONFIDENCE = 0.60
 # Reddit scraper stores source as reddit_stocks / reddit_wallstreetbets.
 # "reddit" is included for tests and any legacy rows.
 SIGNAL_EXCLUDED_SOURCES = frozenset({"reddit", "reddit_stocks", "reddit_wallstreetbets"})

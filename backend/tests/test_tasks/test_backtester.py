@@ -620,9 +620,14 @@ class TestTransactionCosts:
             commission_pct=0.05,  # 5% commission — very high to make effect obvious
         )
         result = run_backtest("AAPL", ohlcv, config)
-        if result.total_trades > 0:
-            # With 5% commission on both buy and sell, final equity must be noticeably less
-            assert result.final_equity < 10000 * 0.95  # At least some reduction
+        config_zero = BacktestConfig(
+            mode="technical", starting_capital=10000,
+            min_signal_strength="weak",
+            commission_pct=0.0,
+        )
+        result_zero = run_backtest("AAPL", ohlcv, config_zero)
+        if result.total_trades > 0 and result_zero.total_trades > 0:
+            assert result.final_equity < result_zero.final_equity
 
 
 # ── Position sizing tests ──
@@ -684,16 +689,16 @@ class TestPositionSizing:
 
 class TestStopLossTakeProfit:
     def _make_drop_after_rise(self, start: date, days: int = 200) -> list[OHLCVRow]:
-        """Generate data: 100 days up, then sharp 20% drop, then flat."""
+        """Flat warmup, brief rise to trigger a buy near the local high, then a crash below entry."""
         rows = []
         for i in range(days):
             d = start + timedelta(days=i)
-            if i < 100:
-                price = 100 + i * 0.5  # Up from 100 to 149.5
-            elif i < 110:
-                price = 149.5 - (i - 100) * 3.0  # Sharp drop: 149.5 → 119.5
+            if i < WARMUP_DAYS:
+                price = 100.0
+            elif i < WARMUP_DAYS + 4:
+                price = 100.0 + (i - WARMUP_DAYS) * 1.5  # 100 → 104.5, buy near the high
             else:
-                price = 119.5  # Flat
+                price = 95.0  # ~5–9% below entry so 5% stop fills without a huge gap
             rows.append(
                 OHLCVRow(date=d, open=price, high=price * 1.005, low=price * 0.995, close=price, volume=1000000)
             )
