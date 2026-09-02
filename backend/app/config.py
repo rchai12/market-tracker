@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     llm_extraction_enabled: bool = False
     gemini_api_key: str = ""
     llm_max_article_chars: int = 1500  # character limit sent to LLM (cost control)
-    llm_rate_limit_seconds: float = 2.0  # delay between API calls (free tier: 15 RPM max)
+    llm_rate_limit_seconds: float = 5.0  # delay between API calls (free tier: 15 RPM = 1 per 4s)
 
     @property
     def allowed_origins_list(self) -> list[str]:
