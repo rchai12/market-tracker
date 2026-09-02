@@ -41,8 +41,8 @@ dependencies = [
     # Utilities
     "python-dateutil>=2.9.0",
     "email-validator>=2.2.0",
-    # LLM extraction (Gemini Flash)
-    "google-genai>=1.0.0",
+    # LLM extraction (Claude Haiku)
+    "anthropic>=0.40.0",
 ]
 
 [project.optional-dependencies]

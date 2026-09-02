@@ -118,11 +118,11 @@ class Settings(BaseSettings):
     feedback_weight_max: float = 0.60
     feedback_lookback_days: int = 90
 
-    # LLM extraction (Gemini Flash for earnings guidance)
+    # LLM extraction (Claude Haiku for earnings guidance)
     llm_extraction_enabled: bool = False
-    gemini_api_key: str = ""
+    anthropic_api_key: str | None = None
     llm_max_article_chars: int = 1500  # character limit sent to LLM (cost control)
-    llm_rate_limit_seconds: float = 5.0  # delay between API calls (free tier: 15 RPM = 1 per 4s)
+    llm_rate_limit_seconds: float = 1.0  # delay between API calls
 
     @property
     def allowed_origins_list(self) -> list[str]:

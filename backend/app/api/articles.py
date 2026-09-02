@@ -82,6 +82,9 @@ async def list_articles(
             is_processed=article.is_processed,
             event_category=article.event_category,
             duplicate_group_id=article.duplicate_group_id,
+            quality_score=article.quality_score,
+            canonical_article_id=article.canonical_article_id,
+            llm_extracted=article.llm_extracted,
             tickers=tickers,
         )
         data.append(resp)

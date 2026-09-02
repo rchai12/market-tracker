@@ -20,7 +20,7 @@ A sentiment-driven stock market prediction system that scrapes financial news, r
 - **Regime Multiplier**: RSI and trend act as context (not additive components) — dampen or boost the composite score by ±15% based on overbought/oversold/trending conditions
 - **Market Regime Labels**: Each signal tagged with `trending_up`, `trending_down`, `overbought`, `oversold`, or `sideways`
 - **Earnings Surprise**: yfinance EPS beat/miss data — 48h gated signal scored via `tanh(surprise_pct / 5.0)`
-- **LLM Extraction**: Gemini Flash extracts `guidance_change` (raised/lowered/maintained) and `management_tone` (confident/cautious/neutral) from earnings articles
+- **LLM Extraction**: Claude Haiku extracts `guidance_change` (raised/lowered/maintained) and `management_tone` (confident/cautious/neutral) from earnings articles
 - **ML Ensemble**: Per-sector LightGBM classifier trained on component scores → `ml_score`, `ml_direction`, `ml_confidence` alongside rule-based scoring
 - **Adaptive Weights**: Daily per-sector weight optimization from outcome feedback (1/3/5-day windows)
 - **Source Credibility**: SEC EDGAR (1.0) > Reuters (0.9) > MarketWatch (0.7) > Reddit (0.4) weighting in sentiment momentum
@@ -88,7 +88,7 @@ Every 5 min:   Health check → Discord webhook if unhealthy
 :10  Fetch options chain via yfinance (weekdays, if OPTIONS_FLOW_ENABLED)
 :12  Fetch CBOE put/call ratio (weekdays, if OPTIONS_FLOW_ENABLED)
 :15  Sentiment catch-up (process any unprocessed articles)
-:20  LLM extraction (Gemini Flash on earnings articles, if LLM_EXTRACTION_ENABLED)
+:20  LLM extraction (Claude Haiku on earnings articles, if LLM_EXTRACTION_ENABLED)
 :30  Generate composite signals + ML inference → dispatch alerts
 :35  Refresh materialized views
 :45  Evaluate signal outcomes (1/3/5-day windows)
@@ -147,7 +147,7 @@ make lint           # ruff check + format
 - **FinBERT** — financial sentiment analysis (HuggingFace Transformers)
 - **LightGBM** — per-sector ML signal ensemble classifier
 - **yfinance** — market data (OHLCV, options chains, earnings)
-- **google-genai** — Gemini Flash for LLM extraction
+- **anthropic** — Claude Haiku for LLM extraction
 - **Alembic** — database migrations (12 versions)
 - **rapidfuzz** — fuzzy duplicate detection
 
@@ -217,7 +217,7 @@ Currently tracking **~86 stocks** across 6 S&P 500 sectors:
 |------|---------|-------------|
 | `OPTIONS_FLOW_ENABLED` | false | Options chain data + 7th signal component |
 | `ML_ENSEMBLE_ENABLED` | false | LightGBM per-sector signal classifier |
-| `LLM_EXTRACTION_ENABLED` | false | Gemini Flash earnings context extraction |
+| `LLM_EXTRACTION_ENABLED` | false | Claude Haiku earnings context extraction (requires `ANTHROPIC_API_KEY`) |
 
 ## Documentation
 

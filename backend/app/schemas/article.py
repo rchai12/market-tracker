@@ -21,6 +21,7 @@ class ArticleResponse(BaseModel):
     duplicate_group_id: int | None = None
     quality_score: float | None = None
     canonical_article_id: int | None = None
+    llm_extracted: bool | None = None
     tickers: list[str] = []
 
     model_config = {"from_attributes": True}

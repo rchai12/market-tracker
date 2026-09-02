@@ -12,6 +12,7 @@ export interface Article {
   duplicate_group_id: number | null;
   quality_score: number | null;
   canonical_article_id: number | null;
+  llm_extracted: boolean | null;
 }
 
 export interface EventCategorySummary {

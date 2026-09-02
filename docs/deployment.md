@@ -140,6 +140,13 @@ DATABASE_URL=postgresql+asyncpg://sp_user:YOUR_PASSWORD@10.0.0.X:5432/stock_pred
 REDIS_URL=redis://:YOUR_PASSWORD@10.0.0.X:6379/0
 ```
 
+Optional — Claude Haiku LLM extraction (earnings guidance / management tone). Off by default; the `:20` task **silently skips** unless both are set:
+```
+LLM_EXTRACTION_ENABLED=false
+ANTHROPIC_API_KEY=
+```
+Set `LLM_EXTRACTION_ENABLED=true` and a real `ANTHROPIC_API_KEY` only when you want extraction to run. Optional knobs: `LLM_MAX_ARTICLE_CHARS=1500`, `LLM_RATE_LIMIT_SECONDS=1.0`.
+
 ### 3. Start Workers
 
 ```bash
@@ -251,6 +258,9 @@ cd /opt/stock-predictor/backend
 
 # Trigger sentiment analysis
 .venv/bin/celery -A worker.celery_app call worker.tasks.sentiment.sentiment_task.process_new_articles_sentiment --queue sentiment
+
+# Trigger LLM extraction (no-op unless LLM_EXTRACTION_ENABLED=true and ANTHROPIC_API_KEY is set)
+.venv/bin/celery -A worker.celery_app call worker.tasks.sentiment.llm_extraction_task.run_llm_extraction --queue sentiment
 
 # Trigger signal generation
 .venv/bin/celery -A worker.celery_app call worker.tasks.signals.signal_generator.generate_all_signals --queue signals

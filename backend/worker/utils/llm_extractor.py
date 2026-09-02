@@ -1,13 +1,12 @@
 """LLM-based structured extraction from financial news articles.
 
-Uses Google Gemini Flash to extract earnings guidance changes and management tone
+Uses Anthropic Claude Haiku to extract earnings guidance changes and management tone
 from earnings-related articles. Returns structured JSON.
 
 Cost control:
 - Only called for articles with event_category = "earnings"
 - Article text capped at settings.llm_max_article_chars (default 1500 chars)
-- Rate limited by caller (llm_rate_limit_seconds, default 5.0s → 12 RPM,
-  safely under the free-tier limit of 15 RPM with 2s delay)
+- Rate limited by caller (llm_rate_limit_seconds, default 1.0s)
 - Fails silently (returns None) on any API or parsing error
 
 Output schema:
@@ -22,7 +21,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-3.6-flash"
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 EXTRACTION_PROMPT = """\
 You are extracting structured data from a financial earnings news article.
@@ -59,33 +58,30 @@ def extract_earnings_context(
     article_text: str,
     max_chars: int = 1500,
 ) -> dict | None:
-    """Call Gemini Flash to extract guidance_change and management_tone.
+    """Call Claude Haiku to extract guidance_change and management_tone.
 
     Returns dict with keys 'guidance_change' and 'management_tone', or None on failure.
     All exceptions are caught and logged — never raises to caller.
     """
     try:
-        from google import genai
-        from google.genai import types
+        import anthropic
+
         from app.config import settings
 
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         text_snippet = (article_text or "")[:max_chars]
         prompt = EXTRACTION_PROMPT.format(title=title, text=text_snippet)
 
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                max_output_tokens=64,
-                temperature=0.0,  # deterministic output for structured extraction
-            ),
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=64,
+            messages=[{"role": "user", "content": prompt}],
         )
 
-        raw = response.text.strip()
+        raw = response.content[0].text.strip()
 
-        # Strip markdown code fences if Gemini wraps the JSON
+        # Strip markdown code fences if the model wraps the JSON
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):

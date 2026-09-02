@@ -9,7 +9,7 @@ Finds articles where:
   - published_at within last 7 days (recent only)
 
 For each article:
-  1. Calls Gemini Flash → {guidance_change, management_tone}
+  1. Calls Claude Haiku → {guidance_change, management_tone}
   2. Stores management_tone in article.metadata_["management_tone"]
   3. Finds matching EarningsEstimate (same ticker, earnings_date within ±7 days of published_at)
   4. If found, updates guidance_change on the EarningsEstimate
@@ -53,8 +53,8 @@ def run_llm_extraction(self):
         logger.debug("LLM extraction disabled — skipping")
         return {"skipped": True, "reason": "llm_extraction_disabled"}
 
-    if not settings.gemini_api_key:
-        logger.warning("LLM extraction enabled but GEMINI_API_KEY not set — skipping")
+    if not settings.anthropic_api_key:
+        logger.warning("LLM extraction enabled but ANTHROPIC_API_KEY not set — skipping")
         return {"skipped": True, "reason": "no_api_key"}
 
     try:
@@ -82,7 +82,7 @@ async def _run_extraction_async() -> dict:
             )
             .where(Article.published_at >= since)
             .order_by(Article.published_at.desc())
-            .limit(15)  # gemini-3.6-flash free tier: 20 RPD — leave headroom
+            .limit(50)  # no longer RPD-constrained
         )
         articles = result.scalars().unique().all()
 

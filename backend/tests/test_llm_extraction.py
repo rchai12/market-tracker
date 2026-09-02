@@ -1,4 +1,4 @@
-"""Tests for Phase 21d Gemini Flash earnings-context extraction."""
+"""Tests for Phase 21d Claude Haiku earnings-context extraction."""
 
 import asyncio
 import sys
@@ -13,97 +13,94 @@ from worker.tasks.sentiment.llm_extraction_task import (
     _update_earnings_guidance,
     run_llm_extraction,
 )
-from worker.utils.llm_extractor import extract_earnings_context
+from worker.utils.llm_extractor import CLAUDE_MODEL, extract_earnings_context
 
 NOW = datetime(2026, 8, 31, 16, 0, tzinfo=timezone.utc)
 VALID_JSON = '{"guidance_change": "raised", "management_tone": "confident"}'
 
 
-def _install_genai(response_text: str | None = VALID_JSON, error: Exception | None = None):
-    """Inject a fake google.genai module matching extract_earnings_context imports."""
-    genai = MagicMock()
-    types_mod = MagicMock()
-    types_mod.GenerateContentConfig = MagicMock(return_value={})
+def _install_anthropic(response_text: str | None = VALID_JSON, error: Exception | None = None):
+    """Inject a fake anthropic module matching extract_earnings_context imports."""
+    anthropic_mod = MagicMock()
     client = MagicMock()
-    models = MagicMock()
     if error is not None:
-        models.generate_content.side_effect = error
+        client.messages.create.side_effect = error
     else:
+        block = MagicMock()
+        block.text = response_text
         resp = MagicMock()
-        resp.text = response_text
-        models.generate_content.return_value = resp
-    client.models = models
-    genai.Client.return_value = client
-    google = MagicMock()
-    google.genai = genai
-    sys.modules["google"] = google
-    sys.modules["google.genai"] = genai
-    sys.modules["google.genai.types"] = types_mod
-    return models
+        resp.content = [block]
+        client.messages.create.return_value = resp
+    anthropic_mod.Anthropic.return_value = client
+    sys.modules["anthropic"] = anthropic_mod
+    return client.messages
 
 
 def _extract(text="Apple raised full-year guidance.", title="AAPL earnings", max_chars=1500, api_key="fake-key"):
     with patch("app.config.settings") as settings:
-        settings.gemini_api_key = api_key
+        settings.anthropic_api_key = api_key
         return extract_earnings_context(title, text, max_chars=max_chars)
 
 
 class TestExtractEarningsContext:
     def teardown_method(self):
-        sys.modules.pop("google.genai.types", None)
-        sys.modules.pop("google.genai", None)
-        sys.modules.pop("google.generativeai", None)
-        sys.modules.pop("google", None)
+        sys.modules.pop("anthropic", None)
 
     def test_valid_json_parsed(self):
-        _install_genai(VALID_JSON)
+        _install_anthropic(VALID_JSON)
         result = _extract()
         assert result == {"guidance_change": "raised", "management_tone": "confident"}
 
+    def test_uses_haiku_model(self):
+        messages = _install_anthropic(VALID_JSON)
+        _extract()
+        assert messages.create.call_args.kwargs["model"] == CLAUDE_MODEL
+        assert CLAUDE_MODEL == "claude-haiku-4-5-20251001"
+
     def test_api_exception_returns_none(self):
-        _install_genai(error=RuntimeError("boom"))
+        _install_anthropic(error=RuntimeError("boom"))
         assert _extract() is None
 
     def test_invalid_guidance_rejected(self):
-        _install_genai('{"guidance_change": "soared", "management_tone": "confident"}')
+        _install_anthropic('{"guidance_change": "soared", "management_tone": "confident"}')
         result = _extract()
         assert result["guidance_change"] is None
         assert result["management_tone"] == "confident"
 
     def test_invalid_tone_rejected(self):
-        _install_genai('{"guidance_change": "raised", "management_tone": "ecstatic"}')
+        _install_anthropic('{"guidance_change": "raised", "management_tone": "ecstatic"}')
         result = _extract()
         assert result["guidance_change"] == "raised"
         assert result["management_tone"] is None
 
     def test_none_guidance_sentinel_returned(self):
-        _install_genai('{"guidance_change": "none", "management_tone": "neutral"}')
+        _install_anthropic('{"guidance_change": "none", "management_tone": "neutral"}')
         result = _extract()
         assert result["guidance_change"] == "none"
         assert result["management_tone"] == "neutral"
 
     def test_empty_article_text_no_crash(self):
-        model = _install_genai(VALID_JSON)
+        messages = _install_anthropic(VALID_JSON)
         result = _extract(text="")
         assert result is not None
-        prompt = model.generate_content.call_args.kwargs["contents"]
+        prompt = messages.create.call_args.kwargs["messages"][0]["content"]
         assert "Article text (may be truncated): " in prompt
 
     def test_text_truncated_to_max_chars(self):
-        model = _install_genai(VALID_JSON)
+        messages = _install_anthropic(VALID_JSON)
         long_text = "A" * 500
         _extract(text=long_text, max_chars=20)
-        prompt = model.generate_content.call_args.kwargs["contents"]
+        prompt = messages.create.call_args.kwargs["messages"][0]["content"]
         assert ("A" * 20) in prompt
         assert ("A" * 21) not in prompt
 
     def test_empty_api_key_returns_none(self):
-        _install_genai(error=ValueError("Missing API key"))
+        _install_anthropic(error=ValueError("Missing API key"))
         assert _extract(api_key="") is None
 
     def test_markdown_fences_stripped(self):
         fenced = "```json\n" + VALID_JSON + "\n```"
-        _install_genai(fenced)
+        _install_anthropic(fenced)
         result = _extract()
         assert result["guidance_change"] == "raised"
 
@@ -126,7 +123,7 @@ class TestRunLlmExtractionGuards:
             patch("worker.tasks.sentiment.llm_extraction_task.run_async") as run_async,
         ):
             s.llm_extraction_enabled = False
-            s.gemini_api_key = "present"
+            s.anthropic_api_key = "present"
             result = run_llm_extraction.run()
         assert result == {"skipped": True, "reason": "llm_extraction_disabled"}
         run_async.assert_not_called()
@@ -138,7 +135,7 @@ class TestRunLlmExtractionGuards:
             patch("worker.tasks.sentiment.llm_extraction_task.extract_earnings_context") as extract,
         ):
             s.llm_extraction_enabled = True
-            s.gemini_api_key = ""
+            s.anthropic_api_key = ""
             result = run_llm_extraction.run()
         assert result == {"skipped": True, "reason": "no_api_key"}
         run_async.assert_not_called()

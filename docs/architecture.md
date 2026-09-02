@@ -33,7 +33,8 @@
 │  │  - sentiment           │  │  - :00 scrape all      │   │
 │  │  - signals             │  │  - :05 market data     │   │
 │  │  - maintenance         │  │  - :15 sentiment       │   │
-│  │  - default             │  │  - :30 gen signals     │   │
+│  │  - default             │  │  - :20 LLM extract     │   │
+│  │                        │  │  - :30 gen signals     │   │
 │  │                        │  │  - :35 matview refresh │   │
 │  │                        │  │  - :45 eval outcomes   │   │
 │  │                        │  │  - 3AM maintenance     │   │
@@ -96,6 +97,11 @@
        ┌──────▼──────┐                 │
        │  Sentiment  │                 │
        │   Scores    │                 │
+       └──────┬──────┘                 │
+              │                        │
+       ┌──────▼──────┐                 │
+       │ Claude Haiku│  earnings only  │
+       │ LLM extract │  if enabled     │
        └──────┬──────┘                 │
               │                        │
               └───────────┬────────────┘
@@ -168,7 +174,7 @@ backtests >── sectors (nullable)
 | stocks | S&P 500 tickers | ticker, company_name, sector_id, industry, is_active |
 | market_data_daily | Historical OHLCV | stock_id, date, open/high/low/close/volume |
 | market_data_intraday | Intraday prices | stock_id, timestamp, OHLCV |
-| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, duplicate_group_id |
+| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, duplicate_group_id, llm_extracted |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
 | signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning, ml_score, ml_direction, ml_confidence |
@@ -209,7 +215,7 @@ composite, market_regime = apply_regime_multiplier(raw, rsi_score, trend_score)
 | sentiment_volume | 0.25 | Article count vs 20-day baseline, signed by net sentiment | [-1, 1] |
 | price_momentum | 0.20 | 5-day price change, tanh scaled | [-1, 1] |
 | volume_anomaly | 0.15 | Trading volume vs 20-day avg, signed by price direction | [-1, 1] |
-| earnings_score | 0.10 (gated) | EPS beat/miss vs consensus; active only within 48h of report | [-1, 1] |
+| earnings_score | 0.10 (gated) | EPS beat/miss vs consensus (`tanh(surprise_pct/5)`), plus +0.2/−0.2 if LLM `guidance_change` is raised/lowered; active only within 48h of report | [-1, 1] |
 | options_score | 0.08 (gated) | P/C ratio + IV skew z-scores vs 20-day baseline | [-1, 1] |
 | rsi_score | regime only | RSI(14) mapped to [-1,1]; extreme → dampen composite 15% | [-1, 1] |
 | trend_score | regime only | 60% SMA crossover + 40% MACD; confirm ×1.15 / oppose ×0.85 | [-1, 1] |
@@ -264,6 +270,8 @@ FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on
 
 **Safety net:** A Celery Beat task at `:15` runs sentiment processing as a catch-up for any articles missed by the chained flow.
 
+**LLM extraction (`:20`, opt-in):** When `LLM_EXTRACTION_ENABLED=true`, Claude Haiku (`claude-haiku-4-5-20251001`) runs on up to 50 recent canonical earnings articles. It writes `guidance_change` onto matching `earnings_estimates` (never overwrites a set value) and `management_tone` into `article.metadata_`. `articles.llm_extracted` is `NULL` until attempted, then `true`/`false`. Silently skipped if `ANTHROPIC_API_KEY` is unset.
+
 ## Article-to-Stock Linking
 
 Articles are linked to stocks via the `article_stocks` join table using a tiered confidence system:
@@ -290,7 +298,7 @@ At `:30` every hour, `generate_all_signals` iterates all active stocks and compu
 | Sentiment volume (25%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
 | Price momentum (20%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
 | Volume anomaly (15%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
-| Earnings surprise (10%, gated) | `earnings_estimates` | `tanh(surprise_pct / 5.0)` within 48h of report |
+| Earnings surprise (10%, gated) | `earnings_estimates` | `tanh(surprise_pct / 5.0)` within 48h of report, then +0.2 / −0.2 if `guidance_change` is raised / lowered |
 | Options flow (8%, gated) | `options_activity` | P/C + IV skew z-scores vs 20-day baseline |
 | RSI / trend (regime only) | `market_data_daily` | Multiplier: extreme RSI dampens 15%; confirming trend boosts 15% |
 

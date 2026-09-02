@@ -175,6 +175,8 @@ Query params for `/articles`: `?source=yahoo_finance&ticker=XOM&is_processed=fal
 
 When `ticker` is set, only articles linked at confidence ≥ 0.60 are returned (company-name matches and above). Industry-keyword sector spray (0.45) is excluded. The unfiltered articles list is unchanged.
 
+`llm_extracted` is `null` (not attempted), `true` (Claude Haiku ran), or `false` (empty text / extraction failed).
+
 ### GET /articles response
 ```json
 {
@@ -185,6 +187,8 @@ When `ticker` is set, only articles linked at confidence ≥ 0.60 are returned (
       "published_at": "2025-01-15T10:00:00Z", "scraped_at": "2025-01-15T10:05:00Z",
       "is_processed": false, "event_category": "earnings",
       "duplicate_group_id": null,
+      "quality_score": 0.82, "canonical_article_id": null,
+      "llm_extracted": null,
       "tickers": ["XOM", "CVX"]
     }
   ],
@@ -607,6 +611,7 @@ Returns CSV file as attachment download.
 | POST | `/admin/backfill-event-categories` | Admin | **Done** | Classify articles without event_category |
 | POST | `/admin/backfill-duplicate-groups` | Admin | **Done** | Detect duplicate articles (last N days) |
 | POST | `/admin/train-ml-models` | Admin | **Done** | Trigger ML model training (Celery task) |
+| POST | `/admin/run-llm-extraction` | Admin | **Done** | Trigger LLM extraction on recent unprocessed earnings articles |
 | GET | `/admin/ml-models` | Admin | **Done** | ML model status per sector (version, accuracy, F1, importances) |
 | GET | `/admin/task-failures` | Admin | **Done** | Dead letter queue (paginated, filterable by task_name) |
 | POST | `/admin/task-failures/{id}/retry` | Admin | **Done** | Re-queue a failed task |
@@ -638,6 +643,15 @@ Backtests are queued automatically when created via `POST /backtests`. The Celer
 ```
 // Response
 { "task_id": "ghi-789", "status": "queued" }
+```
+
+### POST /admin/run-llm-extraction
+
+Queues `run_llm_extraction` on the `sentiment` queue. The task is a no-op unless `LLM_EXTRACTION_ENABLED=true` and `ANTHROPIC_API_KEY` are set on the Compute VM. Returns **202**.
+
+```
+// Response
+{ "task_id": "llm-123", "status": "queued" }
 ```
 
 ### GET /admin/task-failures
