@@ -65,18 +65,19 @@ def extract_earnings_context(
     All exceptions are caught and logged — never raises to caller.
     """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
         from app.config import settings
 
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel(GEMINI_MODEL)
+        client = genai.Client(api_key=settings.gemini_api_key)
 
         text_snippet = (article_text or "")[:max_chars]
         prompt = EXTRACTION_PROMPT.format(title=title, text=text_snippet)
 
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 max_output_tokens=64,
                 temperature=0.0,  # deterministic output for structured extraction
             ),
