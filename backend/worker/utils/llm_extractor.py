@@ -22,7 +22,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 
 EXTRACTION_PROMPT = """\
 You are extracting structured data from a financial earnings news article.
