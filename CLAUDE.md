@@ -4,7 +4,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 
 ## Current Status
 
-**Phase 20 (comprehensive testing) complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Phase 19 added infrastructure improvements: Redis caching layer (5 endpoints cached with TTL + Celery invalidation), dead letter queue (Celery task_failure signal → task_failures table + admin retry), API key authentication (SHA-256 hashed keys, dual JWT/API-key auth), admin audit logging (all admin POST actions recorded), health alert notifications (DB/Redis/queue checks every 5min → Discord webhook), slow query detection (SQLAlchemy event listeners). Phase 20 added comprehensive testing: coverage reporting (.coveragerc, fail_under=60%), mutation testing (9 modules, 3 tiers), backend API integration tests (PostgreSQL), Playwright E2E tests, Vitest config, weekly mutation CI workflow. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits).
+**Phase 21 complete. System deployed and operational on Oracle Cloud.** All core features built through Phase 7. Phase 8 added hardening + deployment. Phase 9 added indexes, data retention, materialized views, and admin endpoints. Phase 10 added signal feedback loop (outcome tracking, adaptive weights, accuracy UI). Phase 11 added technical indicators (RSI, MACD, SMA, Bollinger Bands) to signal scoring and charts. Phase 12 added backtesting engine (replay signal generation over historical data, equity curves, trade logs, performance metrics). Phase 13 added stock search, profile/password management, mobile responsive sidebar, code splitting, and admin dashboard page. Phase 14 added realistic backtesting: transaction costs (commission + slippage), position sizing, stop-loss/take-profit exits, benchmark comparison (SPY with alpha/beta), backtest comparison view, and CSV export. Phase 15 added signal intelligence: component score breakdown visualization, expandable signal cards, accuracy deep-dive (trend + distribution), signal detail panel with outcomes and linked articles, methodology tab with adaptive weights display. Phase 16 added enhanced news intelligence: rule-based event classification (10 categories), fuzzy duplicate detection across sources (rapidfuzz), source credibility weighting in signal scoring. Phase 17 added ML signal ensemble: LightGBM binary classifier trained per-sector on 6 component scores, runs alongside rule-based scoring for A/B comparison, admin-triggered training with automatic daily retraining, ML score/direction/confidence on every signal, accuracy comparison dashboard. Phase 18 added options flow: yfinance options chain data (per-ticker P/C ratio, IV skew, volume/OI), CBOE market-wide P/C ratio, 7th signal component (options score), options section on stock detail page with P/C ratio history chart. Phase 19 added infrastructure improvements: Redis caching layer (5 endpoints cached with TTL + Celery invalidation), dead letter queue (Celery task_failure signal → task_failures table + admin retry), API key authentication (SHA-256 hashed keys, dual JWT/API-key auth), admin audit logging (all admin POST actions recorded), health alert notifications (DB/Redis/queue checks every 5min → Discord webhook), slow query detection (SQLAlchemy event listeners). Phase 20 added comprehensive testing: coverage reporting (.coveragerc, fail_under=60%), mutation testing (9 modules, 3 tiers), backend API integration tests (PostgreSQL), Playwright E2E tests, Vitest config, weekly mutation CI workflow. Post-phase work added ticker extraction improvements, sector filtering, deployment fixes, and a 10-item code quality refactoring (Card component migration, QueryGuard, Celery decorator factory, pagination helper, StockDetailPage/SignalsPage/signal_generator/backtester/signals API/types splits). Phase 21a added data quality gates (ticker confidence floor, Reddit isolation, article quality score 0–1, canonical article deduplication). Phase 21b added earnings surprise as a gated 48h signal component: yfinance EPS beat/miss → tanh(surprise_pct/5.0), guidance_change field on EarningsEstimate. Phase 21c refactored signal formula: RSI/trend removed as additive components, repurposed as regime multiplier (±15% on composite), rebalanced base weights (sm=40%, sv=25%, pm=20%, va=15%), market_regime label on every signal, ComponentBreakdown UI split into predictive/regime sections. Phase 21d added LLM extraction via Google Gemini Flash (google-genai SDK): extracts guidance_change and management_tone from earnings articles at :20, llm_extracted column on articles, rate-limited to 15 articles/run (gemini-3.6-flash free tier: 20 RPD).
 
 ### What's implemented
 - FastAPI backend with JWT auth (register/login/refresh/me/profile/password)
@@ -24,7 +24,12 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Event classification: rule-based classifier (10 categories: earnings, M&A, regulatory, product, analyst, insider, macro, legal, dividend, general)
 - Duplicate detection: fuzzy title matching via rapidfuzz token_set_ratio across sources within 24h windows
 - Source credibility: weighted scoring (SEC EDGAR 1.0, Reuters 0.9, Reddit 0.4) applied in sentiment momentum
-- Signal generation: 7-component composite scoring (sentiment momentum, sentiment volume, price momentum, volume anomaly, RSI, trend, options flow) with source credibility weighting and duplicate deduplication; options component gated behind OPTIONS_FLOW_ENABLED (default off)
+- Article quality scoring: 0–1 score from source credibility (40%), quantitative content (25%), ticker confidence (25%), length (10%); quality gate at 0.40 for signal inclusion
+- Canonical article deduplication: duplicate_group_id + canonical_article_id; non-canonical articles excluded from signal scoring
+- Signal generation: composite scoring (sentiment momentum, sentiment volume, price momentum, volume anomaly) with regime multiplier from RSI/trend (±15%), earnings surprise component (gated), options flow component (gated); source credibility weighting; duplicate deduplication
+- Regime multiplier: apply_regime_multiplier() uses RSI/trend as context to boost/dampen composite ±15%; market_regime label (trending_up/down/overbought/oversold/sideways) stored on signal
+- Earnings surprise: yfinance EPS beat/miss data, 48h window gate, tanh(surprise_pct/5.0) scoring, earnings_score on signals; gated behind earnings data availability
+- LLM extraction: Gemini Flash (gemini-3.6-flash via google-genai SDK) extracts guidance_change + management_tone from earnings articles; runs at :20; llm_extracted column (NULL/True/False); rate-limited to 15/run; gated behind LLM_EXTRACTION_ENABLED
 - Options flow: yfinance options chain data (put/call ratio, IV skew, weighted avg IV, ATM strike IV, volume/OI aggregates), CBOE market-wide P/C ratio, per-ticker data quality tracking (full/partial/stale), 7th signal component using z-score anomaly detection vs 20-day baseline
 - ML signal ensemble: LightGBM binary classifier (per-sector + global fallback) trained on component scores → ml_score, ml_direction, ml_confidence on each signal; disabled by default (ML_ENSEMBLE_ENABLED=true to activate)
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed, signal detail with outcomes + linked articles, accuracy trend + distribution endpoints
@@ -100,7 +105,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Total: 553 unit tests + 34 integration tests + 10 E2E tests
 
 ### What's next
-- Phase 21: TBD
+- Phase 22: TBD
 
 ## Architecture
 
@@ -406,6 +411,7 @@ Hourly (Celery Beat on Compute VM):
   :10 → fetch options chain data via yfinance (weekdays only, if OPTIONS_FLOW_ENABLED)
   :12 → fetch CBOE put/call ratio (weekdays only, if OPTIONS_FLOW_ENABLED)
   :15 → sentiment catch-up (process any unprocessed articles)
+  :20 → LLM extraction (Gemini Flash on earnings articles, if LLM_EXTRACTION_ENABLED)
   :30 → generate composite signals (+ ML inference if enabled) → dispatch alerts → invalidate signals/sentiment cache
   :35 → refresh materialized views (daily sentiment)
 
@@ -420,21 +426,34 @@ Daily:
 ## Signal Scoring
 
 ```
-composite = 0.30 * sentiment_momentum + 0.20 * sentiment_volume
-          + 0.15 * price_momentum    + 0.10 * volume_anomaly
-          + 0.15 * rsi_score         + 0.10 * trend_score
-          + 0.08 * options_score  (when OPTIONS_FLOW_ENABLED; other weights scale down proportionally)
+composite = 0.40 * sentiment_momentum + 0.25 * sentiment_volume
+          + 0.20 * price_momentum    + 0.15 * volume_anomaly
+          + 0.10 * earnings_score  (when earnings data available; weights scale proportionally)
+          + 0.08 * options_score   (when OPTIONS_FLOW_ENABLED; weights scale proportionally)
 
-RSI score:     tanh((50 - rsi) / 50 * 2.5)  — oversold → positive, overbought → negative
-Trend score:   0.6 * sma_crossover + 0.4 * macd_histogram_signal
-Options score: 0.6 * -tanh(pcr_z) + 0.4 * -tanh(skew_z)  — z-scores vs 20-day baseline
+composite, market_regime = apply_regime_multiplier(composite, rsi_score, trend_score)
+  Priority 1: |rsi_score| > 0.4 → dampen composite 15%, regime = overbought/oversold
+  Priority 2: strong trend confirming signal → boost 15%, regime = trending_up/down
+  Priority 3: strong trend opposing signal → dampen 15%
+  Default: regime = sideways
+
+RSI score:      tanh((50 - rsi) / 50 * 2.5)  — oversold → positive, overbought → negative
+Trend score:    0.6 * sma_crossover + 0.4 * macd_histogram_signal
+Options score:  0.6 * -tanh(pcr_z) + 0.4 * -tanh(skew_z)  — z-scores vs 20-day baseline
+Earnings score: tanh(surprise_pct / 5.0)  — EPS beat → positive, miss → negative (48h gate)
 
 Weights are adaptive: per-sector optimization runs daily at 4 AM based on outcome accuracy.
+RSI and trend weights are always written as 0.0 in DB (regime context only, not additive).
 
 Strong: |score| > 0.6  |  Moderate: > 0.35  |  Weak: otherwise
 
 ML Ensemble (optional, ML_ENSEMBLE_ENABLED=true):
-  LightGBM binary classifier per sector (+ global fallback) trained on 6 component scores.
+  LightGBM binary classifier per sector (+ global fallback) trained on component scores.
   Predicts P(correct) for each signal → ml_score (signed [-1,1]), ml_direction, ml_confidence.
   Runs alongside rule-based scoring for A/B comparison. Does NOT replace composite score.
+
+LLM Extraction (optional, LLM_EXTRACTION_ENABLED=true):
+  Gemini Flash (gemini-3.6-flash) extracts guidance_change + management_tone from earnings articles.
+  Runs at :20 on up to 15 articles/run (free tier: 20 RPD). Requires GEMINI_API_KEY.
+  guidance_change stored on EarningsEstimate; management_tone stored in article.metadata_ JSONB.
 ```
