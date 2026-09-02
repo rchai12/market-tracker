@@ -121,6 +121,7 @@ class Settings(BaseSettings):
     # LLM extraction (Claude Haiku for earnings guidance)
     llm_extraction_enabled: bool = False
     anthropic_api_key: str | None = None
+    anthropic_workspace_id: str | None = None  # required for all-workspaces identity keys
     llm_max_article_chars: int = 1500  # character limit sent to LLM (cost control)
     llm_rate_limit_seconds: float = 1.0  # delay between API calls
 

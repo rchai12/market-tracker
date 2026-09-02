@@ -144,8 +144,9 @@ Optional — Claude Haiku LLM extraction (earnings guidance / management tone). 
 ```
 LLM_EXTRACTION_ENABLED=false
 ANTHROPIC_API_KEY=
+ANTHROPIC_WORKSPACE_ID=
 ```
-Set `LLM_EXTRACTION_ENABLED=true` and a real `ANTHROPIC_API_KEY` only when you want extraction to run. Optional knobs: `LLM_MAX_ARTICLE_CHARS=1500`, `LLM_RATE_LIMIT_SECONDS=1.0`.
+Set `LLM_EXTRACTION_ENABLED=true` and a real `ANTHROPIC_API_KEY` only when you want extraction to run. Required for an All-workspaces (identity-linked) key: `ANTHROPIC_WORKSPACE_ID=wrkspc_...`. Optional knobs: `LLM_MAX_ARTICLE_CHARS=1500`, `LLM_RATE_LIMIT_SECONDS=1.0`.
 
 ### 3. Start Workers
 

@@ -36,9 +36,16 @@ def _install_anthropic(response_text: str | None = VALID_JSON, error: Exception 
     return client.messages
 
 
-def _extract(text="Apple raised full-year guidance.", title="AAPL earnings", max_chars=1500, api_key="fake-key"):
+def _extract(
+    text="Apple raised full-year guidance.",
+    title="AAPL earnings",
+    max_chars=1500,
+    api_key="fake-key",
+    workspace_id=None,
+):
     with patch("app.config.settings") as settings:
         settings.anthropic_api_key = api_key
+        settings.anthropic_workspace_id = workspace_id
         return extract_earnings_context(title, text, max_chars=max_chars)
 
 
@@ -56,6 +63,19 @@ class TestExtractEarningsContext:
         _extract()
         assert messages.create.call_args.kwargs["model"] == CLAUDE_MODEL
         assert CLAUDE_MODEL == "claude-haiku-4-5-20251001"
+
+    def test_workspace_id_sent_as_header(self):
+        _install_anthropic(VALID_JSON)
+        anthropic_mod = sys.modules["anthropic"]
+        _extract(workspace_id="wrkspc_test123")
+        kwargs = anthropic_mod.Anthropic.call_args.kwargs
+        assert kwargs["default_headers"]["anthropic-workspace-id"] == "wrkspc_test123"
+
+    def test_no_workspace_header_when_unset(self):
+        _install_anthropic(VALID_JSON)
+        anthropic_mod = sys.modules["anthropic"]
+        _extract(workspace_id=None)
+        assert "default_headers" not in anthropic_mod.Anthropic.call_args.kwargs
 
     def test_api_exception_returns_none(self):
         _install_anthropic(error=RuntimeError("boom"))

@@ -68,7 +68,12 @@ def extract_earnings_context(
 
         from app.config import settings
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client_kwargs: dict = {"api_key": settings.anthropic_api_key}
+        if settings.anthropic_workspace_id:
+            client_kwargs["default_headers"] = {
+                "anthropic-workspace-id": settings.anthropic_workspace_id,
+            }
+        client = anthropic.Anthropic(**client_kwargs)
 
         text_snippet = (article_text or "")[:max_chars]
         prompt = EXTRACTION_PROMPT.format(title=title, text=text_snippet)
