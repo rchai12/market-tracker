@@ -82,7 +82,7 @@ async def _run_extraction_async() -> dict:
             )
             .where(Article.published_at >= since)
             .order_by(Article.published_at.desc())
-            .limit(200)  # safety cap per run
+            .limit(15)  # gemini-3.6-flash free tier: 20 RPD — leave headroom
         )
         articles = result.scalars().unique().all()
 
