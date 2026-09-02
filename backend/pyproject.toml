@@ -29,9 +29,6 @@ dependencies = [
     "lxml>=5.3.0",
     # Market data
     "yfinance>=0.2.48",
-    # Sentiment
-    "transformers>=4.47.0",
-    "torch>=2.5.0",
     # Alerts
     "aiosmtplib>=3.0.0",
     # NLP

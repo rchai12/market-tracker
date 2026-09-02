@@ -2,17 +2,23 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-# Install system dependencies: build-essential for C extensions,
-# tini for proper PID 1 signal handling, curl for health checks
+# Runtime OS deps only (tini for PID 1, curl for health checks).
+# build-essential is installed in the pip layer below and purged afterward.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     tini \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies only (no app code yet)
+# Install Python dependencies only (no app code yet).
+# build-essential compiles C extensions (e.g. lightgbm on ARM); remove it after pip
+# so gcc does not stay in the final image.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir . && pip cache purge 2>/dev/null; true
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && pip install --no-cache-dir . \
+    && pip cache purge \
+    && apt-get purge -y build-essential \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY . .
