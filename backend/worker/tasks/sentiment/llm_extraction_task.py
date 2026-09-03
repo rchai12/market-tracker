@@ -3,7 +3,7 @@
 Finds articles where:
   - event_category = 'earnings'
   - llm_extracted IS NULL (not yet attempted)
-  - quality_score >= QUALITY_THRESHOLD (or NULL, for legacy articles)
+  - quality_score >= LLM_MIN_QUALITY_SCORE (0.60; high-credibility sources only)
   - source NOT in SIGNAL_EXCLUDED_SOURCES (no Reddit)
   - canonical_article_id IS NULL (canonical only, no duplicates)
   - published_at within last 7 days (recent only)
@@ -15,7 +15,7 @@ For each article:
   4. If found, updates guidance_change on the EarningsEstimate
   5. Marks article.llm_extracted = True
 
-Runs at :20 (after sentiment at :15, before signals at :30).
+Runs every 2 hours at :20 (after sentiment at :15, before signals at :30).
 Skipped entirely when LLM_EXTRACTION_ENABLED=false.
 """
 
@@ -23,7 +23,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -31,7 +31,7 @@ from app.database import async_session
 from app.models.article import Article, ArticleStock
 from app.models.earnings_estimate import EarningsEstimate
 from worker.celery_app import celery_app
-from worker.utils.article_quality import QUALITY_THRESHOLD, SIGNAL_EXCLUDED_SOURCES
+from worker.utils.article_quality import SIGNAL_EXCLUDED_SOURCES
 from worker.utils.async_task import run_async
 from worker.utils.llm_extractor import extract_earnings_context
 
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 RECENT_DAYS = 7  # Only process articles published within this window
 EARNINGS_MATCH_DAYS = 7  # Match article to EarningsEstimate within ±N days
+LLM_MIN_QUALITY_SCORE = 0.60  # Skip lower-credibility sources (noisy guidance/tone)
 
 
 @celery_app.task(
@@ -67,26 +68,39 @@ def run_llm_extraction(self):
 async def _run_extraction_async() -> dict:
     """Main extraction loop."""
     since = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+    candidate_filters = (
+        Article.event_category == "earnings",
+        Article.llm_extracted.is_(None),  # not yet attempted
+        Article.canonical_article_id.is_(None),  # canonical only
+        Article.source.notin_(SIGNAL_EXCLUDED_SOURCES),  # no Reddit
+        Article.published_at >= since,
+    )
 
     async with async_session() as session:
         result = await session.execute(
             select(Article)
             .options(selectinload(Article.article_stocks).selectinload(ArticleStock.stock))
-            .where(Article.event_category == "earnings")
-            .where(Article.llm_extracted.is_(None))  # not yet attempted
-            .where(Article.canonical_article_id.is_(None))  # canonical only
-            .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))  # no Reddit
-            .where(
-                (Article.quality_score >= QUALITY_THRESHOLD)
-                | (Article.quality_score.is_(None))  # legacy articles without score
-            )
-            .where(Article.published_at >= since)
+            .where(*candidate_filters)
+            .where(Article.quality_score >= LLM_MIN_QUALITY_SCORE)
             .order_by(Article.published_at.desc())
-            .limit(50)  # no longer RPD-constrained
+            .limit(50)  # safety cap against earnings-season spikes
         )
         articles = result.scalars().unique().all()
 
-    logger.info(f"LLM extraction: {len(articles)} articles to process")
+        count_result = await session.execute(
+            select(func.count())
+            .select_from(Article)
+            .where(*candidate_filters)
+            .where(
+                (Article.quality_score < LLM_MIN_QUALITY_SCORE) | Article.quality_score.is_(None)
+            )
+        )
+        quality_skipped = int(count_result.scalar_one() or 0)
+
+    logger.info(
+        f"LLM extraction: {len(articles)} articles to process, "
+        f"{quality_skipped} skipped (quality < {LLM_MIN_QUALITY_SCORE})"
+    )
 
     extracted = 0
     skipped = 0
@@ -148,9 +162,15 @@ async def _run_extraction_async() -> dict:
         time.sleep(settings.llm_rate_limit_seconds)
 
     logger.info(
-        f"LLM extraction complete: {extracted} extracted, {skipped} skipped, {errors} errors"
+        f"LLM extraction complete: {extracted} extracted, {skipped} skipped, "
+        f"{quality_skipped} quality-gated, {errors} errors"
     )
-    return {"extracted": extracted, "skipped": skipped, "errors": errors}
+    return {
+        "extracted": extracted,
+        "skipped": skipped,
+        "quality_skipped": quality_skipped,
+        "errors": errors,
+    }
 
 
 async def _update_earnings_guidance(session, article: Article, guidance_change: str) -> None:

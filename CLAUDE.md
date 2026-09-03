@@ -29,7 +29,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Signal generation: composite scoring (sentiment momentum, sentiment volume, price momentum, volume anomaly) with regime multiplier from RSI/trend (±15%), earnings surprise component (gated), options flow component (gated); source credibility weighting; duplicate deduplication
 - Regime multiplier: apply_regime_multiplier() uses RSI/trend as context to boost/dampen composite ±15%; market_regime label (trending_up/down/overbought/oversold/sideways) stored on signal
 - Earnings surprise: yfinance EPS beat/miss data, 48h window gate, tanh(surprise_pct/5.0) scoring, earnings_score on signals; gated behind earnings data availability
-- LLM extraction: Claude Haiku (claude-haiku-4-5-20251001 via anthropic SDK) extracts guidance_change + management_tone from earnings articles; runs at :20; llm_extracted column (NULL/True/False); rate-limited to 50/run; gated behind LLM_EXTRACTION_ENABLED
+- LLM extraction: Claude Haiku (claude-haiku-4-5-20251001 via anthropic SDK) extracts guidance_change + management_tone from earnings articles; every 2h at :20; quality_score ≥ 0.60 gate; llm_extracted column (NULL/True/False); cap 50/run; gated behind LLM_EXTRACTION_ENABLED
 - Options flow: yfinance options chain data (put/call ratio, IV skew, weighted avg IV, ATM strike IV, volume/OI aggregates), CBOE market-wide P/C ratio, per-ticker data quality tracking (full/partial/stale), 7th signal component using z-score anomaly detection vs 20-day baseline
 - ML signal ensemble: LightGBM binary classifier (per-sector + global fallback) trained on component scores → ml_score, ml_direction, ml_confidence on each signal; disabled by default (ML_ENSEMBLE_ENABLED=true to activate)
 - Signal API: paginated list with direction/strength/ticker/sector filters, per-ticker history, latest signals feed, signal detail with outcomes + linked articles, accuracy trend + distribution endpoints
@@ -413,7 +413,7 @@ Hourly (Celery Beat on Compute VM):
   :10 → fetch options chain data via yfinance (weekdays only, if OPTIONS_FLOW_ENABLED)
   :12 → fetch CBOE put/call ratio (weekdays only, if OPTIONS_FLOW_ENABLED)
   :15 → sentiment catch-up (process any unprocessed articles)
-  :20 → LLM extraction (Claude Haiku on earnings articles, if LLM_EXTRACTION_ENABLED)
+  every 2h :20 → LLM extraction (Claude Haiku on earnings articles with quality_score ≥ 0.60, if LLM_EXTRACTION_ENABLED)
   :30 → generate composite signals (+ ML inference if enabled) → dispatch alerts → invalidate signals/sentiment cache
   :35 → refresh materialized views (daily sentiment)
 
@@ -456,6 +456,6 @@ ML Ensemble (optional, ML_ENSEMBLE_ENABLED=true):
 
 LLM Extraction (optional, LLM_EXTRACTION_ENABLED=true):
   Claude Haiku (claude-haiku-4-5-20251001) extracts guidance_change + management_tone from earnings articles.
-  Runs at :20 on up to 50 articles/run. Requires ANTHROPIC_API_KEY.
+  Runs every 2 hours at :20 on up to 50 articles/run with quality_score ≥ 0.60. Requires ANTHROPIC_API_KEY.
   guidance_change stored on EarningsEstimate; management_tone stored in article.metadata_ JSONB.
 ```

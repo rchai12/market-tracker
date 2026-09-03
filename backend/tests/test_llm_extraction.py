@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from worker.beat_schedule import beat_schedule
 from worker.tasks.sentiment.llm_extraction_task import (
     EARNINGS_MATCH_DAYS,
+    LLM_MIN_QUALITY_SCORE,
     _run_extraction_async,
     _update_earnings_guidance,
     run_llm_extraction,
@@ -206,12 +207,16 @@ class UpdateSession:
 
 
 class ListSession:
-    def __init__(self, articles):
+    def __init__(self, articles, quality_skipped=0):
         self.articles = articles
+        self.quality_skipped = quality_skipped
+        self.stmts = []
 
-    async def execute(self, _stmt):
+    async def execute(self, stmt):
+        self.stmts.append(stmt)
         result = MagicMock()
         result.scalars.return_value.unique.return_value.all.return_value = self.articles
+        result.scalar_one.return_value = self.quality_skipped
         return result
 
 
@@ -321,6 +326,32 @@ class TestRunExtractionAsync:
         assert result["extracted"] == 0
         assert result["errors"] == 0
 
+    def test_query_filters_quality_score_at_least_060(self):
+        art = _article()
+        list_session = ListSession([art], quality_skipped=4)
+        update = UpdateSession(art, stock_ids=[])
+        settings_ns = SimpleNamespace(llm_max_article_chars=1500, llm_rate_limit_seconds=0)
+        sessions = [_cm(list_session), _cm(update)]
+        with (
+            patch("worker.tasks.sentiment.llm_extraction_task.async_session", side_effect=sessions),
+            patch(
+                "worker.tasks.sentiment.llm_extraction_task.extract_earnings_context",
+                return_value={"guidance_change": "none", "management_tone": "neutral"},
+            ),
+            patch("worker.tasks.sentiment.llm_extraction_task.settings", settings_ns),
+            patch("worker.tasks.sentiment.llm_extraction_task.time.sleep"),
+        ):
+            result = asyncio.run(_run_extraction_async())
+
+        assert LLM_MIN_QUALITY_SCORE == 0.60
+        assert result["quality_skipped"] == 4
+        select_sql = str(list_session.stmts[0].compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "quality_score" in select_sql
+        assert "0.6" in select_sql
+        count_sql = str(list_session.stmts[1].compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "quality_score" in count_sql
+        assert "0.6" in count_sql
+
 
 class TestUpdateEarningsGuidance:
     def test_null_published_at_returns_early(self):
@@ -363,3 +394,4 @@ class TestBeatSchedule:
         entry = beat_schedule["run-llm-extraction"]
         assert entry["task"] == "worker.tasks.sentiment.llm_extraction_task.run_llm_extraction"
         assert entry["schedule"].minute == {20}
+        assert entry["schedule"].hour == set(range(0, 24, 2))
