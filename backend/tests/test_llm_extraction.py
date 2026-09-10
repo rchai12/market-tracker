@@ -9,12 +9,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from worker.beat_schedule import beat_schedule
 from worker.tasks.sentiment.llm_extraction_task import (
     EARNINGS_MATCH_DAYS,
+    LLM_EVENT_CATEGORIES,
     LLM_MIN_QUALITY_SCORE,
     _run_extraction_async,
     _update_earnings_guidance,
     run_llm_extraction,
 )
-from worker.utils.llm_extractor import CLAUDE_MODEL, extract_earnings_context
+from worker.utils.llm_extractor import (
+    ANALYST_EMPTY,
+    CLAUDE_MODEL,
+    extract_analyst_data,
+    extract_earnings_context,
+)
 
 NOW = datetime(2026, 8, 31, 16, 0, tzinfo=timezone.utc)
 VALID_JSON = '{"guidance_change": "raised", "management_tone": "confident"}'
@@ -48,6 +54,69 @@ def _extract(
         settings.anthropic_api_key = api_key
         settings.anthropic_workspace_id = workspace_id
         return extract_earnings_context(title, text, max_chars=max_chars)
+
+
+def _extract_analyst(
+    text="Goldman upgrades AAPL to buy with a $250 target.",
+    title="GS upgrades AAPL",
+    max_chars=1500,
+    api_key="fake-key",
+    workspace_id=None,
+):
+    with patch("app.config.settings") as settings:
+        settings.anthropic_api_key = api_key
+        settings.anthropic_workspace_id = workspace_id
+        return extract_analyst_data(title, text, max_chars=max_chars)
+
+
+class TestExtractAnalystData:
+    def teardown_method(self):
+        sys.modules.pop("anthropic", None)
+
+    def test_upgrade_with_target(self):
+        _install_anthropic(
+            '{"rating_change": "upgrade", "price_target": 250, "analyst_firm": "Goldman Sachs"}'
+        )
+        result = _extract_analyst()
+        assert result == {
+            "rating_change": "upgrade",
+            "price_target": 250.0,
+            "analyst_firm": "Goldman Sachs",
+        }
+
+    def test_downgrade_without_target(self):
+        _install_anthropic(
+            '{"rating_change": "downgrade", "price_target": null, "analyst_firm": "Morgan Stanley"}'
+        )
+        result = _extract_analyst()
+        assert result["rating_change"] == "downgrade"
+        assert result["price_target"] is None
+        assert result["analyst_firm"] == "Morgan Stanley"
+
+    def test_initiate_with_firm(self):
+        _install_anthropic(
+            '{"rating_change": "initiate", "price_target": 180.5, "analyst_firm": "J.P. Morgan"}'
+        )
+        result = _extract_analyst()
+        assert result["rating_change"] == "initiate"
+        assert result["price_target"] == 180.5
+        assert result["analyst_firm"] == "J.P. Morgan"
+
+    def test_empty_text_fallback(self):
+        result = _extract_analyst(text="", title="")
+        assert result == ANALYST_EMPTY
+
+    def test_api_failure_fallback(self):
+        _install_anthropic(error=RuntimeError("boom"))
+        result = _extract_analyst()
+        assert result == ANALYST_EMPTY
+
+    def test_dollar_string_price_target_parsed(self):
+        _install_anthropic(
+            '{"rating_change": "upgrade", "price_target": "$1,200", "analyst_firm": "BofA"}'
+        )
+        result = _extract_analyst()
+        assert result["price_target"] == 1200.0
 
 
 class TestExtractEarningsContext:
@@ -170,6 +239,7 @@ def _article(**overrides):
         raw_text="Apple raised full-year guidance.",
         summary=None,
         published_at=NOW,
+        event_category="earnings",
         metadata_={},
         llm_extracted=None,
     )
@@ -220,7 +290,7 @@ class ListSession:
         return result
 
 
-def _run_loop(articles, extract_result, update_session, **setting_overrides):
+def _run_loop(articles, extract_result, update_session, analyst_result=None, **setting_overrides):
     settings_ns = SimpleNamespace(
         llm_max_article_chars=1500,
         llm_rate_limit_seconds=0,
@@ -233,6 +303,10 @@ def _run_loop(articles, extract_result, update_session, **setting_overrides):
         patch(
             "worker.tasks.sentiment.llm_extraction_task.extract_earnings_context",
             return_value=extract_result,
+        ),
+        patch(
+            "worker.tasks.sentiment.llm_extraction_task.extract_analyst_data",
+            return_value=analyst_result,
         ),
         patch("worker.tasks.sentiment.llm_extraction_task.settings", settings_ns),
         patch("worker.tasks.sentiment.llm_extraction_task.time.sleep"),
@@ -351,6 +425,53 @@ class TestRunExtractionAsync:
         count_sql = str(list_session.stmts[1].compile(compile_kwargs={"literal_binds": True})).lower()
         assert "quality_score" in count_sql
         assert "0.6" in count_sql
+        assert "analyst_rating" in select_sql
+        assert "earnings" in select_sql
+        assert set(LLM_EVENT_CATEGORIES) == {"earnings", "analyst_rating"}
+
+    def test_analyst_upgrade_stored_in_metadata(self):
+        art = _article(
+            event_category="analyst_rating",
+            title="GS upgrades AAPL",
+            raw_text="Goldman Sachs upgrades Apple to buy.",
+        )
+        update = UpdateSession(art, stock_ids=[])
+        result = _run_loop(
+            [art],
+            extract_result=None,
+            update_session=update,
+            analyst_result={
+                "rating_change": "upgrade",
+                "price_target": 250.0,
+                "analyst_firm": "Goldman Sachs",
+            },
+        )
+        assert art.llm_extracted is True
+        assert art.metadata_["rating_change"] == "upgrade"
+        assert art.metadata_["price_target"] == 250.0
+        assert art.metadata_["analyst_firm"] == "Goldman Sachs"
+        assert result["extracted"] == 1
+        assert result["skipped"] == 0
+        assert result["errors"] == 0
+        assert update.stmts == []
+
+    def test_analyst_none_without_target_increments_skipped(self):
+        art = _article(event_category="analyst_rating")
+        update = UpdateSession(art, stock_ids=[])
+        result = _run_loop(
+            [art],
+            extract_result=None,
+            update_session=update,
+            analyst_result={
+                "rating_change": "none",
+                "price_target": None,
+                "analyst_firm": None,
+            },
+        )
+        assert art.llm_extracted is True
+        assert result["extracted"] == 1
+        assert result["skipped"] == 1
+        assert result["errors"] == 0
 
 
 class TestUpdateEarningsGuidance:

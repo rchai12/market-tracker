@@ -1,19 +1,23 @@
-"""Celery task: run LLM extraction on unprocessed earnings articles.
+"""Celery task: run LLM extraction on unprocessed earnings and analyst articles.
 
 Finds articles where:
-  - event_category = 'earnings'
+  - event_category in ('earnings', 'analyst_rating')
   - llm_extracted IS NULL (not yet attempted)
   - quality_score >= LLM_MIN_QUALITY_SCORE (0.60; high-credibility sources only)
   - source NOT in SIGNAL_EXCLUDED_SOURCES (no Reddit)
   - canonical_article_id IS NULL (canonical only, no duplicates)
   - published_at within last 7 days (recent only)
 
-For each article:
+For earnings articles:
   1. Calls Claude Haiku → {guidance_change, management_tone}
   2. Stores management_tone in article.metadata_["management_tone"]
-  3. Finds matching EarningsEstimate (same ticker, earnings_date within ±7 days of published_at)
-  4. If found, updates guidance_change on the EarningsEstimate
-  5. Marks article.llm_extracted = True
+  3. Finds matching EarningsEstimate and updates guidance_change
+  4. Marks article.llm_extracted = True
+
+For analyst_rating articles:
+  1. Calls Claude Haiku → {rating_change, price_target, analyst_firm}
+  2. Stores those keys in article.metadata_
+  3. Marks article.llm_extracted = True (no new table / no signal component)
 
 Runs every 2 hours at :20 (after sentiment at :15, before signals at :30).
 Skipped entirely when LLM_EXTRACTION_ENABLED=false.
@@ -33,13 +37,15 @@ from app.models.earnings_estimate import EarningsEstimate
 from worker.celery_app import celery_app
 from worker.utils.article_quality import SIGNAL_EXCLUDED_SOURCES
 from worker.utils.async_task import run_async
-from worker.utils.llm_extractor import extract_earnings_context
+from worker.utils.llm_extractor import extract_analyst_data, extract_earnings_context
 
 logger = logging.getLogger(__name__)
 
 RECENT_DAYS = 7  # Only process articles published within this window
 EARNINGS_MATCH_DAYS = 7  # Match article to EarningsEstimate within ±N days
 LLM_MIN_QUALITY_SCORE = 0.60  # Skip lower-credibility sources (noisy guidance/tone)
+# Classifier stores analyst events as analyst_rating (not "analyst")
+LLM_EVENT_CATEGORIES = ("earnings", "analyst_rating")
 
 
 @celery_app.task(
@@ -49,7 +55,7 @@ LLM_MIN_QUALITY_SCORE = 0.60  # Skip lower-credibility sources (noisy guidance/t
     default_retry_delay=300,
 )
 def run_llm_extraction(self):
-    """LLM extraction pass on recent unprocessed earnings articles."""
+    """LLM extraction pass on recent unprocessed earnings and analyst articles."""
     if not settings.llm_extraction_enabled:
         logger.debug("LLM extraction disabled — skipping")
         return {"skipped": True, "reason": "llm_extraction_disabled"}
@@ -69,7 +75,7 @@ async def _run_extraction_async() -> dict:
     """Main extraction loop."""
     since = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
     candidate_filters = (
-        Article.event_category == "earnings",
+        Article.event_category.in_(LLM_EVENT_CATEGORIES),
         Article.llm_extracted.is_(None),  # not yet attempted
         Article.canonical_article_id.is_(None),  # canonical only
         Article.source.notin_(SIGNAL_EXCLUDED_SOURCES),  # no Reddit
@@ -119,41 +125,62 @@ async def _run_extraction_async() -> dict:
                     await session.commit()
                 continue
 
-            result = extract_earnings_context(
-                title=article.title,
-                article_text=text,
-                max_chars=settings.llm_max_article_chars,
-            )
-
-            async with async_session() as session:
-                art = await session.get(Article, article.id)
-                if art is None:
-                    continue
-
-                if result is None:
-                    # API call failed — mark as attempted (False) to avoid retrying
-                    art.llm_extracted = False
-                    errors += 1
-                else:
-                    guidance = result.get("guidance_change")
-                    tone = result.get("management_tone")
-
-                    # Store management tone in metadata JSONB
-                    if tone:
-                        meta = dict(art.metadata_ or {})
-                        meta["management_tone"] = tone
-                        art.metadata_ = meta
-
-                    # Update matching EarningsEstimate if guidance was found
-                    if guidance and guidance != "none":
-                        await _update_earnings_guidance(session, article, guidance)
-                    else:
+            if article.event_category == "analyst_rating":
+                result = extract_analyst_data(
+                    title=article.title,
+                    article_text=text,
+                    max_chars=settings.llm_max_article_chars,
+                )
+                async with async_session() as session:
+                    art = await session.get(Article, article.id)
+                    if art is None:
+                        continue
+                    meta = dict(art.metadata_ or {})
+                    meta["rating_change"] = result["rating_change"]
+                    meta["price_target"] = result["price_target"]
+                    meta["analyst_firm"] = result["analyst_firm"]
+                    art.metadata_ = meta
+                    if result["rating_change"] == "none" and result["price_target"] is None:
                         skipped += 1
-
                     art.llm_extracted = True
                     extracted += 1
+                    await session.commit()
+            else:
+                result = extract_earnings_context(
+                    title=article.title,
+                    article_text=text,
+                    max_chars=settings.llm_max_article_chars,
+                )
 
-                await session.commit()
+                async with async_session() as session:
+                    art = await session.get(Article, article.id)
+                    if art is None:
+                        continue
+
+                    if result is None:
+                        # API call failed — mark as attempted (False) to avoid retrying
+                        art.llm_extracted = False
+                        errors += 1
+                    else:
+                        guidance = result.get("guidance_change")
+                        tone = result.get("management_tone")
+
+                        # Store management tone in metadata JSONB
+                        if tone:
+                            meta = dict(art.metadata_ or {})
+                            meta["management_tone"] = tone
+                            art.metadata_ = meta
+
+                        # Update matching EarningsEstimate if guidance was found
+                        if guidance and guidance != "none":
+                            await _update_earnings_guidance(session, article, guidance)
+                        else:
+                            skipped += 1
+
+                        art.llm_extracted = True
+                        extracted += 1
+
+                    await session.commit()
 
         except Exception as e:
             logger.error(f"Error processing article {article.id}: {e}")
