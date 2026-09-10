@@ -14,7 +14,7 @@ Phase 21d added LLM extraction for `event_category = 'earnings'` articles, extra
 reduced run frequency to every 2 hours.
 
 Analyst upgrade/downgrade/initiation events are among the highest-impact market-moving
-events in the article corpus. They are already classified as `event_category = 'analyst'`
+events in the article corpus. They are already classified as `event_category = 'analyst_rating'`
 by the rule-based event classifier. Extracting structured fields from these articles gives
 the research system richer data without requiring a new DB table or new signal component.
 
@@ -26,14 +26,15 @@ the research system richer data without requiring a new DB table or new signal c
 
 **File:** `backend/worker/tasks/sentiment/llm_extraction_task.py`
 
-Add `event_category = 'analyst'` to the query that selects articles for LLM processing.
+Add `event_category = 'analyst_rating'` to the query that selects articles for LLM processing.
 The existing conditions still apply:
 - `llm_extracted IS NULL`
 - `quality_score >= 0.60`
 - Published within the relevant lookback window
 
-The query should process both `'earnings'` and `'analyst'` articles in the same run,
-subject to the existing `.limit(50)` cap across both categories combined.
+The query should process both `'earnings'` and `'analyst_rating'` articles in the same run
+via `event_category IN ('earnings', 'analyst_rating')`, subject to the existing `.limit(50)`
+cap across both categories combined.
 
 ---
 
@@ -117,7 +118,7 @@ Once analyst data is populated in `metadata_`, a future phase can:
 - Add unit tests for `extract_analyst_data()` covering: upgrade with target, downgrade
   without target, initiate with firm, empty text fallback, API failure fallback
 - Update the existing LLM extraction task test to assert that articles with
-  `event_category = 'analyst'` and `quality_score >= 0.60` are included in the query
+  `event_category = 'analyst_rating'` and `quality_score >= 0.60` are included in the query
 - Assert `rating_change == "none"` and `price_target is None` increments the skipped counter
 
 ---

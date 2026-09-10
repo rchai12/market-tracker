@@ -209,11 +209,16 @@ def _earnings(**overrides):
     return SimpleNamespace(**base)
 
 
-def _score_session(earnings_obj):
+def _score_session(earnings_obj, tone_meta=None):
     session = AsyncMock()
-    result = MagicMock()
-    result.scalar_one_or_none.return_value = earnings_obj
-    session.execute = AsyncMock(return_value=result)
+    earnings_result = MagicMock()
+    earnings_result.scalar_one_or_none.return_value = earnings_obj
+    if earnings_obj is None:
+        session.execute = AsyncMock(return_value=earnings_result)
+        return session
+    tone_result = MagicMock()
+    tone_result.scalar_one_or_none.return_value = tone_meta
+    session.execute = AsyncMock(side_effect=[earnings_result, tone_result])
     return session
 
 
@@ -279,6 +284,55 @@ class TestCalcEarningsSurpriseScore:
             )
         )
         assert abs(score - math.tanh(5.0 / 5.0)) < 1e-9
+
+    def test_confident_tone_adds_boost(self):
+        score = asyncio.run(
+            calc_earnings_surprise_score(
+                _score_session(
+                    _earnings(surprise_pct=5.0, guidance_change=None),
+                    tone_meta={"management_tone": "confident"},
+                ),
+                1,
+                NOW,
+            )
+        )
+        assert abs(score - (math.tanh(5.0 / 5.0) + 0.10)) < 1e-9
+
+    def test_cautious_tone_subtracts_boost(self):
+        score = asyncio.run(
+            calc_earnings_surprise_score(
+                _score_session(
+                    _earnings(surprise_pct=5.0, guidance_change=None),
+                    tone_meta={"management_tone": "cautious"},
+                ),
+                1,
+                NOW,
+            )
+        )
+        assert abs(score - (math.tanh(5.0 / 5.0) - 0.10)) < 1e-9
+
+    def test_no_llm_article_tone_unchanged(self):
+        score = asyncio.run(
+            calc_earnings_surprise_score(
+                _score_session(_earnings(surprise_pct=5.0, guidance_change=None), tone_meta=None),
+                1,
+                NOW,
+            )
+        )
+        assert abs(score - math.tanh(5.0 / 5.0)) < 1e-9
+
+    def test_raised_guidance_plus_confident_tone_clamped(self):
+        score = asyncio.run(
+            calc_earnings_surprise_score(
+                _score_session(
+                    _earnings(surprise_pct=15.2, guidance_change="raised"),
+                    tone_meta={"management_tone": "confident"},
+                ),
+                1,
+                NOW,
+            )
+        )
+        assert score == 1.0
 
 
 class TestDefaultWeightsEarnings:

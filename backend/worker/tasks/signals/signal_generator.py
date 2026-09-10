@@ -7,6 +7,7 @@ Computes composite signal scores for all active stocks by combining:
 - Volume anomaly (15%): trading volume vs 20-day avg, signed by price direction
 - Earnings surprise (10%): EPS beat/miss vs consensus, active only within 48h of report
 - Options (8%): put/call ratio anomaly + IV skew vs baseline (when enabled)
+- Analyst ratings (7%): 30-day LLM-extracted upgrades/downgrades + price-target upside
 
 RSI and trend are not additive components. They classify market regime and apply
 a confidence multiplier to the composite (boost when trend confirms, dampen when
@@ -26,6 +27,7 @@ from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.tasks.signals.component_scores import (
+    calc_analyst_score,
     calc_earnings_surprise_score,
     calc_options_score,
     calc_price_momentum,
@@ -41,6 +43,7 @@ from worker.utils.async_task import run_async
 from worker.utils.signal_formula import (
     MODERATE_THRESHOLD,
     STRONG_THRESHOLD,
+    WEIGHT_ANALYST,
     WEIGHT_EARNINGS,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
@@ -72,11 +75,16 @@ logger = logging.getLogger(__name__)
 # Skip new signal if score moved less than this
 SIGNAL_DEDUP_THRESHOLD = 0.005
 
+
 # Re-exports so existing tests keep importing from this module.
-def _default_weights(has_options: bool | None = None, has_earnings: bool = False) -> dict:
+def _default_weights(
+    has_options: bool | None = None,
+    has_earnings: bool = False,
+    has_analyst: bool = False,
+) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
-    return default_weights(has_options=has_options, has_earnings=has_earnings)
+    return default_weights(has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst)
 
 
 def _get_weights(
@@ -84,15 +92,17 @@ def _get_weights(
     sector_id: int | None,
     has_earnings: bool = False,
     has_options: bool | None = None,
+    has_analyst: bool = False,
 ) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
-    return resolve_weights(weights_map, sector_id, has_earnings, has_options)
+    return resolve_weights(weights_map, sector_id, has_earnings, has_options, has_analyst=has_analyst)
 
 __all__ = [
     "MODERATE_THRESHOLD",
     "SIGNAL_DEDUP_THRESHOLD",
     "STRONG_THRESHOLD",
+    "WEIGHT_ANALYST",
     "WEIGHT_EARNINGS",
     "WEIGHT_OPTIONS",
     "WEIGHT_PRICE_MOMENTUM",
@@ -205,6 +215,7 @@ async def _generate_signals_async() -> dict:
 
                 opts_raw = score_data["options_score"]
                 earn_raw = score_data["earnings_score"]
+                analyst_raw = score_data["analyst_score"]
                 signal = Signal(
                     stock_id=stock.id,
                     direction=direction,
@@ -225,6 +236,7 @@ async def _generate_signals_async() -> dict:
                     retail_sentiment_score=round(retail_sentiment, 5) if retail_sentiment is not None else None,
                     market_regime=score_data.get("market_regime"),
                     earnings_score=round(earn_raw, 5) if earn_raw is not None else None,
+                    analyst_score=round(analyst_raw, 5) if analyst_raw is not None else None,
                     generated_at=now,
                     window_start=window_start,
                     window_end=window_end,
@@ -286,11 +298,15 @@ async def _compute_composite_score(
     trend = await calc_trend_score(session, stock_id, now)
     options = await calc_options_score(session, stock_id, now)
     earnings = await calc_earnings_surprise_score(session, stock_id, now)
+    analyst = await calc_analyst_score(session, stock_id, now)
 
     article_count = await get_recent_article_count(session, stock_id, now)
 
     has_earnings = earnings is not None
-    w = _get_weights(weights_map, sector_id, has_earnings=has_earnings)
+    has_analyst = analyst is not None
+    w = _get_weights(
+        weights_map, sector_id, has_earnings=has_earnings, has_analyst=has_analyst
+    )
 
     return combine_component_scores(
         sentiment_momentum=sent_momentum,
@@ -301,6 +317,7 @@ async def _compute_composite_score(
         trend_score=trend,
         options_score=options,
         earnings_score=earnings,
+        analyst_score=analyst,
         weights=w,
         has_options=settings.options_flow_enabled,
         article_count=article_count,
@@ -328,6 +345,7 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "trend": 0.0,  # regime only — zero weight in composite
             "options": float(row.options),
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
+            "analyst": 0.0,  # optimizer does not track analyst yet; gate injects default
             "source": "sector" if row.sector_id else "global",
         }
         weights_map[row.sector_id] = w
@@ -368,6 +386,11 @@ def _build_reasoning(
     if earn_val is not None and abs(earn_val) > 0.2:
         earn_dir = "beat" if earn_val > 0 else "miss"
         parts.append(f"Recent earnings {earn_dir} (score: {earn_val:.3f})")
+
+    analyst_val = score_data.get("analyst_score")
+    if analyst_val is not None and abs(analyst_val) > 0.2:
+        analyst_dir = "bullish" if analyst_val > 0 else "bearish"
+        parts.append(f"Analyst ratings are {analyst_dir} ({analyst_val:.3f})")
 
     regime = score_data.get("market_regime", "sideways")
     if regime not in ("sideways", None):

@@ -1,13 +1,15 @@
 """Component scoring functions for signal generation.
 
-Each function computes one of the 7 signal components:
+Each function computes one of the signal components:
 - Sentiment momentum: exponentially weighted sentiment, half-life 6h
 - Sentiment volume: unique event count vs baseline, signed by net sentiment
 - Price momentum: 5-day price change, tanh-scaled
 - Volume anomaly: trading volume vs 20-day avg, signed by price direction
-- RSI score: 14-period RSI mapped to oversold(+)/overbought(-) score
-- Trend score: SMA crossover + MACD histogram combined
+- RSI score: 14-period RSI mapped to oversold(+)/overbought(-) score (regime only)
+- Trend score: SMA crossover + MACD histogram combined (regime only)
 - Options score: put/call ratio anomaly + IV skew vs baseline
+- Earnings surprise: EPS beat/miss with guidance_change and management_tone modifiers
+- Analyst score: 30-day LLM-extracted rating changes + price-target upside
 """
 
 import math
@@ -36,6 +38,22 @@ PRICE_MOMENTUM_DAYS = 5
 RSI_LOOKBACK_DAYS = 30
 TREND_LOOKBACK_DAYS = 60
 EARNINGS_WINDOW_DAYS = 2  # Score is active up to 2 days after earnings_date
+ANALYST_WINDOW_DAYS = 30
+
+TONE_BOOST = {
+    "confident": 0.10,
+    "cautious": -0.10,
+    "neutral": 0.0,
+}
+
+RATING_WEIGHTS = {
+    "upgrade": 1.0,
+    "initiate": 0.7,
+    "downgrade": -1.0,
+    "reiterate": 0.0,
+    "maintain": 0.0,
+    "none": 0.0,
+}
 
 
 async def calc_sentiment_momentum(
@@ -494,8 +512,9 @@ async def calc_earnings_surprise_score(
     tanh scaling: ±5% surprise → ±0.46, ±10% → ±0.76, ±15%+ → ~±0.91
     Result is bounded to [-1.0, 1.0].
 
-    guidance_change column is NULL in Phase 21b — populated by Phase 21d (LLM extraction).
-    When populated, a +0.2/-0.2 modifier will be added for raised/lowered guidance.
+    LLM modifiers (Phase 21d/21g):
+      guidance_change on EarningsEstimate: raised +0.2, lowered -0.2
+      management_tone on the latest extracted earnings article: confident +0.10, cautious -0.10
     """
     today = now.date() if hasattr(now, "date") else now
 
@@ -516,7 +535,6 @@ async def calc_earnings_surprise_score(
 
     base = math.tanh(float(earnings.surprise_pct) / 5.0)
 
-    # Guidance modifier: populated by LLM phase (21d); 0.0 until then
     guidance_boost = {
         "raised": 0.2,
         "lowered": -0.2,
@@ -524,5 +542,82 @@ async def calc_earnings_surprise_score(
         None: 0.0,
     }.get(earnings.guidance_change, 0.0)
 
-    return max(-1.0, min(1.0, base + guidance_boost))
+    tone_boost = await _management_tone_boost(session, stock_id, now)
+
+    return max(-1.0, min(1.0, base + guidance_boost + tone_boost))
+
+
+async def _management_tone_boost(session: AsyncSession, stock_id: int, now: datetime) -> float:
+    """±0.10 from the most recent LLM-extracted earnings article in the window."""
+    since = now - timedelta(days=EARNINGS_WINDOW_DAYS)
+    result = await session.execute(
+        select(Article.metadata_)
+        .join(ArticleStock, ArticleStock.article_id == Article.id)
+        .where(ArticleStock.stock_id == stock_id)
+        .where(Article.event_category == "earnings")
+        .where(Article.llm_extracted.is_(True))
+        .where(Article.published_at >= since)
+        .order_by(Article.published_at.desc())
+        .limit(1)
+    )
+    meta = result.scalar_one_or_none()
+    if not isinstance(meta, dict):
+        return 0.0
+    return TONE_BOOST.get(meta.get("management_tone"), 0.0)
+
+
+async def calc_analyst_score(session: AsyncSession, stock_id: int, now: datetime) -> float | None:
+    """Gated 30-day analyst score from LLM-extracted rating changes and price targets.
+
+    Returns None when no article in the window has a non-zero rating weight
+    (upgrade / initiate / downgrade), so the composite redistributes that weight.
+    """
+    since = now - timedelta(days=ANALYST_WINDOW_DAYS)
+    result = await session.execute(
+        select(Article.metadata_)
+        .join(ArticleStock, ArticleStock.article_id == Article.id)
+        .where(ArticleStock.stock_id == stock_id)
+        .where(Article.event_category == "analyst_rating")
+        .where(Article.llm_extracted.is_(True))
+        .where(Article.published_at >= since)
+        .where(Article.metadata_.isnot(None))
+        .where(Article.metadata_.op("?")("rating_change"))
+    )
+    rows = result.scalars().all()
+
+    rating_weights: list[float] = []
+    price_targets: list[float] = []
+    for meta in rows:
+        if not isinstance(meta, dict):
+            continue
+        weight = RATING_WEIGHTS.get(meta.get("rating_change"), 0.0)
+        if weight != 0.0:
+            rating_weights.append(weight)
+        raw_target = meta.get("price_target")
+        if raw_target is not None:
+            try:
+                price_targets.append(float(raw_target))
+            except (TypeError, ValueError):
+                pass
+
+    if not rating_weights:
+        return None
+
+    net_rating_score = math.tanh(sum(rating_weights) / 2.0)
+
+    close_result = await session.execute(
+        select(MarketDataDaily.close)
+        .where(MarketDataDaily.stock_id == stock_id)
+        .where(MarketDataDaily.close.isnot(None))
+        .order_by(MarketDataDaily.date.desc())
+        .limit(1)
+    )
+    close_val = close_result.scalar_one_or_none()
+    current_close = float(close_val) if close_val is not None else 0.0
+
+    upside_values = [(pt - current_close) / current_close for pt in price_targets] if current_close > 0 else []
+    if upside_values:
+        upside_score = math.tanh(sum(upside_values) / len(upside_values) * 5.0)
+        return 0.6 * net_rating_score + 0.4 * upside_score
+    return net_rating_score
 

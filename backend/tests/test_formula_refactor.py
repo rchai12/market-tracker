@@ -244,6 +244,7 @@ def _patch_components(**returns):
         "calc_trend_score": None,
         "calc_options_score": None,
         "calc_earnings_surprise_score": None,
+        "calc_analyst_score": None,
         "get_recent_article_count": 2,
     }
     defaults.update(returns)
@@ -367,3 +368,28 @@ class TestComputeCompositeScoreRegime:
         assert result["earnings_score"] == 0.0
         raw = 0.36 * 0.5 + 0.22 * 0.2 + 0.18 * 0.3 + 0.14 * 0.1 + 0.10 * 0.0
         assert abs(result["composite"] - raw) < 1e-9
+
+    def test_analyst_in_window_included_in_composite(self):
+        patches = _patch_components(calc_analyst_score=0.5, calc_rsi_score=None, calc_trend_score=None)
+
+        async def _run():
+            for p in patches:
+                p.start()
+            try:
+                return await _compute_composite_score(AsyncMock(), 1, NOW)
+            finally:
+                for p in patches:
+                    p.stop()
+
+        result = asyncio.run(_run())
+        scale = 0.93
+        raw = (
+            0.40 * scale * 0.5
+            + 0.25 * scale * 0.2
+            + 0.20 * scale * 0.3
+            + 0.15 * scale * 0.1
+            + 0.07 * 0.5
+        )
+        assert result is not None
+        assert abs(result["composite"] - raw) < 1e-9
+        assert result["analyst_score"] == 0.5

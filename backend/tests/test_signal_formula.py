@@ -105,6 +105,53 @@ class TestCombineComponentScores:
         raw = 0.40 * 0.5 + 0.25 * 0.2 + 0.20 * 0.3 + 0.15 * 0.1
         assert abs(result["composite"] - raw) < 1e-9
 
+    def test_analyst_score_included_in_composite(self):
+        result = combine_component_scores(
+            sentiment_momentum=0.5,
+            sentiment_volume=0.2,
+            price_momentum=0.3,
+            volume_anomaly=0.1,
+            rsi_score=None,
+            trend_score=None,
+            analyst_score=0.5,
+            has_options=False,
+        )
+        assert result is not None
+        assert result["analyst_score"] == 0.5
+        scale = 0.93
+        raw = (
+            0.40 * scale * 0.5
+            + 0.25 * scale * 0.2
+            + 0.20 * scale * 0.3
+            + 0.15 * scale * 0.1
+            + 0.07 * 0.5
+        )
+        assert abs(result["composite"] - raw) < 1e-9
+
+    def test_none_analyst_excluded_and_renormalizes(self):
+        result = combine_component_scores(
+            sentiment_momentum=0.5,
+            sentiment_volume=0.2,
+            price_momentum=0.3,
+            volume_anomaly=0.1,
+            rsi_score=None,
+            trend_score=None,
+            analyst_score=None,
+            has_options=False,
+        )
+        assert result is not None
+        assert result["analyst_score"] is None
+        raw = 0.40 * 0.5 + 0.25 * 0.2 + 0.20 * 0.3 + 0.15 * 0.1
+        assert abs(result["composite"] - raw) < 1e-9
+
+    def test_all_three_gated_weights_sum_to_one(self):
+        w = default_weights(has_options=True, has_earnings=True, has_analyst=True)
+        assert w["earnings"] == 0.10
+        assert w["options"] == 0.08
+        assert w["analyst"] == 0.07
+        numeric = sum(v for k, v in w.items() if k != "source")
+        assert abs(numeric - 1.0) < 1e-9
+
     def test_regime_multiplier_applied(self):
         result = combine_component_scores(
             sentiment_momentum=0.5,

@@ -246,6 +246,55 @@ class TestSignalResponseWithSentimentVolume:
         assert resp.sentiment_volume_score is None
 
 
+class TestSignalResponseAnalystScore:
+    def test_analyst_score_present(self):
+        resp = SignalResponse(
+            id=1,
+            stock_id=1,
+            ticker="AAPL",
+            company_name="Apple Inc",
+            direction="bullish",
+            strength="moderate",
+            composite_score=0.45,
+            sentiment_score=0.3,
+            sentiment_volume_score=0.25,
+            price_score=0.2,
+            volume_score=0.1,
+            rsi_score=0.05,
+            trend_score=0.08,
+            article_count=3,
+            reasoning="Test",
+            analyst_score=0.42,
+            generated_at=datetime.now(timezone.utc),
+            window_start=datetime.now(timezone.utc) - timedelta(hours=1),
+            window_end=datetime.now(timezone.utc),
+        )
+        assert resp.analyst_score == 0.42
+
+    def test_analyst_score_defaults_none(self):
+        resp = SignalResponse(
+            id=2,
+            stock_id=1,
+            ticker="MSFT",
+            company_name="Microsoft",
+            direction="neutral",
+            strength="weak",
+            composite_score=0.05,
+            sentiment_score=None,
+            sentiment_volume_score=None,
+            price_score=None,
+            volume_score=None,
+            rsi_score=None,
+            trend_score=None,
+            article_count=0,
+            reasoning=None,
+            generated_at=datetime.now(timezone.utc),
+            window_start=datetime.now(timezone.utc) - timedelta(hours=1),
+            window_end=datetime.now(timezone.utc),
+        )
+        assert resp.analyst_score is None
+
+
 class TestComputeAccuracyDirect:
     """Test the real _compute_accuracy helper from the API module."""
 

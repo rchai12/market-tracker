@@ -229,6 +229,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         ml_confidence=_f(signal.ml_confidence),
         market_regime=signal.market_regime,
         earnings_score=_f(signal.earnings_score),
+        analyst_score=_f(signal.analyst_score),
         retail_sentiment_score=_f(signal.retail_sentiment_score),
         generated_at=signal.generated_at,
         window_start=signal.window_start,

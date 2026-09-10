@@ -9,8 +9,12 @@ const PREDICTIVE_COMPONENTS = [
   { key: "sentiment_volume_score", label: "Sent. Volume" },
   { key: "price_score", label: "Price" },
   { key: "volume_score", label: "Volume" },
+] as const;
+
+const GATED_COMPONENTS = [
   { key: "earnings_score", label: "Earnings" },
   { key: "options_score", label: "Options" },
+  { key: "analyst_score", label: "Analyst Ratings" },
 ] as const;
 
 const REGIME_COMPONENTS = [
@@ -37,7 +41,7 @@ function ComponentBar({
 
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className={`w-20 shrink-0 ${muted ? "text-gray-400 dark:text-gray-500" : "text-gray-600 dark:text-gray-400"}`}>
+      <span className={`w-28 shrink-0 ${muted ? "text-gray-400 dark:text-gray-500" : "text-gray-600 dark:text-gray-400"}`}>
         {label}
       </span>
       <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded-full relative overflow-hidden">
@@ -85,6 +89,19 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
         if (value == null) return null;
         return <ComponentBar key={key} label={label} value={value} />;
       })}
+
+      {GATED_COMPONENTS.some(({ key }) => signal[key] != null) && (
+        <>
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-3 mb-1">
+            Gated
+          </p>
+          {GATED_COMPONENTS.map(({ key, label }) => {
+            const value = signal[key] as number | null;
+            if (value == null) return null;
+            return <ComponentBar key={key} label={label} value={value} />;
+          })}
+        </>
+      )}
 
       {signal.retail_sentiment_score != null && (
         <>
