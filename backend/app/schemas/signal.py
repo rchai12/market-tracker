@@ -65,6 +65,7 @@ class SignalWeightsResponse(BaseModel):
     trend: float
     options: float
     earnings: float
+    analyst: float
     sample_count: int
     accuracy_pct: float | None
     computed_at: datetime | None

@@ -49,6 +49,7 @@ export interface SignalWeights {
   trend: number;
   options: number;
   earnings: number;
+  analyst: number;
   sample_count: number;
   accuracy_pct: number | null;
   computed_at: string | null;

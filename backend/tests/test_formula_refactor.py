@@ -1,7 +1,7 @@
 """Tests for Phase 21c signal formula refactor (regime multiplier, 4-component weights)."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,7 +30,7 @@ from worker.tasks.signals.signal_generator import (
 )
 from worker.tasks.signals.weight_optimizer import _compute_sector_weights, _upsert_weights
 
-NOW = datetime(2026, 8, 31, 16, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 31, 16, 0, tzinfo=UTC)
 
 
 class TestApplyRegimeMultiplier:
@@ -96,9 +96,7 @@ class TestDefaultWeights:
         assert w["rsi"] == 0.0
         assert w["trend"] == 0.0
         assert w["earnings"] == 0.0
-        predictive = (
-            w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"]
-        )
+        predictive = w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"]
         assert abs(predictive - 1.0) < 1e-9
         numeric = sum(v for k, v in w.items() if k != "source")
         assert abs(numeric - 1.0) < 1e-9
@@ -130,38 +128,50 @@ class TestDefaultWeights:
         assert abs(numeric - 1.0) < 1e-9
 
     def test_weight_constants_sum_to_one(self):
-        assert abs(
-            WEIGHT_SENTIMENT_MOMENTUM
-            + WEIGHT_SENTIMENT_VOLUME
-            + WEIGHT_PRICE_MOMENTUM
-            + WEIGHT_VOLUME_ANOMALY
-            - 1.0
-        ) < 1e-9
-        assert abs(
-            WEIGHT_SENTIMENT_MOMENTUM_OPT
-            + WEIGHT_SENTIMENT_VOLUME_OPT
-            + WEIGHT_PRICE_MOMENTUM_OPT
-            + WEIGHT_VOLUME_ANOMALY_OPT
-            + WEIGHT_OPTIONS
-            - 1.0
-        ) < 1e-9
-        assert abs(
-            WEIGHT_SENTIMENT_MOMENTUM_EARN
-            + WEIGHT_SENTIMENT_VOLUME_EARN
-            + WEIGHT_PRICE_MOMENTUM_EARN
-            + WEIGHT_VOLUME_ANOMALY_EARN
-            + WEIGHT_EARNINGS
-            - 1.0
-        ) < 1e-9
-        assert abs(
-            WEIGHT_SENTIMENT_MOMENTUM_BOTH
-            + WEIGHT_SENTIMENT_VOLUME_BOTH
-            + WEIGHT_PRICE_MOMENTUM_BOTH
-            + WEIGHT_VOLUME_ANOMALY_BOTH
-            + WEIGHT_EARNINGS
-            + WEIGHT_OPTIONS
-            - 1.0
-        ) < 1e-9
+        assert (
+            abs(
+                WEIGHT_SENTIMENT_MOMENTUM
+                + WEIGHT_SENTIMENT_VOLUME
+                + WEIGHT_PRICE_MOMENTUM
+                + WEIGHT_VOLUME_ANOMALY
+                - 1.0
+            )
+            < 1e-9
+        )
+        assert (
+            abs(
+                WEIGHT_SENTIMENT_MOMENTUM_OPT
+                + WEIGHT_SENTIMENT_VOLUME_OPT
+                + WEIGHT_PRICE_MOMENTUM_OPT
+                + WEIGHT_VOLUME_ANOMALY_OPT
+                + WEIGHT_OPTIONS
+                - 1.0
+            )
+            < 1e-9
+        )
+        assert (
+            abs(
+                WEIGHT_SENTIMENT_MOMENTUM_EARN
+                + WEIGHT_SENTIMENT_VOLUME_EARN
+                + WEIGHT_PRICE_MOMENTUM_EARN
+                + WEIGHT_VOLUME_ANOMALY_EARN
+                + WEIGHT_EARNINGS
+                - 1.0
+            )
+            < 1e-9
+        )
+        assert (
+            abs(
+                WEIGHT_SENTIMENT_MOMENTUM_BOTH
+                + WEIGHT_SENTIMENT_VOLUME_BOTH
+                + WEIGHT_PRICE_MOMENTUM_BOTH
+                + WEIGHT_VOLUME_ANOMALY_BOTH
+                + WEIGHT_EARNINGS
+                + WEIGHT_OPTIONS
+                - 1.0
+            )
+            < 1e-9
+        )
 
 
 def _score_row(**overrides):
@@ -174,6 +184,7 @@ def _score_row(**overrides):
         is_correct=True,
         price_change_pct=0.05,
         earnings_score=None,
+        analyst_score=None,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -198,6 +209,7 @@ class TestWeightOptimizerComponents:
         assert "rsi" not in result
         assert "trend" not in result
         assert "earnings" in result
+        assert "analyst" in result
         assert "sentiment_momentum" in result
         assert "volume_anomaly" in result
 
@@ -232,6 +244,7 @@ class TestWeightOptimizerComponents:
         assert captured["rsi"] == 0.0
         assert captured["trend"] == 0.0
         assert captured["earnings"] == 0.10
+        assert captured["analyst"] == 0.07
 
 
 def _patch_components(**returns):
@@ -383,13 +396,7 @@ class TestComputeCompositeScoreRegime:
 
         result = asyncio.run(_run())
         scale = 0.93
-        raw = (
-            0.40 * scale * 0.5
-            + 0.25 * scale * 0.2
-            + 0.20 * scale * 0.3
-            + 0.15 * scale * 0.1
-            + 0.07 * 0.5
-        )
+        raw = 0.40 * scale * 0.5 + 0.25 * scale * 0.2 + 0.20 * scale * 0.3 + 0.15 * scale * 0.1 + 0.07 * 0.5
         assert result is not None
         assert abs(result["composite"] - raw) < 1e-9
         assert result["analyst_score"] == 0.5

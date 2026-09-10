@@ -1,6 +1,6 @@
 """Signal accuracy and methodology API endpoints."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -35,7 +35,7 @@ async def get_signal_accuracy(
     db: AsyncSession = Depends(get_db),
 ):
     """Get signal accuracy metrics, optionally filtered by sector."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     query = (
         select(
@@ -74,7 +74,7 @@ async def get_accuracy_trend(
     db: AsyncSession = Depends(get_db),
 ):
     """Get accuracy trend over time in weekly or monthly buckets."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     query = (
         select(
@@ -136,7 +136,7 @@ async def get_accuracy_distribution(
     db: AsyncSession = Depends(get_db),
 ):
     """Get accuracy breakdown by strength and direction."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     query = (
         select(
@@ -191,7 +191,7 @@ async def get_ml_accuracy(
     db: AsyncSession = Depends(get_db),
 ):
     """Get ML signal accuracy metrics for A/B comparison with rule-based."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     query = (
         select(
@@ -223,11 +223,17 @@ async def get_ml_accuracy(
         price_change = float(row.price_change_pct)
         ml_dir = row.direction
         ml_correct = (ml_dir == "bullish" and price_change > 0) or (ml_dir == "bearish" and price_change < 0)
-        ml_rows.append(type("Row", (), {
-            "direction": ml_dir,
-            "is_correct": ml_correct,
-            "price_change_pct": row.price_change_pct,
-        })())
+        ml_rows.append(
+            type(
+                "Row",
+                (),
+                {
+                    "direction": ml_dir,
+                    "is_correct": ml_correct,
+                    "price_change_pct": row.price_change_pct,
+                },
+            )()
+        )
 
     return [_compute_accuracy(ml_rows, scope, window_days)]
 
@@ -241,7 +247,7 @@ async def get_ticker_accuracy(
 ):
     """Get accuracy metrics for a specific ticker across all windows."""
     stock = await get_stock_by_ticker(ticker, db)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     results = []
     for window in [1, 3, 5]:
@@ -290,6 +296,7 @@ async def get_signal_weights(
             trend=float(w.trend),
             options=float(w.options),
             earnings=float(w.earnings) if w.earnings is not None else 0.10,
+            analyst=float(w.analyst) if w.analyst is not None else 0.07,
             sample_count=w.sample_count,
             accuracy_pct=float(w.accuracy_pct) if w.accuracy_pct else None,
             computed_at=w.computed_at,
@@ -311,14 +318,10 @@ def _compute_accuracy(rows: list, scope: str, window_days: int) -> SignalAccurac
     bearish_rows = [r for r in rows if r.direction == "bearish"]
 
     bullish_acc = (
-        round(sum(1 for r in bullish_rows if r.is_correct) / len(bullish_rows) * 100, 1)
-        if bullish_rows
-        else None
+        round(sum(1 for r in bullish_rows if r.is_correct) / len(bullish_rows) * 100, 1) if bullish_rows else None
     )
     bearish_acc = (
-        round(sum(1 for r in bearish_rows if r.is_correct) / len(bearish_rows) * 100, 1)
-        if bearish_rows
-        else None
+        round(sum(1 for r in bearish_rows if r.is_correct) / len(bearish_rows) * 100, 1) if bearish_rows else None
     )
 
     return SignalAccuracyResponse(

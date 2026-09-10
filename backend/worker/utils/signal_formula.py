@@ -51,6 +51,17 @@ PREDICTIVE_KEYS = (
 )
 
 
+def classify_regime(rsi_score: float | None, trend_score: float | None) -> str:
+    """Label market regime from RSI/trend only (does not depend on composite sign)."""
+    rsi_val = rsi_score if rsi_score is not None else 0.0
+    trend_val = trend_score if trend_score is not None else 0.0
+    if abs(rsi_val) > 0.4:
+        return "overbought" if rsi_val < 0 else "oversold"
+    if abs(trend_val) > 0.3:
+        return "trending_up" if trend_val > 0 else "trending_down"
+    return "sideways"
+
+
 def apply_regime_multiplier(
     composite: float,
     rsi_score: float | None,
@@ -78,20 +89,19 @@ def apply_regime_multiplier(
     """
     rsi_val = rsi_score if rsi_score is not None else 0.0
     trend_val = trend_score if trend_score is not None else 0.0
+    regime = classify_regime(rsi_score, trend_score)
 
     if abs(rsi_val) > 0.4:
-        regime = "overbought" if rsi_val < 0 else "oversold"
         return composite * 0.85, regime
 
     if abs(trend_val) > 0.3:
         composite_bullish = composite > 0
         trend_bullish = trend_val > 0
-        regime = "trending_up" if trend_bullish else "trending_down"
         if composite_bullish == trend_bullish:
             return composite * 1.15, regime
         return composite * 0.85, regime
 
-    return composite, "sideways"
+    return composite, regime
 
 
 def default_weights(
@@ -216,10 +226,23 @@ def resolve_weights(
     has_earnings: bool = False,
     has_options: bool | None = None,
     has_analyst: bool = False,
+    market_regime: str | None = None,
+    regime_weights_map: dict | None = None,
 ) -> dict:
-    """Look up adaptive weights: sector-specific -> global -> defaults, then gate."""
+    """Look up adaptive weights, then gate inactive components.
+
+    Priority: (sector, regime) → (global, regime) → sector → global → defaults.
+    ``regime_weights_map`` is keyed by ``(sector_id, regime)``.
+    """
     if has_options is None:
         has_options = settings.options_flow_enabled
+    if regime_weights_map and market_regime:
+        sector_regime = (sector_id, market_regime)
+        if sector_id is not None and sector_regime in regime_weights_map:
+            return apply_component_gates(regime_weights_map[sector_regime], has_earnings, has_options, has_analyst)
+        global_regime = (None, market_regime)
+        if global_regime in regime_weights_map:
+            return apply_component_gates(regime_weights_map[global_regime], has_earnings, has_options, has_analyst)
     if weights_map:
         if sector_id is not None and sector_id in weights_map:
             return apply_component_gates(weights_map[sector_id], has_earnings, has_options, has_analyst)
@@ -269,10 +292,7 @@ def combine_component_scores(
     """
     has_sentiment = sentiment_momentum is not None
     has_market = (
-        price_momentum is not None
-        or volume_anomaly is not None
-        or rsi_score is not None
-        or trend_score is not None
+        price_momentum is not None or volume_anomaly is not None or rsi_score is not None or trend_score is not None
     )
     if not has_sentiment and not has_market:
         return None

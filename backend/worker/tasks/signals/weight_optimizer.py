@@ -1,12 +1,16 @@
 """Adaptive weight computation Celery task.
 
-Analyzes historical signal accuracy per sector to compute optimal weights
-for the 4 predictive signal components (+ earnings when present, + options when enabled).
-RSI and trend are regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
+Analyzes historical signal accuracy per sector (and per market regime) to
+compute optimal weights for the predictive components. Votes are weighted by
+``abs(price_change_pct)`` so large moves count more than noise. Analyst is
+tracked alongside earnings/options. RSI and trend are regime-only and always
+stored as 0.0. Runs daily at 4 AM after maintenance.
 """
 
+from __future__ import annotations
+
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -14,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.sector import Sector
 from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
@@ -24,6 +29,8 @@ from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
+REGIMES = ("overbought", "oversold", "trending_up", "trending_down", "sideways")
+
 
 @celery_app.task(
     name="worker.tasks.signals.weight_optimizer.compute_adaptive_weights",
@@ -32,7 +39,7 @@ logger = logging.getLogger(__name__)
     default_retry_delay=120,
 )
 def compute_adaptive_weights(self):
-    """Compute per-sector adaptive weights from evaluated outcomes. Called at 4 AM by beat."""
+    """Compute per-sector and per-regime adaptive weights. Called at 4 AM by beat."""
     if not settings.feedback_enabled:
         return {"skipped": True, "reason": "feedback_disabled"}
     try:
@@ -43,10 +50,11 @@ def compute_adaptive_weights(self):
 
 
 async def _compute_adaptive_weights_async() -> dict:
-    """Compute per-sector adaptive weights based on component-level accuracy."""
-    now = datetime.now(timezone.utc)
+    """Compute per-sector and per-regime adaptive weights from outcomes."""
+    now = datetime.now(UTC)
     lookback_cutoff = now - timedelta(days=settings.feedback_lookback_days)
     sectors_updated = 0
+    regimes_updated = 0
 
     async with async_session() as session:
         result = await session.execute(select(Sector).where(Sector.is_active == True))  # noqa: E712
@@ -64,7 +72,6 @@ async def _compute_adaptive_weights_async() -> dict:
                     f"(accuracy={weights['accuracy_pct']:.1f}%, n={weights['sample_count']})"
                 )
 
-        # Global fallback (sector_id = NULL)
         global_weights = await _compute_sector_weights(session, None, lookback_cutoff)
         if global_weights:
             await _upsert_weights(session, None, global_weights)
@@ -73,22 +80,50 @@ async def _compute_adaptive_weights_async() -> dict:
                 f"n={global_weights['sample_count']}"
             )
 
+        sector_ids = [sector.id for sector in sectors] + [None]
+        regimes_updated = await _compute_regime_weights(session, sector_ids, lookback_cutoff)
+
         await session.commit()
 
-    logger.info(f"Adaptive weight computation complete: {sectors_updated} sectors updated")
-    return {"sectors_updated": sectors_updated}
+    logger.info(
+        "Adaptive weight computation complete: %s sectors, %s regime pairs updated",
+        sectors_updated,
+        regimes_updated,
+    )
+    return {"sectors_updated": sectors_updated, "regimes_updated": regimes_updated}
+
+
+async def _compute_regime_weights(
+    session: AsyncSession,
+    sector_ids: list[int | None],
+    cutoff: datetime,
+) -> int:
+    """Learn weights per (sector_id, regime) when that pair has enough samples."""
+    updated = 0
+    for sector_id in sector_ids:
+        for regime in REGIMES:
+            weights = await _compute_sector_weights(session, sector_id, cutoff, regime=regime)
+            if not weights:
+                continue
+            await _upsert_regime_weights(session, sector_id, regime, weights)
+            updated += 1
+            logger.info(
+                "Updated regime weights sector=%s regime=%s n=%s accuracy=%.1f%%",
+                sector_id,
+                regime,
+                weights["sample_count"],
+                weights["accuracy_pct"],
+            )
+    return updated
 
 
 async def _compute_sector_weights(
     session: AsyncSession,
     sector_id: int | None,
     cutoff: datetime,
+    regime: str | None = None,
 ) -> dict | None:
-    """Compute adaptive weights for a sector based on component accuracy.
-
-    For each evaluated signal, check if each component's sign aligned with
-    the actual price direction. Higher component accuracy → higher weight.
-    """
+    """Compute adaptive weights from 5-day outcomes, optionally filtered by regime."""
     query = (
         select(
             Signal.sentiment_score,
@@ -96,7 +131,9 @@ async def _compute_sector_weights(
             Signal.volume_score,
             Signal.options_score,
             Signal.earnings_score,
+            Signal.analyst_score,
             Signal.direction,
+            Signal.market_regime,
             SignalOutcome.is_correct,
             SignalOutcome.price_change_pct,
         )
@@ -109,69 +146,71 @@ async def _compute_sector_weights(
 
     if sector_id is not None:
         query = query.where(Stock.sector_id == sector_id)
+    if regime is not None:
+        query = query.where(Signal.market_regime == regime)
 
     result = await session.execute(query)
-    rows = result.all()
+    return _weights_from_rows(result.all())
 
+
+def _weights_from_rows(rows: list) -> dict | None:
+    """Return-weighted component accuracies → clamped, normalized weights.
+
+    Each signal votes with ``abs(price_change_pct)`` so a correct 5% move
+    outweighs a correct 0.1% move. Returns None below ``feedback_min_samples``.
+    """
     if len(rows) < settings.feedback_min_samples:
         return None
 
-    components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "earnings"]
+    components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "earnings", "analyst"]
     if settings.options_flow_enabled:
         components.append("options")
-    component_correct = {k: 0 for k in components}
-    component_total = {k: 0 for k in components}
+    component_correct = {k: 0.0 for k in components}
+    component_total = {k: 0.0 for k in components}
     total_correct = 0
 
     for row in rows:
-        actual_dir = 1.0 if float(row.price_change_pct) > 0 else -1.0
+        pct = float(row.price_change_pct) if row.price_change_pct is not None else 0.0
+        magnitude = abs(pct)
+        actual_dir = 1.0 if pct > 0 else -1.0
 
-        # Sentiment momentum (stored as sentiment_score)
-        if row.sentiment_score is not None:
-            if (1.0 if float(row.sentiment_score) > 0 else -1.0) == actual_dir:
-                component_correct["sentiment_momentum"] += 1
-            component_total["sentiment_momentum"] += 1
+        _credit(component_correct, component_total, "sentiment_momentum", row.sentiment_score, actual_dir, magnitude)
+        _credit(component_correct, component_total, "price_momentum", row.price_score, actual_dir, magnitude)
+        _credit(component_correct, component_total, "volume_anomaly", row.volume_score, actual_dir, magnitude)
+        _credit(
+            component_correct,
+            component_total,
+            "earnings",
+            row.earnings_score,
+            actual_dir,
+            magnitude,
+            min_abs=0.01,
+        )
+        _credit(
+            component_correct,
+            component_total,
+            "analyst",
+            row.analyst_score,
+            actual_dir,
+            magnitude,
+            min_abs=0.01,
+        )
+        if settings.options_flow_enabled:
+            _credit(component_correct, component_total, "options", row.options_score, actual_dir, magnitude)
 
-        # Price momentum (stored as price_score)
-        if row.price_score is not None:
-            if (1.0 if float(row.price_score) > 0 else -1.0) == actual_dir:
-                component_correct["price_momentum"] += 1
-            component_total["price_momentum"] += 1
-
-        # Volume anomaly (stored as volume_score)
-        if row.volume_score is not None:
-            if (1.0 if float(row.volume_score) > 0 else -1.0) == actual_dir:
-                component_correct["volume_anomaly"] += 1
-            component_total["volume_anomaly"] += 1
-
-        # Earnings surprise
-        if row.earnings_score is not None and abs(float(row.earnings_score)) > 0.01:
-            if (1.0 if float(row.earnings_score) > 0 else -1.0) == actual_dir:
-                component_correct["earnings"] += 1
-            component_total["earnings"] += 1
-
-        # Options score
-        if settings.options_flow_enabled and row.options_score is not None:
-            if (1.0 if float(row.options_score) > 0 else -1.0) == actual_dir:
-                component_correct["options"] += 1
-            component_total["options"] += 1
-
-        # Sentiment volume not stored separately — use overall correctness as proxy
-        component_correct["sentiment_volume"] += 1 if row.is_correct else 0
-        component_total["sentiment_volume"] += 1
+        component_correct["sentiment_volume"] += magnitude if row.is_correct else 0.0
+        component_total["sentiment_volume"] += magnitude
 
         if row.is_correct:
             total_correct += 1
 
-    # Compute accuracy ratios
     accuracies = {}
     for key in component_correct:
         if component_total[key] > 0:
             accuracies[key] = component_correct[key] / component_total[key]
         else:
-            accuracies[key] = 0.5  # neutral prior
+            accuracies[key] = 0.5
 
-    # Normalize to weights summing to 1.0
     raw_weights = {k: max(v, 0.01) for k, v in accuracies.items()}
     total_raw = sum(raw_weights.values())
     normalized = {k: v / total_raw for k, v in raw_weights.items()}
@@ -186,12 +225,32 @@ async def _compute_sector_weights(
         "price_momentum": round(clamped["price_momentum"], 4),
         "volume_anomaly": round(clamped["volume_anomaly"], 4),
         "earnings": round(clamped.get("earnings", 0.10), 4),
+        "analyst": round(clamped.get("analyst", 0.07), 4),
         "sample_count": len(rows),
         "accuracy_pct": round(overall_accuracy, 2),
     }
     if settings.options_flow_enabled:
         result_weights["options"] = round(clamped.get("options", 0.08), 4)
     return result_weights
+
+
+def _credit(
+    component_correct: dict[str, float],
+    component_total: dict[str, float],
+    key: str,
+    score: float | None,
+    actual_dir: float,
+    magnitude: float,
+    min_abs: float = 0.0,
+) -> None:
+    if score is None:
+        return
+    val = float(score)
+    if min_abs and abs(val) <= min_abs:
+        return
+    sign_matches = (1.0 if val > 0 else -1.0) == actual_dir
+    component_correct[key] += magnitude if sign_matches else 0.0
+    component_total[key] += magnitude
 
 
 def clamp_weights(weights: dict[str, float], min_w: float, max_w: float) -> dict[str, float]:
@@ -217,11 +276,9 @@ def clamp_weights(weights: dict[str, float], min_w: float, max_w: float) -> dict
                 free_keys.append(k)
 
         if not free_keys:
-            # All keys hit bounds — distribute deficit/surplus evenly while respecting bounds
             total = sum(clamped.values())
             if abs(total - 1.0) < 1e-9:
                 return clamped
-            # Redistribute: give each key an equal share of the gap
             gap = 1.0 - total
             per_key = gap / len(clamped)
             for k in clamped:
@@ -246,23 +303,44 @@ def clamp_weights(weights: dict[str, float], min_w: float, max_w: float) -> dict
     return result
 
 
-async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights: dict) -> None:
-    """Insert or update weights for a sector."""
-    values = {
-        "sector_id": sector_id,
+def _weight_values(weights: dict) -> dict:
+    return {
         "sentiment_momentum": weights["sentiment_momentum"],
         "sentiment_volume": weights["sentiment_volume"],
         "price_momentum": weights["price_momentum"],
         "volume_anomaly": weights["volume_anomaly"],
-        "rsi": 0.0,  # regime only; always zero
-        "trend": 0.0,  # regime only; always zero
+        "rsi": 0.0,
+        "trend": 0.0,
         "options": weights.get("options", 0.08),
         "earnings": weights.get("earnings", 0.10),
+        "analyst": weights.get("analyst", 0.07),
         "sample_count": weights["sample_count"],
         "accuracy_pct": weights["accuracy_pct"],
-        "computed_at": datetime.now(timezone.utc),
+        "computed_at": datetime.now(UTC),
     }
+
+
+async def _upsert_weights(session: AsyncSession, sector_id: int | None, weights: dict) -> None:
+    """Insert or update sector-level weights."""
+    values = {"sector_id": sector_id, **_weight_values(weights)}
     stmt = pg_insert(SignalWeight).values(**values)
     update_set = {k: getattr(stmt.excluded, k) for k in values if k != "sector_id"}
     stmt = stmt.on_conflict_on_constraint("signal_weights_sector_id_key").do_update(set_=update_set)
+    await session.execute(stmt)
+
+
+async def _upsert_regime_weights(
+    session: AsyncSession,
+    sector_id: int | None,
+    regime: str,
+    weights: dict,
+) -> None:
+    """Insert or update (sector, regime) weights."""
+    values = {"sector_id": sector_id, "regime": regime, **_weight_values(weights)}
+    stmt = pg_insert(RegimeAdaptiveWeight).values(**values)
+    update_set = {k: getattr(stmt.excluded, k) for k in values if k not in ("sector_id", "regime")}
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_regime_adaptive_weights_sector_regime",
+        set_=update_set,
+    )
     await session.execute(stmt)

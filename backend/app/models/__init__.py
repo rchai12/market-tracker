@@ -14,6 +14,7 @@ from app.models.paper_portfolio import (
     PaperPosition,
     PaperTrade,
 )
+from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.scrape_log import ScrapeLog
 from app.models.sector import Sector
 from app.models.sentiment import SentimentScore
@@ -44,6 +45,7 @@ __all__ = [
     "PaperPortfolioSnapshot",
     "PaperPosition",
     "PaperTrade",
+    "RegimeAdaptiveWeight",
     "ScrapeLog",
     "Sector",
     "SentimentScore",

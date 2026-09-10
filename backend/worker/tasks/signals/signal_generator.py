@@ -15,13 +15,14 @@ the stock is technically extended or trend opposes the signal).
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.signal import Signal
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
@@ -64,6 +65,7 @@ from worker.utils.signal_formula import (
     WEIGHT_VOLUME_ANOMALY_OPT,
     apply_regime_multiplier,
     classify_direction,
+    classify_regime,
     classify_strength,
     combine_component_scores,
     default_weights,
@@ -93,10 +95,21 @@ def _get_weights(
     has_earnings: bool = False,
     has_options: bool | None = None,
     has_analyst: bool = False,
+    market_regime: str | None = None,
+    regime_weights_map: dict | None = None,
 ) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
-    return resolve_weights(weights_map, sector_id, has_earnings, has_options, has_analyst=has_analyst)
+    return resolve_weights(
+        weights_map,
+        sector_id,
+        has_earnings,
+        has_options,
+        has_analyst=has_analyst,
+        market_regime=market_regime,
+        regime_weights_map=regime_weights_map,
+    )
+
 
 __all__ = [
     "MODERATE_THRESHOLD",
@@ -147,7 +160,7 @@ def generate_all_signals(self):
 
 async def _generate_signals_async() -> dict:
     """Iterate active stocks, compute scores, store signals."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_end = now
     window_start = now - timedelta(hours=1)
 
@@ -168,6 +181,7 @@ async def _generate_signals_async() -> dict:
 
         # Pre-load adaptive weights (sector_id -> weights dict)
         weights_map = await _load_all_weights(session)
+        regime_weights_map = await _load_regime_weights(session)
 
         # Pre-load ML models if enabled
         ml_models_map = await _load_ml_models(session) if settings.ml_ensemble_enabled else {}
@@ -176,7 +190,9 @@ async def _generate_signals_async() -> dict:
 
         for stock in stocks:
             try:
-                score_data = await _compute_composite_score(session, stock.id, now, weights_map, stock.sector_id)
+                score_data = await _compute_composite_score(
+                    session, stock.id, now, weights_map, stock.sector_id, regime_weights_map
+                )
 
                 if score_data is None:
                     continue
@@ -187,10 +203,7 @@ async def _generate_signals_async() -> dict:
 
                 # ── Dedup: skip if previous signal is materially identical ──
                 last_result = await session.execute(
-                    select(Signal)
-                    .where(Signal.stock_id == stock.id)
-                    .order_by(Signal.generated_at.desc())
-                    .limit(1)
+                    select(Signal).where(Signal.stock_id == stock.id).order_by(Signal.generated_at.desc()).limit(1)
                 )
                 last_signal = last_result.scalars().first()
 
@@ -202,14 +215,12 @@ async def _generate_signals_async() -> dict:
                     skipped += 1
                     continue
 
-                reasoning = _build_reasoning(
-                    stock.ticker, score_data, direction, strength
-                )
+                reasoning = _build_reasoning(stock.ticker, score_data, direction, strength)
 
                 # ML ensemble inference (if enabled and model available)
-                ml_result = _compute_ml_score(
-                    score_data, ml_models_map, stock.sector_id, direction
-                ) if ml_models_map else None
+                ml_result = (
+                    _compute_ml_score(score_data, ml_models_map, stock.sector_id, direction) if ml_models_map else None
+                )
 
                 retail_sentiment = await calc_retail_sentiment_score(session, stock.id, now)
 
@@ -283,6 +294,7 @@ async def _compute_composite_score(
     now: datetime,
     weights_map: dict | None = None,
     sector_id: int | None = None,
+    regime_weights_map: dict | None = None,
 ) -> dict | None:
     """Compute all components and the weighted composite for a stock.
 
@@ -305,7 +317,12 @@ async def _compute_composite_score(
     has_earnings = earnings is not None
     has_analyst = analyst is not None
     w = _get_weights(
-        weights_map, sector_id, has_earnings=has_earnings, has_analyst=has_analyst
+        weights_map,
+        sector_id,
+        has_earnings=has_earnings,
+        has_analyst=has_analyst,
+        market_regime=classify_regime(rsi, trend),
+        regime_weights_map=regime_weights_map,
     )
 
     return combine_component_scores(
@@ -345,16 +362,40 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "trend": 0.0,  # regime only — zero weight in composite
             "options": float(row.options),
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
-            "analyst": 0.0,  # optimizer does not track analyst yet; gate injects default
+            "analyst": float(row.analyst) if row.analyst is not None else 0.0,
             "source": "sector" if row.sector_id else "global",
         }
         weights_map[row.sector_id] = w
     return weights_map
 
 
-def _build_reasoning(
-    ticker: str, score_data: dict, direction: str, strength: str
-) -> str:
+async def _load_regime_weights(session: AsyncSession) -> dict:
+    """Pre-load (sector_id, regime) -> weights for resolve_weights fallback chain."""
+    if not settings.feedback_enabled:
+        return {}
+
+    result = await session.execute(
+        select(RegimeAdaptiveWeight).where(RegimeAdaptiveWeight.sample_count >= settings.feedback_min_samples)
+    )
+    rows = result.scalars().all()
+    regime_map: dict = {}
+    for row in rows:
+        regime_map[(row.sector_id, row.regime)] = {
+            "sentiment_momentum": float(row.sentiment_momentum),
+            "sentiment_volume": float(row.sentiment_volume),
+            "price_momentum": float(row.price_momentum),
+            "volume_anomaly": float(row.volume_anomaly),
+            "rsi": 0.0,
+            "trend": 0.0,
+            "options": float(row.options),
+            "earnings": float(row.earnings) if row.earnings is not None else 0.0,
+            "analyst": float(row.analyst) if row.analyst is not None else 0.0,
+            "source": "regime",
+        }
+    return regime_map
+
+
+def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: str) -> str:
     """Generate human-readable reasoning string for the signal."""
     parts = [f"{ticker}: {strength} {direction} signal (score: {score_data['composite']:.3f})"]
 

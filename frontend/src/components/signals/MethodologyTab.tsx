@@ -62,8 +62,10 @@ export default function MethodologyTab() {
           Adaptive Weights by Sector
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          The system learns optimal weights per sector from signal outcome feedback.
-          Weights that deviate from defaults are highlighted.
+          The system learns optimal weights per sector from signal outcome feedback,
+          weighting each vote by the size of the subsequent price move. When a
+          (sector, regime) pair has enough samples, those regime-specific weights
+          take priority. Weights that deviate from defaults are highlighted.
         </p>
         <WeightsTable />
       </Card>
