@@ -8,6 +8,12 @@ from app.models.earnings_estimate import EarningsEstimate
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
 from app.models.ml_model import MLModel
 from app.models.options_activity import OptionsActivity
+from app.models.paper_portfolio import (
+    PaperPortfolio,
+    PaperPortfolioSnapshot,
+    PaperPosition,
+    PaperTrade,
+)
 from app.models.scrape_log import ScrapeLog
 from app.models.sector import Sector
 from app.models.sentiment import SentimentScore
@@ -34,6 +40,10 @@ __all__ = [
     "MarketDataIntraday",
     "MLModel",
     "OptionsActivity",
+    "PaperPortfolio",
+    "PaperPortfolioSnapshot",
+    "PaperPosition",
+    "PaperTrade",
     "ScrapeLog",
     "Sector",
     "SentimentScore",

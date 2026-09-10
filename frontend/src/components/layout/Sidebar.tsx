@@ -6,6 +6,7 @@ import { useAuthStore } from "../../store/authStore";
 const navItems = [
   { to: "/", label: "Dashboard", icon: "grid" },
   { to: "/signals", label: "Signals", icon: "zap" },
+  { to: "/portfolio", label: "Portfolio", icon: "briefcase" },
   { to: "/backtest", label: "Backtest", icon: "rewind" },
   { to: "/sentiment", label: "Sentiment", icon: "activity" },
   { to: "/watchlist", label: "Watchlist", icon: "star" },

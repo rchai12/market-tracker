@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const SignalsPage = lazy(() => import("./pages/SignalsPage"));
+const PortfolioPage = lazy(() => import("./pages/PortfolioPage"));
 const SentimentPage = lazy(() => import("./pages/SentimentPage"));
 const WatchlistPage = lazy(() => import("./pages/WatchlistPage"));
 const AlertsPage = lazy(() => import("./pages/AlertsPage"));
@@ -66,6 +67,14 @@ function App() {
           element={
             <Suspense fallback={<PageFallback />}>
               <SignalsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/portfolio"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <PortfolioPage />
             </Suspense>
           }
         />

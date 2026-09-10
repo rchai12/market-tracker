@@ -125,6 +125,16 @@ class Settings(BaseSettings):
     llm_max_article_chars: int = 1500  # character limit sent to LLM (cost control)
     llm_rate_limit_seconds: float = 1.0  # delay between API calls
 
+    # Paper portfolio (live simulated book)
+    paper_portfolio_enabled: bool = False
+    paper_portfolio_starting_capital: float = 100_000.0
+    paper_portfolio_position_size_pct: float = 0.10
+    paper_portfolio_max_positions: int = 10
+    paper_portfolio_max_per_sector: int = 3
+    paper_portfolio_stop_loss_pct: float = 0.08
+    paper_portfolio_take_profit_pct: float = 0.20
+    paper_portfolio_min_strength: str = "moderate"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",")]

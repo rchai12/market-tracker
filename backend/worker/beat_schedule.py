@@ -47,6 +47,12 @@ beat_schedule = {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",
         "schedule": crontab(minute=30),
     },
+    # Paper portfolio update (after signal generation at :30; weekdays gated in-task)
+    "update-paper-portfolio": {
+        "task": "worker.tasks.signals.paper_portfolio_task.update_paper_portfolio",
+        "schedule": crontab(minute=35),
+        "options": {"queue": "signals"},
+    },
     # Refresh materialized views - runs at :35 (after signal generation at :30)
     "refresh-matviews": {
         "task": "worker.tasks.maintenance.refresh_materialized_views",
@@ -71,5 +77,11 @@ beat_schedule = {
     "train-ml-models": {
         "task": "worker.tasks.signals.ml_trainer_task.train_ml_models",
         "schedule": crontab(hour=4, minute=30),
+    },
+    # Daily paper-portfolio snapshot (after US market close + data lag)
+    "snapshot-paper-portfolio": {
+        "task": "worker.tasks.signals.paper_portfolio_task.snapshot_paper_portfolio",
+        "schedule": crontab(hour=21, minute=30),
+        "options": {"queue": "signals"},
     },
 }

@@ -8,6 +8,7 @@ from app.api.articles import router as articles_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.market_data import router as market_data_router
+from app.api.portfolio import router as portfolio_router
 from app.api.sentiment import router as sentiment_router
 from app.api.signal_accuracy import router as signal_accuracy_router
 from app.api.signals import router as signals_router
@@ -26,6 +27,7 @@ router.include_router(articles_router)
 router.include_router(sentiment_router)
 router.include_router(signal_accuracy_router)
 router.include_router(signals_router)
+router.include_router(portfolio_router)
 router.include_router(alerts_router)
 router.include_router(backtests_router)
 router.include_router(admin_router)

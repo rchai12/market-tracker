@@ -30,3 +30,11 @@ export type {
   BacktestTrade,
   BacktestDetail,
 } from "./backtest";
+export type {
+  PortfolioSummary,
+  PortfolioPosition,
+  PortfolioTrade,
+  PortfolioSnapshot,
+  PortfolioPerformance,
+  PortfolioStats,
+} from "./portfolio";
