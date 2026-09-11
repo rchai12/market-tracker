@@ -342,6 +342,7 @@ def _compute_components(
         trend_score=trend,
         options_score=None,
         earnings_score=None,
+        has_ml=False,
         weights=weights,
         has_options=False,
         article_count=0,

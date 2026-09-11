@@ -227,6 +227,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         ml_score=_f(signal.ml_score),
         ml_direction=signal.ml_direction,
         ml_confidence=_f(signal.ml_confidence),
+        has_ml=bool(getattr(signal, "has_ml", False)),
         market_regime=signal.market_regime,
         earnings_score=_f(signal.earnings_score),
         analyst_score=_f(signal.analyst_score),

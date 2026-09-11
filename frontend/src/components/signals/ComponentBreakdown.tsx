@@ -90,7 +90,8 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
         return <ComponentBar key={key} label={label} value={value} />;
       })}
 
-      {GATED_COMPONENTS.some(({ key }) => signal[key] != null) && (
+      {(GATED_COMPONENTS.some(({ key }) => signal[key] != null) ||
+        (signal.has_ml && signal.ml_score != null)) && (
         <>
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-3 mb-1">
             Gated
@@ -100,6 +101,9 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
             if (value == null) return null;
             return <ComponentBar key={key} label={label} value={value} />;
           })}
+          {signal.has_ml && signal.ml_score != null && (
+            <ComponentBar label="ML Ensemble" value={signal.ml_score} />
+          )}
         </>
       )}
 
@@ -125,7 +129,7 @@ export default function ComponentBreakdown({ signal }: ComponentBreakdownProps) 
         </>
       )}
 
-      {signal.ml_score != null && (() => {
+      {signal.ml_score != null && !signal.has_ml && (() => {
         const value = signal.ml_score;
         const pct = Math.abs(value) * 100;
         const isPositive = value >= 0;

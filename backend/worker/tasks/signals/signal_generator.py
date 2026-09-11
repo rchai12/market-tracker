@@ -8,6 +8,7 @@ Computes composite signal scores for all active stocks by combining:
 - Earnings surprise (10%): EPS beat/miss vs consensus, active only within 48h of report
 - Options (8%): put/call ratio anomaly + IV skew vs baseline (when enabled)
 - Analyst ratings (7%): 30-day LLM-extracted upgrades/downgrades + price-target upside
+- ML ensemble (8%): LightGBM score, gated when the model meets accuracy/sample floors
 
 RSI and trend are not additive components. They classify market regime and apply
 a confidence multiplier to the composite (boost when trend confirms, dampen when
@@ -46,6 +47,7 @@ from worker.utils.signal_formula import (
     STRONG_THRESHOLD,
     WEIGHT_ANALYST,
     WEIGHT_EARNINGS,
+    WEIGHT_ML,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
     WEIGHT_PRICE_MOMENTUM_BOTH,
@@ -69,6 +71,7 @@ from worker.utils.signal_formula import (
     classify_strength,
     combine_component_scores,
     default_weights,
+    ml_model_qualifies,
     resolve_weights,
 )
 
@@ -83,10 +86,13 @@ def _default_weights(
     has_options: bool | None = None,
     has_earnings: bool = False,
     has_analyst: bool = False,
+    has_ml: bool = False,
 ) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
-    return default_weights(has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst)
+    return default_weights(
+        has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst, has_ml=has_ml
+    )
 
 
 def _get_weights(
@@ -95,6 +101,7 @@ def _get_weights(
     has_earnings: bool = False,
     has_options: bool | None = None,
     has_analyst: bool = False,
+    has_ml: bool = False,
     market_regime: str | None = None,
     regime_weights_map: dict | None = None,
 ) -> dict:
@@ -106,6 +113,7 @@ def _get_weights(
         has_earnings,
         has_options,
         has_analyst=has_analyst,
+        has_ml=has_ml,
         market_regime=market_regime,
         regime_weights_map=regime_weights_map,
     )
@@ -117,6 +125,7 @@ __all__ = [
     "STRONG_THRESHOLD",
     "WEIGHT_ANALYST",
     "WEIGHT_EARNINGS",
+    "WEIGHT_ML",
     "WEIGHT_OPTIONS",
     "WEIGHT_PRICE_MOMENTUM",
     "WEIGHT_PRICE_MOMENTUM_BOTH",
@@ -197,6 +206,26 @@ async def _generate_signals_async() -> dict:
                 if score_data is None:
                     continue
 
+                # First-pass direction signs ML inference; promotion may recombine.
+                first_direction = classify_direction(score_data["composite"])
+                ml_model = _resolve_ml_model(ml_models_map, stock.sector_id) if ml_models_map else None
+                ml_result = (
+                    _compute_ml_score(score_data, ml_model, first_direction) if ml_model is not None else None
+                )
+                has_ml = (
+                    ml_result is not None
+                    and ml_model is not None
+                    and ml_model_qualifies(ml_model.validation_accuracy, ml_model.training_samples)
+                )
+                if has_ml:
+                    promoted = _recombine_with_ml(
+                        score_data, weights_map, stock.sector_id, regime_weights_map, ml_result.ml_score
+                    )
+                    if promoted is not None:
+                        score_data = promoted
+                    else:
+                        has_ml = False
+
                 composite = score_data["composite"]
                 direction = classify_direction(composite)
                 strength = classify_strength(composite)
@@ -215,12 +244,7 @@ async def _generate_signals_async() -> dict:
                     skipped += 1
                     continue
 
-                reasoning = _build_reasoning(stock.ticker, score_data, direction, strength)
-
-                # ML ensemble inference (if enabled and model available)
-                ml_result = (
-                    _compute_ml_score(score_data, ml_models_map, stock.sector_id, direction) if ml_models_map else None
-                )
+                reasoning = _build_reasoning(stock.ticker, score_data, direction, strength, has_ml=has_ml)
 
                 retail_sentiment = await calc_retail_sentiment_score(session, stock.id, now)
 
@@ -244,6 +268,7 @@ async def _generate_signals_async() -> dict:
                     ml_score=round(ml_result.ml_score, 5) if ml_result else None,
                     ml_direction=ml_result.ml_direction if ml_result else None,
                     ml_confidence=round(ml_result.ml_confidence, 4) if ml_result else None,
+                    has_ml=has_ml,
                     retail_sentiment_score=round(retail_sentiment, 5) if retail_sentiment is not None else None,
                     market_regime=score_data.get("market_regime"),
                     earnings_score=round(earn_raw, 5) if earn_raw is not None else None,
@@ -363,6 +388,7 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "options": float(row.options),
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
+            "ml": 0.0,
             "source": "sector" if row.sector_id else "global",
         }
         weights_map[row.sector_id] = w
@@ -390,12 +416,13 @@ async def _load_regime_weights(session: AsyncSession) -> dict:
             "options": float(row.options),
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
+            "ml": 0.0,
             "source": "regime",
         }
     return regime_map
 
 
-def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: str) -> str:
+def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: str, has_ml: bool = False) -> str:
     """Generate human-readable reasoning string for the signal."""
     parts = [f"{ticker}: {strength} {direction} signal (score: {score_data['composite']:.3f})"]
 
@@ -433,6 +460,11 @@ def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: st
         analyst_dir = "bullish" if analyst_val > 0 else "bearish"
         parts.append(f"Analyst ratings are {analyst_dir} ({analyst_val:.3f})")
 
+    ml_val = score_data.get("ml_score")
+    if has_ml and ml_val is not None and abs(ml_val) > 0.2:
+        ml_dir = "bullish" if ml_val > 0 else "bearish"
+        parts.append(f"ML ensemble is {ml_dir} ({ml_val:.3f})")
+
     regime = score_data.get("market_regime", "sideways")
     if regime not in ("sideways", None):
         regime_display = regime.replace("_", " ")
@@ -442,27 +474,26 @@ def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: st
 
 
 async def _load_ml_models(session: AsyncSession) -> dict:
-    """Load active ML model metadata into sector_id -> model_path dict."""
+    """Load active ML model rows into a sector_id -> MLModel dict."""
     from app.models.ml_model import MLModel
 
     result = await session.execute(
         select(MLModel).where(MLModel.is_active == True)  # noqa: E712
     )
     rows = result.scalars().all()
-    return {row.sector_id: row.model_path for row in rows}
+    return {row.sector_id: row for row in rows}
 
 
-def _compute_ml_score(
-    score_data: dict,
-    ml_models_map: dict,
-    sector_id: int | None,
-    rule_direction: str,
-):
-    """Look up sector or global model, run inference."""
+def _resolve_ml_model(ml_models_map: dict, sector_id: int | None):
+    """Prefer a sector model, then the global (sector_id is None) fallback."""
+    return ml_models_map.get(sector_id) or ml_models_map.get(None)
+
+
+def _compute_ml_score(score_data: dict, ml_model, rule_direction: str):
+    """Run inference against a loaded MLModel row."""
     from worker.utils.ml_trainer import build_feature_vector, predict
 
-    model_path = ml_models_map.get(sector_id) or ml_models_map.get(None)
-    if not model_path:
+    if ml_model is None or not ml_model.model_path:
         return None
 
     # Must match training FEATURE_NAMES (6 components). Do not append options
@@ -470,8 +501,45 @@ def _compute_ml_score(
     features = build_feature_vector(score_data)
 
     return predict(
-        model_path,
+        ml_model.model_path,
         features,
         rule_direction,
         confidence_threshold=settings.ml_confidence_threshold,
+    )
+
+
+def _recombine_with_ml(
+    score_data: dict,
+    weights_map: dict | None,
+    sector_id: int | None,
+    regime_weights_map: dict | None,
+    ml_score: float,
+) -> dict | None:
+    """Re-run the composite with a qualifying ML score in the gated pool."""
+    has_earnings = score_data["earnings_score"] is not None
+    has_analyst = score_data["analyst_score"] is not None
+    w = _get_weights(
+        weights_map,
+        sector_id,
+        has_earnings=has_earnings,
+        has_analyst=has_analyst,
+        has_ml=True,
+        market_regime=score_data.get("market_regime"),
+        regime_weights_map=regime_weights_map,
+    )
+    return combine_component_scores(
+        sentiment_momentum=score_data["sentiment_momentum"],
+        sentiment_volume=score_data["sentiment_volume"],
+        price_momentum=score_data["price_momentum"],
+        volume_anomaly=score_data["volume_anomaly"],
+        rsi_score=score_data["rsi_score"],
+        trend_score=score_data["trend_score"],
+        options_score=score_data["options_score"],
+        earnings_score=score_data["earnings_score"],
+        analyst_score=score_data["analyst_score"],
+        ml_score=ml_score,
+        has_ml=True,
+        weights=w,
+        has_options=settings.options_flow_enabled,
+        article_count=score_data["article_count"],
     )

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,6 +27,7 @@ class Signal(Base):
     ml_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
     ml_direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ml_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    has_ml: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     retail_sentiment_score: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
     market_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
     earnings_score: Mapped[float | None] = mapped_column(Float(), nullable=True)

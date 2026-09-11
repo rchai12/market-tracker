@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     ml_model_dir: str = "/opt/stock-predictor/backend/ml_models"
     ml_retrain_interval_days: int = 7
     ml_confidence_threshold: float = 0.55
+    ml_min_accuracy_for_promotion: float = 0.55  # ratio (0–1); stored model accuracy may be percent
+    ml_min_samples_for_promotion: int = 50
 
     # Options flow
     options_flow_enabled: bool = False

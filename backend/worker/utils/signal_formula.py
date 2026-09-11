@@ -35,6 +35,9 @@ WEIGHT_VOLUME_ANOMALY_BOTH = 0.12
 # Analyst ratings (7% gated; 30-day LLM-extracted window)
 WEIGHT_ANALYST = 0.07
 
+# ML ensemble (8% gated; promoted when model accuracy/samples qualify)
+WEIGHT_ML = 0.08
+
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.35
@@ -48,6 +51,7 @@ PREDICTIVE_KEYS = (
     "earnings",
     "options",
     "analyst",
+    "ml",
 )
 
 
@@ -104,24 +108,50 @@ def apply_regime_multiplier(
     return composite, regime
 
 
+def ml_model_qualifies(
+    accuracy: float | None,
+    sample_count: int | None,
+    *,
+    min_accuracy: float | None = None,
+    min_samples: int | None = None,
+) -> bool:
+    """Return True when a stored LightGBM model may enter the live composite.
+
+    ``validation_accuracy`` is persisted as a percent (e.g. 55.0 = 55%). Callers
+    may also pass a 0–1 ratio. Values ``> 1.0`` are treated as percent.
+    """
+    if accuracy is None or sample_count is None:
+        return False
+    acc = float(accuracy)
+    if acc > 1.0:
+        acc = acc / 100.0
+    min_acc = settings.ml_min_accuracy_for_promotion if min_accuracy is None else min_accuracy
+    min_n = settings.ml_min_samples_for_promotion if min_samples is None else min_samples
+    return acc >= float(min_acc) and int(sample_count) >= int(min_n)
+
+
 def default_weights(
     has_options: bool | None = None,
     has_earnings: bool = False,
     has_analyst: bool = False,
+    has_ml: bool = False,
 ) -> dict:
     """Return default weights for the 4-component base formula.
 
     RSI and trend are 0.0 — they are used only for regime classification.
-    Earnings (10%), options (8%), and analyst (7%) are gated; when any of them
-    is active the four base weights scale down so the full set still sums to 1.0.
+    Earnings (10%), options (8%), analyst (7%), and ML (8%) are gated; when any
+    of them is active the four base weights scale down so the full set still
+    sums to 1.0.
     """
     if has_options is None:
         has_options = settings.options_flow_enabled
 
-    if has_analyst:
+    if has_analyst or has_ml:
         earn_w = WEIGHT_EARNINGS if has_earnings else 0.0
         opt_w = WEIGHT_OPTIONS if has_options else 0.0
-        gated = earn_w + opt_w + WEIGHT_ANALYST
+        analyst_w = WEIGHT_ANALYST if has_analyst else 0.0
+        ml_w = WEIGHT_ML if has_ml else 0.0
+        gated = earn_w + opt_w + analyst_w + ml_w
         scale = 1.0 - gated
         return {
             "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM * scale,
@@ -132,7 +162,8 @@ def default_weights(
             "trend": 0.0,
             "earnings": earn_w,
             "options": opt_w,
-            "analyst": WEIGHT_ANALYST,
+            "analyst": analyst_w,
+            "ml": ml_w,
             "source": "default",
         }
 
@@ -147,6 +178,7 @@ def default_weights(
             "earnings": WEIGHT_EARNINGS,
             "options": WEIGHT_OPTIONS,
             "analyst": 0.0,
+            "ml": 0.0,
             "source": "default",
         }
     if has_options:
@@ -160,6 +192,7 @@ def default_weights(
             "earnings": 0.0,
             "options": WEIGHT_OPTIONS,
             "analyst": 0.0,
+            "ml": 0.0,
             "source": "default",
         }
     if has_earnings:
@@ -173,6 +206,7 @@ def default_weights(
             "earnings": WEIGHT_EARNINGS,
             "options": 0.0,
             "analyst": 0.0,
+            "ml": 0.0,
             "source": "default",
         }
     return {
@@ -185,6 +219,7 @@ def default_weights(
         "earnings": 0.0,
         "options": 0.0,
         "analyst": 0.0,
+        "ml": 0.0,
         "source": "default",
     }
 
@@ -194,12 +229,13 @@ def apply_component_gates(
     has_earnings: bool,
     has_options: bool,
     has_analyst: bool = False,
+    has_ml: bool = False,
 ) -> dict:
     """Zero inactive gated components and renormalize predictive weights to 1.0.
 
     Copies the input so cached adaptive-weight maps are never mutated in place.
-    RSI/trend stay 0.0 (regime context only). Analyst uses the default 7% until
-    the optimizer learns that key.
+    RSI/trend stay 0.0 (regime context only). Analyst/ML use the default gated
+    weights until the optimizer learns those keys.
     """
     w = dict(weights)
     if not has_earnings:
@@ -210,6 +246,10 @@ def apply_component_gates(
         w["analyst"] = 0.0
     elif not w.get("analyst"):
         w["analyst"] = WEIGHT_ANALYST
+    if not has_ml:
+        w["ml"] = 0.0
+    elif not w.get("ml"):
+        w["ml"] = WEIGHT_ML
     w["rsi"] = 0.0
     w["trend"] = 0.0
 
@@ -226,6 +266,7 @@ def resolve_weights(
     has_earnings: bool = False,
     has_options: bool | None = None,
     has_analyst: bool = False,
+    has_ml: bool = False,
     market_regime: str | None = None,
     regime_weights_map: dict | None = None,
 ) -> dict:
@@ -239,16 +280,22 @@ def resolve_weights(
     if regime_weights_map and market_regime:
         sector_regime = (sector_id, market_regime)
         if sector_id is not None and sector_regime in regime_weights_map:
-            return apply_component_gates(regime_weights_map[sector_regime], has_earnings, has_options, has_analyst)
+            return apply_component_gates(
+                regime_weights_map[sector_regime], has_earnings, has_options, has_analyst, has_ml
+            )
         global_regime = (None, market_regime)
         if global_regime in regime_weights_map:
-            return apply_component_gates(regime_weights_map[global_regime], has_earnings, has_options, has_analyst)
+            return apply_component_gates(
+                regime_weights_map[global_regime], has_earnings, has_options, has_analyst, has_ml
+            )
     if weights_map:
         if sector_id is not None and sector_id in weights_map:
-            return apply_component_gates(weights_map[sector_id], has_earnings, has_options, has_analyst)
+            return apply_component_gates(weights_map[sector_id], has_earnings, has_options, has_analyst, has_ml)
         if None in weights_map:
-            return apply_component_gates(weights_map[None], has_earnings, has_options, has_analyst)
-    return default_weights(has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst)
+            return apply_component_gates(weights_map[None], has_earnings, has_options, has_analyst, has_ml)
+    return default_weights(
+        has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst, has_ml=has_ml
+    )
 
 
 def classify_direction(composite: float) -> str:
@@ -279,6 +326,8 @@ def combine_component_scores(
     options_score: float | None = None,
     earnings_score: float | None = None,
     analyst_score: float | None = None,
+    ml_score: float | None = None,
+    has_ml: bool = False,
     weights: dict | None = None,
     has_options: bool | None = None,
     article_count: int = 0,
@@ -289,6 +338,8 @@ def combine_component_scores(
     math (and in the returned dict, matching historical persistence).
     Earnings, options, and analyst preserve None vs 0.0: None means the gate
     is inactive, 0.0 means the component was active and scored exactly zero.
+    ``has_ml`` is never inferred from ``ml_score`` — ML is stored on every
+    inference run but only enters the composite when the model qualifies.
     """
     has_sentiment = sentiment_momentum is not None
     has_market = (
@@ -303,9 +354,11 @@ def combine_component_scores(
         has_options = settings.options_flow_enabled
 
     if weights is None:
-        w = default_weights(has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst)
+        w = default_weights(
+            has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst, has_ml=has_ml
+        )
     else:
-        w = apply_component_gates(weights, has_earnings, has_options, has_analyst)
+        w = apply_component_gates(weights, has_earnings, has_options, has_analyst, has_ml)
 
     sm = sentiment_momentum if sentiment_momentum is not None else 0.0
     sv = sentiment_volume if sentiment_volume is not None else 0.0
@@ -316,6 +369,7 @@ def combine_component_scores(
     opts_val = options_score if options_score is not None else 0.0
     earn_val = earnings_score if earnings_score is not None else 0.0
     analyst_val = analyst_score if analyst_score is not None else 0.0
+    ml_val = ml_score if ml_score is not None else 0.0
 
     raw_composite = (
         w["sentiment_momentum"] * sm
@@ -325,6 +379,7 @@ def combine_component_scores(
         + float(w.get("options", 0.0)) * opts_val
         + float(w.get("earnings", 0.0)) * earn_val
         + float(w.get("analyst", 0.0)) * analyst_val
+        + float(w.get("ml", 0.0)) * ml_val
     )
     composite, market_regime = apply_regime_multiplier(raw_composite, rsi_val, trend_val)
 
@@ -339,6 +394,7 @@ def combine_component_scores(
         "options_score": options_score,
         "earnings_score": earnings_score,
         "analyst_score": analyst_score,
+        "ml_score": ml_score,
         "market_regime": market_regime,
         "article_count": article_count,
         "weights_source": w.get("source", "default"),
