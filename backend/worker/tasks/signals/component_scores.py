@@ -10,6 +10,7 @@ Each function computes one of the signal components:
 - Options score: put/call ratio anomaly + IV skew vs baseline
 - Earnings surprise: EPS beat/miss with guidance_change and management_tone modifiers
 - Analyst score: 30-day LLM-extracted rating changes + price-target upside
+- Insider score: 30-day Form 4 net buying, role-weighted, sells discounted
 """
 
 import math
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.models.article import Article, ArticleStock
 from app.models.earnings_estimate import EarningsEstimate
+from app.models.insider_transaction import InsiderTransaction
 from app.models.market_data import MarketDataDaily
 from app.models.options_activity import OptionsActivity
 from app.models.sentiment import SentimentScore
@@ -39,6 +41,10 @@ RSI_LOOKBACK_DAYS = 30
 TREND_LOOKBACK_DAYS = 60
 EARNINGS_WINDOW_DAYS = 2  # Score is active up to 2 days after earnings_date
 ANALYST_WINDOW_DAYS = 30
+INSIDER_WINDOW_DAYS = 30
+INSIDER_NORMALIZATION = 500_000  # $500K → tanh midpoint ≈ 0.76
+INSIDER_SELL_DISCOUNT = 0.40  # sells counted at 40% (noise discount)
+DEFAULT_ROLE_WEIGHT = 0.8
 
 TONE_BOOST = {
     "confident": 0.10,
@@ -620,4 +626,69 @@ async def calc_analyst_score(session: AsyncSession, stock_id: int, now: datetime
         upside_score = math.tanh(sum(upside_values) / len(upside_values) * 5.0)
         return 0.6 * net_rating_score + 0.4 * upside_score
     return net_rating_score
+
+
+def _insider_role_weight(title: str) -> float:
+    """Substring match on insider title. More specific titles win."""
+    t = (title or "").lower()
+    if "10%" in t or "10 percent" in t or "10-percent" in t:
+        return 1.5
+    if "ceo" in t or "chief executive" in t:
+        return 1.5
+    if "cfo" in t or "chief financial" in t:
+        return 1.5
+    if "coo" in t or "chief operating" in t:
+        return 1.5
+    if "vice president" in t:
+        return 1.0
+    if "president" in t:
+        return 1.5
+    if "director" in t:
+        return 1.2
+    if "evp" in t or "executive vice" in t:
+        return 1.2
+    if "svp" in t or "senior vice" in t:
+        return 1.1
+    if "vp" in t:
+        return 1.0
+    return DEFAULT_ROLE_WEIGHT
+
+
+def score_insider_rows(rows) -> float | None:
+    """Net signed insider buying from P/S rows. None when the window is empty."""
+    if not rows:
+        return None
+    net_value = 0.0
+    for row in rows:
+        role_w = _insider_role_weight(getattr(row, "insider_title", None) or "")
+        val = float(getattr(row, "transaction_value", None) or 0)
+        tx = getattr(row, "transaction_type", None)
+        if tx == "P":
+            net_value += val * role_w
+        elif tx == "S":
+            net_value -= val * role_w * INSIDER_SELL_DISCOUNT
+    return math.tanh(net_value / INSIDER_NORMALIZATION)
+
+
+async def calc_insider_score(session: AsyncSession, stock_id: int, as_of_date: datetime) -> float | None:
+    """Net signed insider buying over INSIDER_WINDOW_DAYS.
+
+    Buys contribute at full role weight, sells at INSIDER_SELL_DISCOUNT.
+    Returns None (gate inactive) when the feature is off or no P/S rows exist.
+    """
+    if not settings.insider_flow_enabled:
+        return None
+
+    as_of = as_of_date.date() if hasattr(as_of_date, "date") else as_of_date
+    cutoff = as_of - timedelta(days=INSIDER_WINDOW_DAYS)
+    result = await session.execute(
+        select(InsiderTransaction)
+        .where(InsiderTransaction.stock_id == stock_id)
+        .where(InsiderTransaction.transaction_date >= cutoff)
+        .where(InsiderTransaction.transaction_date <= as_of)
+        .where(InsiderTransaction.transaction_type.in_(["P", "S"]))
+    )
+    rows = result.scalars().all()
+    return score_insider_rows(rows)
+
 

@@ -84,4 +84,10 @@ beat_schedule = {
         "schedule": crontab(hour=21, minute=30),
         "options": {"queue": "signals"},
     },
+    # Insider Form 4 — daily after US market close
+    "fetch-insider-transactions": {
+        "task": "worker.tasks.scraping.insider_data.fetch_insider_transactions",
+        "schedule": crontab(hour=18, minute=0),
+        "options": {"queue": "scraping"},
+    },
 }

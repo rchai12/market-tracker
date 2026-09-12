@@ -8,6 +8,7 @@ import {
   triggerWeightCompute,
   triggerMLTraining,
   triggerOptionsFetch,
+  triggerInsiderFetch,
   triggerEarningsFetch,
   triggerLlmExtraction,
   triggerBackfillQualityScores,
@@ -127,6 +128,7 @@ export default function AdminPage() {
           <TaskButton label="Evaluate Outcomes" onTrigger={triggerOutcomeEval} />
           <TaskButton label="Compute Weights" onTrigger={triggerWeightCompute} />
           <TaskButton label="Fetch Options Data" onTrigger={triggerOptionsFetch} />
+          <TaskButton label="Fetch Insider Transactions" onTrigger={triggerInsiderFetch} />
           <TaskButton label="Fetch Earnings Data" onTrigger={triggerEarningsFetch} />
           <TaskButton
             label="Run LLM Extraction (Requires LLM_EXTRACTION_ENABLED=true)"

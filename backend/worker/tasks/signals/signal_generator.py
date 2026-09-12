@@ -9,6 +9,7 @@ Computes composite signal scores for all active stocks by combining:
 - Options (8%): put/call ratio anomaly + IV skew vs baseline (when enabled)
 - Analyst ratings (7%): 30-day LLM-extracted upgrades/downgrades + price-target upside
 - ML ensemble (8%): LightGBM score, gated when the model meets accuracy/sample floors
+- Insider trading (8%): 30-day Form 4 net buying, role-weighted, sells discounted
 
 RSI and trend are not additive components. They classify market regime and apply
 a confidence multiplier to the composite (boost when trend confirms, dampen when
@@ -31,6 +32,7 @@ from worker.celery_app import celery_app
 from worker.tasks.signals.component_scores import (
     calc_analyst_score,
     calc_earnings_surprise_score,
+    calc_insider_score,
     calc_options_score,
     calc_price_momentum,
     calc_retail_sentiment_score,
@@ -47,6 +49,7 @@ from worker.utils.signal_formula import (
     STRONG_THRESHOLD,
     WEIGHT_ANALYST,
     WEIGHT_EARNINGS,
+    WEIGHT_INSIDER,
     WEIGHT_ML,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
@@ -87,11 +90,16 @@ def _default_weights(
     has_earnings: bool = False,
     has_analyst: bool = False,
     has_ml: bool = False,
+    has_insider: bool = False,
 ) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
     return default_weights(
-        has_options=has_options, has_earnings=has_earnings, has_analyst=has_analyst, has_ml=has_ml
+        has_options=has_options,
+        has_earnings=has_earnings,
+        has_analyst=has_analyst,
+        has_ml=has_ml,
+        has_insider=has_insider,
     )
 
 
@@ -102,6 +110,7 @@ def _get_weights(
     has_options: bool | None = None,
     has_analyst: bool = False,
     has_ml: bool = False,
+    has_insider: bool = False,
     market_regime: str | None = None,
     regime_weights_map: dict | None = None,
 ) -> dict:
@@ -114,6 +123,7 @@ def _get_weights(
         has_options,
         has_analyst=has_analyst,
         has_ml=has_ml,
+        has_insider=has_insider,
         market_regime=market_regime,
         regime_weights_map=regime_weights_map,
     )
@@ -125,6 +135,7 @@ __all__ = [
     "STRONG_THRESHOLD",
     "WEIGHT_ANALYST",
     "WEIGHT_EARNINGS",
+    "WEIGHT_INSIDER",
     "WEIGHT_ML",
     "WEIGHT_OPTIONS",
     "WEIGHT_PRICE_MOMENTUM",
@@ -251,6 +262,7 @@ async def _generate_signals_async() -> dict:
                 opts_raw = score_data["options_score"]
                 earn_raw = score_data["earnings_score"]
                 analyst_raw = score_data["analyst_score"]
+                insider_raw = score_data.get("insider_score")
                 signal = Signal(
                     stock_id=stock.id,
                     direction=direction,
@@ -273,6 +285,7 @@ async def _generate_signals_async() -> dict:
                     market_regime=score_data.get("market_regime"),
                     earnings_score=round(earn_raw, 5) if earn_raw is not None else None,
                     analyst_score=round(analyst_raw, 5) if analyst_raw is not None else None,
+                    insider_score=round(insider_raw, 5) if insider_raw is not None else None,
                     generated_at=now,
                     window_start=window_start,
                     window_end=window_end,
@@ -336,16 +349,19 @@ async def _compute_composite_score(
     options = await calc_options_score(session, stock_id, now)
     earnings = await calc_earnings_surprise_score(session, stock_id, now)
     analyst = await calc_analyst_score(session, stock_id, now)
+    insider = await calc_insider_score(session, stock_id, now)
 
     article_count = await get_recent_article_count(session, stock_id, now)
 
     has_earnings = earnings is not None
     has_analyst = analyst is not None
+    has_insider = insider is not None
     w = _get_weights(
         weights_map,
         sector_id,
         has_earnings=has_earnings,
         has_analyst=has_analyst,
+        has_insider=has_insider,
         market_regime=classify_regime(rsi, trend),
         regime_weights_map=regime_weights_map,
     )
@@ -360,6 +376,7 @@ async def _compute_composite_score(
         options_score=options,
         earnings_score=earnings,
         analyst_score=analyst,
+        insider_score=insider,
         weights=w,
         has_options=settings.options_flow_enabled,
         article_count=article_count,
@@ -389,6 +406,7 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
             "ml": 0.0,
+            "insider": float(row.insider) if getattr(row, "insider", None) is not None else 0.0,
             "source": "sector" if row.sector_id else "global",
         }
         weights_map[row.sector_id] = w
@@ -417,6 +435,7 @@ async def _load_regime_weights(session: AsyncSession) -> dict:
             "earnings": float(row.earnings) if row.earnings is not None else 0.0,
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
             "ml": 0.0,
+            "insider": float(row.insider) if getattr(row, "insider", None) is not None else 0.0,
             "source": "regime",
         }
     return regime_map
@@ -459,6 +478,11 @@ def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: st
     if analyst_val is not None and abs(analyst_val) > 0.2:
         analyst_dir = "bullish" if analyst_val > 0 else "bearish"
         parts.append(f"Analyst ratings are {analyst_dir} ({analyst_val:.3f})")
+
+    insider_val = score_data.get("insider_score")
+    if insider_val is not None and abs(insider_val) > 0.2:
+        insider_dir = "buying" if insider_val > 0 else "selling"
+        parts.append(f"Insider activity is net {insider_dir} ({insider_val:.3f})")
 
     ml_val = score_data.get("ml_score")
     if has_ml and ml_val is not None and abs(ml_val) > 0.2:
@@ -518,12 +542,14 @@ def _recombine_with_ml(
     """Re-run the composite with a qualifying ML score in the gated pool."""
     has_earnings = score_data["earnings_score"] is not None
     has_analyst = score_data["analyst_score"] is not None
+    has_insider = score_data.get("insider_score") is not None
     w = _get_weights(
         weights_map,
         sector_id,
         has_earnings=has_earnings,
         has_analyst=has_analyst,
         has_ml=True,
+        has_insider=has_insider,
         market_regime=score_data.get("market_regime"),
         regime_weights_map=regime_weights_map,
     )
@@ -539,6 +565,7 @@ def _recombine_with_ml(
         analyst_score=score_data["analyst_score"],
         ml_score=ml_score,
         has_ml=True,
+        insider_score=score_data.get("insider_score"),
         weights=w,
         has_options=settings.options_flow_enabled,
         article_count=score_data["article_count"],

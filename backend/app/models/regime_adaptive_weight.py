@@ -29,6 +29,7 @@ class RegimeAdaptiveWeight(Base):
     earnings: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.10)
     options: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.08)
     analyst: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.07)
+    insider: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.08)
     rsi: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.0)
     trend: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.0)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False)

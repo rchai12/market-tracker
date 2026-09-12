@@ -22,6 +22,7 @@ export interface Signal {
   market_regime: string | null;
   earnings_score: number | null;
   analyst_score: number | null;
+  insider_score: number | null;
   retail_sentiment_score: number | null;
   generated_at: string;
   window_start: string;
@@ -51,6 +52,7 @@ export interface SignalWeights {
   options: number;
   earnings: number;
   analyst: number;
+  insider: number;
   sample_count: number;
   accuracy_pct: number | null;
   computed_at: string | null;

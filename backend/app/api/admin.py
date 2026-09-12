@@ -230,6 +230,26 @@ async def trigger_options_fetch(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/fetch-insider", status_code=202)
+async def trigger_insider_fetch(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger insider Form 4 fetch as a background Celery task."""
+    from worker.tasks.scraping.insider_data import fetch_insider_transactions
+
+    task = fetch_insider_transactions.delay()
+    await record_audit(
+        db,
+        _admin.id,
+        "fetch_insider",
+        "admin/fetch-insider",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.post("/fetch-earnings", status_code=202)
 async def trigger_fetch_earnings(
     request: Request,

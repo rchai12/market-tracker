@@ -31,6 +31,7 @@ class SignalResponse(BaseModel):
     market_regime: str | None = None
     earnings_score: float | None = None
     analyst_score: float | None = None
+    insider_score: float | None = None
     retail_sentiment_score: float | None = None
     generated_at: datetime
     window_start: datetime
@@ -67,6 +68,7 @@ class SignalWeightsResponse(BaseModel):
     options: float
     earnings: float
     analyst: float
+    insider: float = 0.08
     sample_count: int
     accuracy_pct: float | None
     computed_at: datetime | None

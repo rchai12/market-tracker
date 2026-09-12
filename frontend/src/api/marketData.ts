@@ -1,6 +1,7 @@
 import apiClient from "./client";
 import type { IndicatorData, MarketDataDaily } from "../types";
 import type { EarningsEstimateResponse } from "../types/earnings";
+import type { InsiderActivity } from "../types/insider";
 import type { CboePutCallRatio, OptionsActivity } from "../types/options";
 
 export async function getDailyData(
@@ -43,5 +44,10 @@ export async function getEarningsHistory(
   const { data } = await apiClient.get(`/market-data/${ticker}/earnings`, {
     params: { limit },
   });
+  return data;
+}
+
+export async function getInsiderActivity(ticker: string): Promise<InsiderActivity> {
+  const { data } = await apiClient.get(`/market-data/${ticker}/insider-activity`);
   return data;
 }

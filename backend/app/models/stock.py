@@ -23,3 +23,4 @@ class Stock(Base):
     article_stocks = relationship("ArticleStock", back_populates="stock")
     signals = relationship("Signal", back_populates="stock")
     watchlist_items = relationship("WatchlistItem", back_populates="stock")
+    insider_transactions = relationship("InsiderTransaction", back_populates="stock")

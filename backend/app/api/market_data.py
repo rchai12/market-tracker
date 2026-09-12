@@ -1,17 +1,19 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.cboe_put_call import CboePutCallRatio
 from app.models.earnings_estimate import EarningsEstimate
+from app.models.insider_transaction import InsiderTransaction
 from app.models.market_data import MarketDataDaily, MarketDataIntraday
 from app.models.options_activity import OptionsActivity
 from app.models.user import User
 from app.schemas.earnings import EarningsEstimateResponse
+from app.schemas.insider import InsiderActivityResponse, InsiderTransactionResponse
 from app.schemas.market_data import IndicatorDataResponse, MarketDataDailyResponse, MarketDataIntradayResponse
 from app.schemas.options import CboePutCallResponse, OptionsActivityResponse
 
@@ -187,3 +189,30 @@ async def get_options_activity(
     )
     rows = result.scalars().all()
     return [OptionsActivityResponse.model_validate(row) for row in rows]
+
+
+@router.get("/{ticker}/insider-activity", response_model=InsiderActivityResponse)
+async def get_insider_activity(
+    ticker: str,
+    days: int = Query(90, ge=1, le=365),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent Form 4 insider transactions and the live 30-day insider score."""
+    from worker.tasks.signals.component_scores import INSIDER_WINDOW_DAYS, calc_insider_score
+
+    stock = await get_stock_by_ticker(ticker, db)
+    since = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(InsiderTransaction)
+        .where(InsiderTransaction.stock_id == stock.id)
+        .where(InsiderTransaction.transaction_date >= since)
+        .order_by(InsiderTransaction.transaction_date.desc())
+    )
+    rows = result.scalars().all()
+    score = await calc_insider_score(db, stock.id, datetime.now(UTC))
+    return InsiderActivityResponse(
+        insider_score=score,
+        window_days=INSIDER_WINDOW_DAYS,
+        transactions=[InsiderTransactionResponse.model_validate(r) for r in rows],
+    )

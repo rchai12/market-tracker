@@ -132,6 +132,7 @@ async def _compute_sector_weights(
             Signal.options_score,
             Signal.earnings_score,
             Signal.analyst_score,
+            Signal.insider_score,
             Signal.direction,
             Signal.market_regime,
             SignalOutcome.is_correct,
@@ -165,6 +166,8 @@ def _weights_from_rows(rows: list) -> dict | None:
     components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "earnings", "analyst"]
     if settings.options_flow_enabled:
         components.append("options")
+    if settings.insider_flow_enabled:
+        components.append("insider")
     component_correct = {k: 0.0 for k in components}
     component_total = {k: 0.0 for k in components}
     total_correct = 0
@@ -197,6 +200,16 @@ def _weights_from_rows(rows: list) -> dict | None:
         )
         if settings.options_flow_enabled:
             _credit(component_correct, component_total, "options", row.options_score, actual_dir, magnitude)
+        if settings.insider_flow_enabled:
+            _credit(
+                component_correct,
+                component_total,
+                "insider",
+                getattr(row, "insider_score", None),
+                actual_dir,
+                magnitude,
+                min_abs=0.01,
+            )
 
         component_correct["sentiment_volume"] += magnitude if row.is_correct else 0.0
         component_total["sentiment_volume"] += magnitude
@@ -231,6 +244,8 @@ def _weights_from_rows(rows: list) -> dict | None:
     }
     if settings.options_flow_enabled:
         result_weights["options"] = round(clamped.get("options", 0.08), 4)
+    if settings.insider_flow_enabled:
+        result_weights["insider"] = round(clamped.get("insider", 0.08), 4)
     return result_weights
 
 
@@ -314,6 +329,7 @@ def _weight_values(weights: dict) -> dict:
         "options": weights.get("options", 0.08),
         "earnings": weights.get("earnings", 0.10),
         "analyst": weights.get("analyst", 0.07),
+        "insider": weights.get("insider", 0.08),
         "sample_count": weights["sample_count"],
         "accuracy_pct": weights["accuracy_pct"],
         "computed_at": datetime.now(UTC),

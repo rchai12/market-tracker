@@ -13,14 +13,14 @@ export default function MethodologyTab() {
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           Each stock is scored using four predictive components, plus gated earnings surprise
           (48h window), options flow when enabled, analyst ratings from LLM-extracted
-          articles (30-day window), and the ML ensemble when a model qualifies. RSI and
-          trend are used only as market-regime context: they boost or dampen the composite
-          rather than adding into it.
+          articles (30-day window), the ML ensemble when a model qualifies, and insider
+          Form 4 activity (30-day window). RSI and trend are used only as market-regime
+          context: they boost or dampen the composite rather than adding into it.
         </p>
         <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-800 dark:text-gray-200">
           composite = w1 * sentiment_momentum + w2 * sentiment_volume<br />
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w3 * price_momentum + w4 * volume_anomaly<br />
-          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w5 * earnings + w6 * options + w7 * analyst + w8 * ml<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w5 * earnings + w6 * options + w7 * analyst + w8 * ml + w9 * insider<br />
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; × regime_multiplier(RSI, trend)
         </div>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
@@ -40,6 +40,7 @@ export default function MethodologyTab() {
               <li>Options Flow: 8% (when enabled)</li>
               <li>Analyst Ratings: 7% (30-day LLM-extracted window)</li>
               <li>ML Ensemble: 8% (promoted when model accuracy ≥ 55%, n ≥ 50)</li>
+              <li>Insider Trading: 8% (30-day Form 4 window, role-weighted, sells discounted 60%)</li>
               <li className="text-xs">Other weights scale down so they still sum to 100%</li>
             </ul>
           </div>

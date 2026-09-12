@@ -9,6 +9,7 @@ import StockPriceSection from "../components/stock-detail/StockPriceSection";
 import StockSentimentSignals from "../components/stock-detail/StockSentimentSignals";
 import StockAccuracySection from "../components/stock-detail/StockAccuracySection";
 import StockOptionsSection from "../components/stock-detail/StockOptionsSection";
+import StockInsiderSection from "../components/stock-detail/StockInsiderSection";
 import StockEarningsSection from "../components/stock-detail/StockEarningsSection";
 import StockArticlesSection from "../components/stock-detail/StockArticlesSection";
 
@@ -98,6 +99,7 @@ export default function StockDetailPage() {
       <StockPriceSection ticker={ticker!} />
       <StockSentimentSignals ticker={ticker!} />
       <StockOptionsSection ticker={ticker!} />
+      <StockInsiderSection ticker={ticker!} />
       <StockEarningsSection ticker={ticker!} />
       <StockAccuracySection ticker={ticker!} />
       <StockArticlesSection ticker={ticker!} />

@@ -65,6 +65,11 @@ export async function triggerOptionsFetch(): Promise<TaskResponse> {
   return data;
 }
 
+export async function triggerInsiderFetch(): Promise<TaskResponse> {
+  const { data } = await apiClient.post<TaskResponse>("/admin/fetch-insider");
+  return data;
+}
+
 export async function triggerEarningsFetch(): Promise<TaskResponse> {
   const { data } = await apiClient.post<TaskResponse>("/admin/fetch-earnings");
   return data;

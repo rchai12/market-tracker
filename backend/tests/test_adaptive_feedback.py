@@ -49,6 +49,7 @@ class TestReturnWeightedAccuracy:
         with patch("worker.tasks.signals.weight_optimizer.settings") as settings:
             settings.feedback_min_samples = 2
             settings.options_flow_enabled = False
+            settings.insider_flow_enabled = False
             settings.feedback_weight_min = 0.05
             settings.feedback_weight_max = 0.60
             result = _weights_from_rows(rows)
@@ -60,6 +61,7 @@ class TestReturnWeightedAccuracy:
         with patch("worker.tasks.signals.weight_optimizer.settings") as settings:
             settings.feedback_min_samples = 50
             settings.options_flow_enabled = False
+            settings.insider_flow_enabled = False
             settings.feedback_weight_min = 0.05
             settings.feedback_weight_max = 0.60
             assert _weights_from_rows(rows) is None
@@ -71,6 +73,7 @@ class TestAnalystInOptimizer:
         with patch("worker.tasks.signals.weight_optimizer.settings") as settings:
             settings.feedback_min_samples = 2
             settings.options_flow_enabled = False
+            settings.insider_flow_enabled = False
             settings.feedback_weight_min = 0.05
             settings.feedback_weight_max = 0.60
             result = _weights_from_rows(rows)

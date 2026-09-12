@@ -297,6 +297,7 @@ async def get_signal_weights(
             options=float(w.options),
             earnings=float(w.earnings) if w.earnings is not None else 0.10,
             analyst=float(w.analyst) if w.analyst is not None else 0.07,
+            insider=float(w.insider) if getattr(w, "insider", None) is not None else 0.08,
             sample_count=w.sample_count,
             accuracy_pct=float(w.accuracy_pct) if w.accuracy_pct else None,
             computed_at=w.computed_at,

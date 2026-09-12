@@ -9,6 +9,7 @@
 export type { User, PaginatedResponse } from "./common";
 export type { Stock, MarketDataDaily, IndicatorData } from "./stock";
 export type { EarningsEstimateResponse } from "./earnings";
+export type { InsiderActivity, InsiderTransaction } from "./insider";
 export type { Article, EventCategorySummary } from "./article";
 export type { SentimentScore, SentimentSummary, SentimentTimePoint } from "./sentiment";
 export type {

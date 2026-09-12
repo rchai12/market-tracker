@@ -201,6 +201,7 @@ class TestWeightOptimizerComponents:
         with patch("worker.tasks.signals.weight_optimizer.settings") as mock_settings:
             mock_settings.feedback_min_samples = 2
             mock_settings.options_flow_enabled = False
+            mock_settings.insider_flow_enabled = False
             mock_settings.feedback_weight_min = 0.05
             mock_settings.feedback_weight_max = 0.60
             result = asyncio.run(_compute_sector_weights(session, 1, NOW))
@@ -258,6 +259,7 @@ def _patch_components(**returns):
         "calc_options_score": None,
         "calc_earnings_surprise_score": None,
         "calc_analyst_score": None,
+        "calc_insider_score": None,
         "get_recent_article_count": 2,
     }
     defaults.update(returns)
