@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { SignalWeights } from "../../types";
+import type { SignalFormulaDefaults, SignalWeights, SignalWeightsPayload } from "../../types";
 import { getSignalWeights } from "../../api/signals";
 import LoadingSkeleton from "../common/LoadingSkeleton";
 import ErrorRetry from "../common/ErrorRetry";
@@ -17,25 +17,20 @@ const WEIGHT_COLUMNS = [
   { key: "options", label: "Options", regime: false },
 ] as const;
 
-const DEFAULT_WEIGHTS: Record<string, number> = {
-  sentiment_momentum: 0.40,
-  sentiment_volume: 0.25,
-  price_momentum: 0.20,
-  volume_anomaly: 0.15,
-  earnings: 0.10,
-  analyst: 0.07,
-  insider: 0.08,
-  rsi: 0.0,
-  trend: 0.0,
-  options: 0.08,
-};
-
 function formatPct(val: number): string {
   return `${(val * 100).toFixed(0)}%`;
 }
 
-function deviationClass(val: number, key: string): string {
-  const diff = Math.abs(val - (DEFAULT_WEIGHTS[key] ?? 0));
+function defaultWeight(defaults: SignalFormulaDefaults, key: (typeof WEIGHT_COLUMNS)[number]["key"]): number {
+  return defaults[key];
+}
+
+function deviationClass(
+  val: number,
+  key: (typeof WEIGHT_COLUMNS)[number]["key"],
+  defaults: SignalFormulaDefaults,
+): string {
+  const diff = Math.abs(val - defaultWeight(defaults, key));
   if (diff > 0.05) return "text-amber-600 dark:text-amber-400 font-semibold";
   return "";
 }
@@ -48,14 +43,16 @@ function accuracyColor(pct: number | null): string {
 }
 
 export default function WeightsTable() {
-  const { data: weights, isLoading, error, refetch } = useQuery<SignalWeights[]>({
+  const { data, isLoading, error, refetch } = useQuery<SignalWeightsPayload>({
     queryKey: ["signal-weights"],
     queryFn: getSignalWeights,
   });
 
   if (isLoading) return <LoadingSkeleton variant="row" count={5} />;
   if (error) return <ErrorRetry message="Failed to load signal weights" onRetry={refetch} />;
-  if (!weights || weights.length === 0) {
+  const weights: SignalWeights[] = data?.weights ?? [];
+  const defaults = data?.defaults;
+  if (!defaults || weights.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
         No adaptive weights computed yet. Weights are calculated after the feedback loop has enough samples.
@@ -100,7 +97,7 @@ export default function WeightsTable() {
                 <td
                   key={key}
                   className={`text-center py-2 px-2 ${
-                    regime ? "text-gray-400 dark:text-gray-500" : deviationClass(w[key], key)
+                    regime ? "text-gray-400 dark:text-gray-500" : deviationClass(w[key], key, defaults)
                   }`}
                 >
                   {formatPct(w[key])}

@@ -155,8 +155,8 @@ class Settings(BaseSettings):
 SOURCE_CREDIBILITY: dict[str, float] = {
     "sec_edgar": 1.0,
     "fred": 0.9,
-    "reuters": 0.9,
-    "reuters_rss": 0.9,  # alias; scraper stores source="reuters"
+    "reuters": 0.9,  # historical; Reuters scraper was never scheduled
+    "reuters_rss": 0.9,  # alias for older rows
     "marketwatch": 0.8,
     "yahoo_finance": 0.75,
     "finviz": 0.7,

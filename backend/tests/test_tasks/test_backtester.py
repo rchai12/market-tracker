@@ -832,29 +832,34 @@ class TestBenchmark:
         assert result is not None
         assert result.total_return_pct > 0  # Benchmark gained
         assert len(result.equity_curve) > 0
-        # Strategy was flat, benchmark went up → negative alpha
-        assert result.alpha < 0
+        # Flat strategy: Jensen alpha ≈ 0 (beta ≈ 0), not excess-return alpha
+        assert abs(result.beta) < 0.05
+        assert abs(result.alpha) < 1.0
 
     def test_benchmark_alpha_positive(self):
-        """Strategy outperforming benchmark should give positive alpha."""
+        """Strategy with extra return beyond beta should give positive Jensen alpha."""
         base = date(2024, 1, 1)
-        # Strategy equity: grows 20%
-        strategy_curve = [
-            EquityPoint(date=base + timedelta(days=i), equity=10000 + i * 20)
-            for i in range(100)
-        ]
-        # Benchmark: grows 5%
-        bench_ohlcv = [
-            OHLCVRow(
-                date=base + timedelta(days=i),
-                open=100 + i * 0.05,
-                high=100 + i * 0.05 + 0.5,
-                low=100 + i * 0.05 - 0.5,
-                close=100 + i * 0.05,
-                volume=1000000,
+        days = 40
+        strategy_curve = []
+        bench_ohlcv = []
+        price = 100.0
+        equity = 10000.0
+        for i in range(days):
+            d = base + timedelta(days=i)
+            ret = 0.01 if i % 2 == 0 else -0.01
+            price *= 1.0 + ret
+            equity *= 1.0 + ret + 0.002
+            strategy_curve.append(EquityPoint(date=d, equity=equity))
+            bench_ohlcv.append(
+                OHLCVRow(
+                    date=d,
+                    open=price,
+                    high=price + 0.5,
+                    low=price - 0.5,
+                    close=price,
+                    volume=1000000,
+                )
             )
-            for i in range(100)
-        ]
         result = compute_benchmark(bench_ohlcv, strategy_curve, 10000)
         assert result is not None
         assert result.alpha > 0

@@ -1,172 +1,90 @@
-"""Signal component functions for the backtesting engine.
+"""Signal component adapters for the backtesting engine.
 
-Pure functions that compute individual signal components from price/volume/sentiment
-data. No database dependencies.
+Thin wrappers over worker.utils.component_math so engine/tests keep stable names.
+Daily sentiment rows are mapped onto the shared hourly decay kernel.
 """
 
-import math
 from datetime import date, timedelta
 
-from worker.utils.signal_formula import classify_direction, classify_strength
-from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
-
-from .models import (
+from worker.utils.component_math import (
     BASELINE_DAYS,
-    PRICE_MOMENTUM_DAYS,
-    RSI_PERIOD,
     SENTIMENT_HALF_LIFE_HOURS,
-    SentimentRow,
+    SentimentPoint,
+    exp_weighted_sentiment,
+    price_momentum,
+    rsi_score,
+    signed_volume_ratio,
+    trend_score,
+    volume_anomaly,
 )
+from worker.utils.signal_formula import classify_direction, classify_strength
+
+from .models import SentimentRow
+
+__all__ = [
+    "classify_direction",
+    "classify_strength",
+    "compute_price_momentum_from_closes",
+    "compute_rsi_score_from_closes",
+    "compute_sentiment_momentum_from_data",
+    "compute_sentiment_volume_from_data",
+    "compute_trend_score_from_closes",
+    "compute_volume_anomaly_from_data",
+]
 
 
 def compute_price_momentum_from_closes(closes: list[float]) -> float | None:
-    """5-day price change, tanh-scaled to [-1, 1].
-
-    Expects at least 6 closes (oldest first).
-    """
-    if len(closes) < 2:
-        return None
-
-    latest = closes[-1]
-    # Use up to PRICE_MOMENTUM_DAYS back
-    lookback = min(len(closes) - 1, PRICE_MOMENTUM_DAYS)
-    oldest = closes[-(lookback + 1)]
-
-    if oldest == 0:
-        return None
-
-    pct_change = (latest - oldest) / oldest
-    return math.tanh(pct_change * 5)
+    """5-day price change, tanh-scaled to [-1, 1]. Oldest first."""
+    return price_momentum(closes)
 
 
 def compute_volume_anomaly_from_data(
     closes: list[float], volumes: list[int]
 ) -> float | None:
-    """Trading volume vs 20-day average, signed by price direction.
-
-    Expects parallel closes and volumes arrays (oldest first), at least 3 entries.
-    """
-    if len(closes) < 3 or len(volumes) < 3:
-        return None
-
-    latest_volume = volumes[-1]
-    latest_close = closes[-1]
-    prev_close = closes[-2]
-
-    if latest_volume is None or latest_volume == 0:
-        return None
-
-    # Average of previous volumes (excluding latest)
-    prev_volumes = [v for v in volumes[:-1] if v and v > 0]
-    if not prev_volumes:
-        return None
-
-    avg_volume = sum(prev_volumes) / len(prev_volumes)
-    if avg_volume == 0:
-        return None
-
-    ratio = latest_volume / avg_volume
-    magnitude = math.tanh(ratio - 1.0)
-
-    if prev_close > 0:
-        price_direction = 1.0 if latest_close >= prev_close else -1.0
-    else:
-        price_direction = 1.0
-
-    return magnitude * price_direction
+    """Trading volume vs 20-day average, signed by price direction. Oldest first."""
+    return volume_anomaly(closes, volumes)
 
 
 def compute_rsi_score_from_closes(closes: list[float]) -> float | None:
-    """RSI(14) mapped to [-1, 1]: oversold = positive, overbought = negative.
-
-    Expects at least 16 closes (oldest first).
-    """
-    if len(closes) < RSI_PERIOD + 2:
-        return None
-
-    rsi_values = compute_rsi(closes, period=RSI_PERIOD)
-    latest_rsi = rsi_values[-1]
-    if latest_rsi is None:
-        return None
-
-    centered = (50 - latest_rsi) / 50
-    return math.tanh(centered * 2.5)
+    """RSI(14) mapped to [-1, 1]: oversold = positive, overbought = negative."""
+    return rsi_score(closes)
 
 
 def compute_trend_score_from_closes(closes: list[float]) -> float | None:
-    """Combined SMA crossover (60%) + MACD histogram (40%) trend score.
-
-    Expects at least 52 closes (oldest first).
-    """
-    if len(closes) < 52:
-        return None
-
-    # SMA crossover component
-    sma20 = compute_sma(closes, 20)
-    sma50 = compute_sma(closes, 50)
-    sma_score = 0.0
-    if sma20[-1] is not None and sma50[-1] is not None and sma50[-1] != 0:
-        sma_diff = (sma20[-1] - sma50[-1]) / sma50[-1]
-        sma_score = math.tanh(sma_diff * 10)
-
-    # MACD component
-    macd_data = compute_macd(closes)
-    macd_score = 0.0
-    latest_macd = macd_data[-1]
-    if latest_macd["histogram"] is not None and closes[-1] != 0:
-        norm_hist = latest_macd["histogram"] / closes[-1]
-        macd_score = math.tanh(norm_hist * 100)
-
-    return 0.6 * sma_score + 0.4 * macd_score
+    """Combined SMA crossover (60%) + MACD histogram (40%) trend score."""
+    return trend_score(closes)
 
 
 def compute_sentiment_momentum_from_data(
     rows: list[SentimentRow], as_of_date: date
 ) -> float | None:
-    """Exponentially weighted avg of daily sentiment, half-life 6h (~0.25 days).
-
-    Looks back 2 days (48h equivalent in daily data).
-    """
+    """Exponentially weighted avg of daily sentiment (6h half-life in day units)."""
     if not rows:
         return None
 
-    # Filter to rows within 2 days before as_of_date
     cutoff = as_of_date + timedelta(days=-2)
     recent = [r for r in rows if cutoff <= r.date <= as_of_date and r.article_count > 0]
-
     if not recent:
         return None
 
-    # Convert daily sentiment to half-life decay (use days, half-life = 0.25 days = 6h)
-    half_life_days = SENTIMENT_HALF_LIFE_HOURS / 24.0
-    decay_rate = math.log(2) / half_life_days
-    weighted_sum = 0.0
-    weight_total = 0.0
-
-    for row in recent:
-        sentiment_value = row.avg_positive - row.avg_negative
-        days_ago = (as_of_date - row.date).days
-        weight = math.exp(-decay_rate * days_ago) * row.article_count
-        weighted_sum += sentiment_value * weight
-        weight_total += weight
-
-    if weight_total == 0:
-        return None
-
-    return weighted_sum / weight_total
+    points = [
+        SentimentPoint(
+            value=row.avg_positive - row.avg_negative,
+            hours_ago=(as_of_date - row.date).days * 24.0,
+            weight=float(row.article_count),
+        )
+        for row in recent
+    ]
+    return exp_weighted_sentiment(points, half_life_hours=SENTIMENT_HALF_LIFE_HOURS)
 
 
 def compute_sentiment_volume_from_data(
     rows: list[SentimentRow], as_of_date: date
 ) -> float | None:
-    """Article count on as_of_date vs 20-day baseline, signed by net sentiment.
-
-    Mirrors calc_sentiment_volume in signal_generator.
-    """
+    """Article count on as_of_date vs 20-day baseline, signed by net sentiment."""
     if not rows:
         return None
 
-    # Today's articles
     today_rows = [r for r in rows if r.date == as_of_date]
     today_count = sum(r.article_count for r in today_rows)
     today_net = 0.0
@@ -177,25 +95,10 @@ def compute_sentiment_volume_from_data(
                 (r.avg_positive - r.avg_negative) * r.article_count for r in today_rows
             ) / total_articles
 
-    if today_count == 0:
-        return None
-
-    # Baseline: last 20 days excluding today
     cutoff = as_of_date + timedelta(days=-BASELINE_DAYS)
     baseline_rows = [r for r in rows if cutoff <= r.date < as_of_date]
     baseline_total = sum(r.article_count for r in baseline_rows)
     baseline_days = max(len(set(r.date for r in baseline_rows)), 1)
     baseline_daily_avg = baseline_total / baseline_days
 
-    if baseline_daily_avg == 0:
-        ratio = min(today_count, 5.0)
-    else:
-        ratio = today_count / baseline_daily_avg
-
-    magnitude = math.tanh(ratio - 1.0)
-    direction_sign = 1.0 if today_net >= 0 else -1.0
-
-    return magnitude * direction_sign
-
-
-# classify_direction / classify_strength imported from signal_formula.
+    return signed_volume_ratio(today_count, baseline_daily_avg, today_net)

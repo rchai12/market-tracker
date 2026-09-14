@@ -3,6 +3,14 @@
 from dataclasses import dataclass
 from datetime import date
 
+from worker.utils.component_math import (  # noqa: F401
+    BASELINE_DAYS,
+    PRICE_MOMENTUM_DAYS,
+    RSI_LOOKBACK_DAYS,
+    RSI_PERIOD,
+    SENTIMENT_HALF_LIFE_HOURS,
+    TREND_LOOKBACK_DAYS,
+)
 from worker.utils.signal_formula import MODERATE_THRESHOLD, STRONG_THRESHOLD, default_weights
 
 # Live formula defaults (40/25/20/15). Technical mode uses the same weights
@@ -11,14 +19,10 @@ _LIVE_DEFAULTS = default_weights(has_options=False, has_earnings=False)
 DEFAULT_WEIGHTS = {k: v for k, v in _LIVE_DEFAULTS.items() if k != "source"}
 TECHNICAL_WEIGHTS = DEFAULT_WEIGHTS
 
-# ── Parameters ──
+# ── Parameters (aliases from component_math, the live/backtest SSOT) ──
 WARMUP_DAYS = 60  # Need 50 for SMA50 + buffer
-SENTIMENT_HALF_LIFE_HOURS = 6
-BASELINE_DAYS = 20
-PRICE_MOMENTUM_DAYS = 5
-RSI_PERIOD = 14
-RSI_LOOKBACK = 30
-TREND_LOOKBACK = 60
+RSI_LOOKBACK = RSI_LOOKBACK_DAYS
+TREND_LOOKBACK = TREND_LOOKBACK_DAYS
 
 
 # ── Data classes ──
@@ -100,6 +104,6 @@ class BacktestResult:
 class BenchmarkResult:
     total_return_pct: float
     annualized_return_pct: float
-    alpha: float
+    alpha: float | None
     beta: float | None
     equity_curve: list[EquityPoint]

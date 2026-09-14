@@ -6,10 +6,23 @@ from unittest.mock import patch
 from worker.utils.backtester.engine import _compute_components
 from worker.utils.backtester.models import DEFAULT_WEIGHTS
 from worker.utils.signal_formula import (
+    WEIGHT_ANALYST,
+    WEIGHT_EARNINGS,
+    WEIGHT_INSIDER,
+    WEIGHT_ML,
+    WEIGHT_OPTIONS,
+    WEIGHT_PRICE_MOMENTUM,
+    WEIGHT_SENTIMENT_MOMENTUM,
+    WEIGHT_SENTIMENT_VOLUME,
+    WEIGHT_VOLUME_ANOMALY,
     apply_component_gates,
     combine_component_scores,
     default_weights,
+    methodology_defaults,
     resolve_weights,
+    REGIME_ADJUSTMENT,
+    STRONG_THRESHOLD,
+    MODERATE_THRESHOLD,
 )
 
 
@@ -216,3 +229,23 @@ class TestBacktesterUsesLiveFormula:
         assert result["market_regime"] == "oversold"
         # Old additive formula would have been 0.30*0.5 + 0.30*0.5 = 0.30
         assert abs(result["composite"] - 0.30) > 0.1
+
+
+class TestMethodologyDefaults:
+    def test_matches_formula_constants(self):
+        d = methodology_defaults()
+        assert d["sentiment_momentum"] == WEIGHT_SENTIMENT_MOMENTUM
+        assert d["sentiment_volume"] == WEIGHT_SENTIMENT_VOLUME
+        assert d["price_momentum"] == WEIGHT_PRICE_MOMENTUM
+        assert d["volume_anomaly"] == WEIGHT_VOLUME_ANOMALY
+        assert d["earnings"] == WEIGHT_EARNINGS
+        assert d["options"] == WEIGHT_OPTIONS
+        assert d["analyst"] == WEIGHT_ANALYST
+        assert d["ml"] == WEIGHT_ML
+        assert d["insider"] == WEIGHT_INSIDER
+        assert d["rsi"] == 0.0
+        assert d["trend"] == 0.0
+        assert d["strong_threshold"] == STRONG_THRESHOLD
+        assert d["moderate_threshold"] == MODERATE_THRESHOLD
+        assert d["regime_adjustment"] == REGIME_ADJUSTMENT
+        assert d["ml_min_samples"] >= 1

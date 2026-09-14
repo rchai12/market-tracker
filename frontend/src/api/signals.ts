@@ -2,7 +2,7 @@ import apiClient from "./client";
 import type {
   Signal,
   SignalAccuracy,
-  SignalWeights,
+  SignalWeightsPayload,
   AccuracyTrendPoint,
   AccuracyDistribution,
   SignalDetail,
@@ -88,7 +88,7 @@ export async function getSignalDetail(
   return data;
 }
 
-export async function getSignalWeights(): Promise<SignalWeights[]> {
+export async function getSignalWeights(): Promise<SignalWeightsPayload> {
   const { data } = await apiClient.get("/signals/weights");
   return data;
 }

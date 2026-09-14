@@ -45,6 +45,9 @@ WEIGHT_INSIDER = 0.08
 STRONG_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.35
 NEUTRAL_DEADZONE = 0.01
+REGIME_ADJUSTMENT = 0.15
+REGIME_DAMPEN = 1.0 - REGIME_ADJUSTMENT
+REGIME_BOOST = 1.0 + REGIME_ADJUSTMENT
 
 PREDICTIVE_KEYS = (
     "sentiment_momentum",
@@ -100,14 +103,14 @@ def apply_regime_multiplier(
     regime = classify_regime(rsi_score, trend_score)
 
     if abs(rsi_val) > 0.4:
-        return composite * 0.85, regime
+        return composite * REGIME_DAMPEN, regime
 
     if abs(trend_val) > 0.3:
         composite_bullish = composite > 0
         trend_bullish = trend_val > 0
         if composite_bullish == trend_bullish:
-            return composite * 1.15, regime
-        return composite * 0.85, regime
+            return composite * REGIME_BOOST, regime
+        return composite * REGIME_DAMPEN, regime
 
     return composite, regime
 
@@ -454,4 +457,30 @@ def combine_component_scores(
         "market_regime": market_regime,
         "article_count": article_count,
         "weights_source": w.get("source", "default"),
+    }
+
+
+def methodology_defaults() -> dict:
+    """Formula constants for the weights API / methodology UI.
+
+    Predictive weights are the ungated 40/25/20/15 base. Gated values are the
+    additive shares used when that component is active. RSI/trend stay 0.
+    """
+    return {
+        "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM,
+        "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
+        "price_momentum": WEIGHT_PRICE_MOMENTUM,
+        "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
+        "earnings": WEIGHT_EARNINGS,
+        "options": WEIGHT_OPTIONS,
+        "analyst": WEIGHT_ANALYST,
+        "ml": WEIGHT_ML,
+        "insider": WEIGHT_INSIDER,
+        "rsi": 0.0,
+        "trend": 0.0,
+        "strong_threshold": STRONG_THRESHOLD,
+        "moderate_threshold": MODERATE_THRESHOLD,
+        "regime_adjustment": REGIME_ADJUSTMENT,
+        "ml_min_accuracy": float(settings.ml_min_accuracy_for_promotion),
+        "ml_min_samples": int(settings.ml_min_samples_for_promotion),
     }

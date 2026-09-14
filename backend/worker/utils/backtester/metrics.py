@@ -1,6 +1,6 @@
 """Performance metrics computation for backtesting results."""
 
-import math
+from worker.utils.performance_metrics import daily_returns, max_drawdown_pct, sharpe_ratio
 
 from .models import EquityPoint, TradeRecord
 
@@ -75,46 +75,12 @@ def compute_metrics(
 
 def _compute_sharpe(equity_curve: list[EquityPoint]) -> float | None:
     """Annualized Sharpe ratio from daily equity values (risk-free rate = 0)."""
-    if len(equity_curve) < 2:
-        return None
-
-    equities = [p.equity for p in equity_curve]
-    daily_returns = [
-        (equities[i] - equities[i - 1]) / equities[i - 1]
-        for i in range(1, len(equities))
-        if equities[i - 1] > 0
-    ]
-
-    if len(daily_returns) < 2:
-        return None
-
-    mean_return = sum(daily_returns) / len(daily_returns)
-    variance = sum((r - mean_return) ** 2 for r in daily_returns) / len(daily_returns)
-    std_return = math.sqrt(variance)
-
-    if std_return == 0:
-        return None
-
-    return (mean_return / std_return) * math.sqrt(252)
+    return sharpe_ratio(daily_returns([p.equity for p in equity_curve]))
 
 
 def _compute_max_drawdown(equity_curve: list[EquityPoint]) -> float:
     """Largest peak-to-trough percentage drop in equity."""
-    if not equity_curve:
-        return 0.0
-
-    peak = equity_curve[0].equity
-    max_dd = 0.0
-
-    for point in equity_curve:
-        if point.equity > peak:
-            peak = point.equity
-        if peak > 0:
-            dd = (peak - point.equity) / peak * 100
-            if dd > max_dd:
-                max_dd = dd
-
-    return max_dd
+    return max_drawdown_pct([p.equity for p in equity_curve])
 
 
 def _empty_metrics(starting_capital: float) -> dict:

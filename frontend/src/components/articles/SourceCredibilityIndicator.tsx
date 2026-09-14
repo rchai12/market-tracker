@@ -6,6 +6,7 @@ interface SourceCredibilityIndicatorProps {
 const SOURCE_CREDIBILITY: Record<string, number> = {
   sec_edgar: 1.0,
   fred: 0.9,
+  reuters: 0.9,
   reuters_rss: 0.9,
   marketwatch: 0.8,
   yahoo_finance: 0.75,

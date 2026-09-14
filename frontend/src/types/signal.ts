@@ -59,6 +59,30 @@ export interface SignalWeights {
   source: string;
 }
 
+export interface SignalFormulaDefaults {
+  sentiment_momentum: number;
+  sentiment_volume: number;
+  price_momentum: number;
+  volume_anomaly: number;
+  earnings: number;
+  options: number;
+  analyst: number;
+  ml: number;
+  insider: number;
+  rsi: number;
+  trend: number;
+  strong_threshold: number;
+  moderate_threshold: number;
+  regime_adjustment: number;
+  ml_min_accuracy: number;
+  ml_min_samples: number;
+}
+
+export interface SignalWeightsPayload {
+  defaults: SignalFormulaDefaults;
+  weights: SignalWeights[];
+}
+
 export interface AccuracyTrendPoint {
   period_start: string;
   period_end: string;

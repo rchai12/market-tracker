@@ -191,7 +191,7 @@ export default function PortfolioPage() {
               }
             />
             <Stat label="Win Rate" value={formatPct(statsQuery.data.win_rate_pct, 0)} />
-            <Stat label="Alpha" value={formatPct(statsQuery.data.alpha)} />
+            <Stat label="Jensen Alpha" value={formatPct(statsQuery.data.alpha)} />
             <Stat label="Beta" value={statsQuery.data.beta?.toFixed(2) ?? "—"} />
             <Stat label="Avg Win" value={formatPct(statsQuery.data.avg_win_pct)} />
             <Stat label="Avg Loss" value={formatPct(statsQuery.data.avg_loss_pct)} />

@@ -31,25 +31,33 @@ def _make_equity(start: date, days: int, base: float = 10000.0, daily_gain: floa
 
 
 class TestAlphaDirection:
-    def test_alpha_equals_strategy_minus_benchmark(self):
-        """Kill mutation: `strategy_annual - bench_annual` reversed."""
+    def test_alpha_flat_strategy_is_jensen_zero(self):
+        """Cash-like strategy vs rising bench: beta ≈ 0, Jensen alpha ≈ 0."""
         base = date(2024, 1, 1)
-        # Strategy: flat (0% return)
         strategy = _make_equity(base, 100, base=10000, daily_gain=0)
-        # Benchmark: going up (positive return)
         bench = _make_bench_ohlcv(base, 100, base=100, trend=0.1)
         result = compute_benchmark(bench, strategy, 10000)
         assert result is not None
-        # Strategy 0%, benchmark positive → alpha should be negative
-        assert result.alpha < 0
+        assert abs(result.beta) < 0.05
+        assert abs(result.alpha) < 1.0
 
-    def test_alpha_positive_when_outperforming(self):
-        """Kill mutation: alpha sign verification."""
+    def test_alpha_positive_when_excess_return(self):
+        """Kill mutation: Jensen alpha sign when strategy beats its beta."""
         base = date(2024, 1, 1)
-        # Strategy: strong gain
-        strategy = _make_equity(base, 100, base=10000, daily_gain=50)
-        # Benchmark: small gain
-        bench = _make_bench_ohlcv(base, 100, base=100, trend=0.05)
+        days = 40
+        bench = []
+        strategy = []
+        price = 100.0
+        equity = 10000.0
+        for i in range(days):
+            d = base + timedelta(days=i)
+            ret = 0.01 if i % 2 == 0 else -0.01
+            price *= 1.0 + ret
+            equity *= 1.0 + ret + 0.002
+            bench.append(
+                OHLCVRow(date=d, open=price, high=price + 0.5, low=price - 0.5, close=price, volume=1000000)
+            )
+            strategy.append(EquityPoint(date=d, equity=equity))
         result = compute_benchmark(bench, strategy, 10000)
         assert result is not None
         assert result.alpha > 0

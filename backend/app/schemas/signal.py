@@ -75,6 +75,30 @@ class SignalWeightsResponse(BaseModel):
     source: str
 
 
+class SignalFormulaDefaults(BaseModel):
+    sentiment_momentum: float
+    sentiment_volume: float
+    price_momentum: float
+    volume_anomaly: float
+    earnings: float
+    options: float
+    analyst: float
+    ml: float
+    insider: float
+    rsi: float
+    trend: float
+    strong_threshold: float
+    moderate_threshold: float
+    regime_adjustment: float
+    ml_min_accuracy: float
+    ml_min_samples: int
+
+
+class SignalWeightsListResponse(BaseModel):
+    defaults: SignalFormulaDefaults
+    weights: list[SignalWeightsResponse]
+
+
 class AccuracyTrendPoint(BaseModel):
     period_start: datetime
     period_end: datetime

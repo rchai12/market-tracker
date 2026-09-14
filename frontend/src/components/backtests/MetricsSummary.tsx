@@ -82,7 +82,7 @@ export default function MetricsSummary({ backtest }: MetricsSummaryProps) {
       {hasBenchmark && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <MetricCard
-            label="Alpha"
+            label="Jensen Alpha"
             value={formatPct(backtest.alpha, true)}
             colorClass={getReturnColor(backtest.alpha)}
           />

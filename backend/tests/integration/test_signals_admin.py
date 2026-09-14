@@ -38,6 +38,11 @@ class TestSignals:
     def test_signals_weights(self, client, auth_headers):
         resp = _run(client.get("/api/signals/weights", headers=auth_headers))
         assert resp.status_code == 200
+        payload = resp.json()
+        assert "defaults" in payload
+        assert "weights" in payload
+        assert payload["defaults"]["sentiment_momentum"] == 0.4
+        assert payload["defaults"]["insider"] == 0.08
 
 
 class TestAdmin:

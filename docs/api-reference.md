@@ -308,7 +308,7 @@ Query params: `?days=3&limit=10` (defaults)
 | GET | `/signals/accuracy/ml` | Yes | **Done** | ML signal accuracy metrics (A/B comparison with rule-based) |
 | GET | `/signals/accuracy/{ticker}` | Yes | **Done** | Per-ticker accuracy across 1/3/5 day windows |
 | GET | `/signals/detail/{signal_id}` | Yes | **Done** | Full signal detail with outcomes and linked articles |
-| GET | `/signals/weights` | Yes | **Done** | Active signal weights (per-sector and global fallback) |
+| GET | `/signals/weights` | Yes | **Done** | Formula defaults plus active per-sector/global weights |
 | GET | `/signals/{ticker}` | Yes | **Done** | Signal history for a specific ticker |
 
 Query params for `/signals`: `?direction=bullish&strength=strong&ticker=XOM&sector=energy&page=1&per_page=20`
@@ -411,16 +411,27 @@ Articles are linked at query time via `SentimentScore.stock_id` + `processed_at`
 
 ### GET /signals/weights
 ```json
-[
-  {
-    "sector_name": null,
+{
+  "defaults": {
     "sentiment_momentum": 0.40, "sentiment_volume": 0.25,
     "price_momentum": 0.20, "volume_anomaly": 0.15,
-    "rsi": 0.0, "trend": 0.0, "options": 0.0, "earnings": 0.0,
-    "sample_count": 500, "accuracy_pct": 58.2,
-    "computed_at": "2025-06-15T04:00:00Z", "source": "global"
-  }
-]
+    "earnings": 0.10, "options": 0.08, "analyst": 0.07,
+    "ml": 0.08, "insider": 0.08, "rsi": 0.0, "trend": 0.0,
+    "strong_threshold": 0.6, "moderate_threshold": 0.35,
+    "regime_adjustment": 0.15, "ml_min_accuracy": 0.55, "ml_min_samples": 50
+  },
+  "weights": [
+    {
+      "sector_name": null,
+      "sentiment_momentum": 0.40, "sentiment_volume": 0.25,
+      "price_momentum": 0.20, "volume_anomaly": 0.15,
+      "rsi": 0.0, "trend": 0.0, "options": 0.08, "earnings": 0.10,
+      "analyst": 0.07, "insider": 0.08,
+      "sample_count": 500, "accuracy_pct": 58.2,
+      "computed_at": "2025-06-15T04:00:00Z", "source": "global"
+    }
+  ]
+}
 ```
 
 ## Alerts

@@ -20,6 +20,8 @@ from app.schemas.signal import (
     AccuracyDistribution,
     AccuracyTrendPoint,
     SignalAccuracyResponse,
+    SignalFormulaDefaults,
+    SignalWeightsListResponse,
     SignalWeightsResponse,
 )
 
@@ -271,13 +273,20 @@ async def get_ticker_accuracy(
     return results
 
 
-@router.get("/weights", response_model=list[SignalWeightsResponse])
-@cached("signals:weights", ttl=3600)
+@router.get("/weights", response_model=SignalWeightsListResponse)
+@cached("signals:weights:v2", ttl=3600)
 async def get_signal_weights(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all active signal weights (per-sector and global fallback)."""
+    """Get formula defaults plus active signal weights (per-sector and global)."""
+    from worker.utils.signal_formula import (
+        WEIGHT_ANALYST,
+        WEIGHT_EARNINGS,
+        WEIGHT_INSIDER,
+        methodology_defaults,
+    )
+
     result = await db.execute(
         select(SignalWeight)
         .options(joinedload(SignalWeight.sector))
@@ -285,26 +294,29 @@ async def get_signal_weights(
     )
     weights = result.unique().scalars().all()
 
-    return [
-        SignalWeightsResponse(
-            sector_name=w.sector.name if w.sector else None,
-            sentiment_momentum=float(w.sentiment_momentum),
-            sentiment_volume=float(w.sentiment_volume),
-            price_momentum=float(w.price_momentum),
-            volume_anomaly=float(w.volume_anomaly),
-            rsi=float(w.rsi),
-            trend=float(w.trend),
-            options=float(w.options),
-            earnings=float(w.earnings) if w.earnings is not None else 0.10,
-            analyst=float(w.analyst) if w.analyst is not None else 0.07,
-            insider=float(w.insider) if getattr(w, "insider", None) is not None else 0.08,
-            sample_count=w.sample_count,
-            accuracy_pct=float(w.accuracy_pct) if w.accuracy_pct else None,
-            computed_at=w.computed_at,
-            source="sector" if w.sector_id else "global",
-        )
-        for w in weights
-    ]
+    return SignalWeightsListResponse(
+        defaults=SignalFormulaDefaults(**methodology_defaults()),
+        weights=[
+            SignalWeightsResponse(
+                sector_name=w.sector.name if w.sector else None,
+                sentiment_momentum=float(w.sentiment_momentum),
+                sentiment_volume=float(w.sentiment_volume),
+                price_momentum=float(w.price_momentum),
+                volume_anomaly=float(w.volume_anomaly),
+                rsi=float(w.rsi),
+                trend=float(w.trend),
+                options=float(w.options),
+                earnings=float(w.earnings) if w.earnings is not None else WEIGHT_EARNINGS,
+                analyst=float(w.analyst) if w.analyst is not None else WEIGHT_ANALYST,
+                insider=float(w.insider) if getattr(w, "insider", None) is not None else WEIGHT_INSIDER,
+                sample_count=w.sample_count,
+                accuracy_pct=float(w.accuracy_pct) if w.accuracy_pct else None,
+                computed_at=w.computed_at,
+                source="sector" if w.sector_id else "global",
+            )
+            for w in weights
+        ],
+    )
 
 
 def _compute_accuracy(rows: list, scope: str, window_days: int) -> SignalAccuracyResponse:

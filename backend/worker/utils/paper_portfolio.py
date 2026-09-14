@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from worker.utils.performance_metrics import jensen_alpha_beta, max_drawdown_pct, sharpe_ratio
+
 STRENGTH_RANK = {"weak": 0, "moderate": 1, "strong": 2}
 
 EXIT_STOP_LOSS = "stop_loss"
@@ -165,17 +167,17 @@ def compute_portfolio_stats(
     ``portfolio_daily_returns`` / ``benchmark_daily_returns`` are decimals (0.01 = 1%).
     ``trade_return_pcts`` are percentages (1.5 = +1.5%).
     ``max_drawdown_pct`` is a positive peak-to-trough percent.
-    Alpha is annualized Jensen alpha in percent (rf = 0).
+    Alpha is annualized Jensen alpha in percent (rf = 0), same as backtests.
     """
-    sharpe = _sharpe(portfolio_daily_returns)
-    max_dd = _max_drawdown(total_values)
+    sharpe = sharpe_ratio(portfolio_daily_returns)
+    max_dd = max_drawdown_pct(total_values)
     wins = [r for r in trade_return_pcts if r > 0]
     losses = [r for r in trade_return_pcts if r <= 0]
     total_trades = len(trade_return_pcts)
     win_rate = (len(wins) / total_trades * 100.0) if total_trades else None
     avg_win = (sum(wins) / len(wins)) if wins else None
     avg_loss = (sum(losses) / len(losses)) if losses else None
-    alpha, beta = _alpha_beta(portfolio_daily_returns, benchmark_daily_returns)
+    alpha, beta = jensen_alpha_beta(portfolio_daily_returns, benchmark_daily_returns)
     return {
         "sharpe_ratio": None if sharpe is None else round(sharpe, 4),
         "max_drawdown_pct": round(max_dd, 4),
@@ -186,46 +188,3 @@ def compute_portfolio_stats(
         "beta": None if beta is None else round(beta, 4),
         "total_trades": total_trades,
     }
-
-
-def _sharpe(daily_returns: list[float]) -> float | None:
-    if len(daily_returns) < 2:
-        return None
-    mean = sum(daily_returns) / len(daily_returns)
-    variance = sum((r - mean) ** 2 for r in daily_returns) / len(daily_returns)
-    std = math.sqrt(variance)
-    if std == 0:
-        return None
-    return (mean / std) * math.sqrt(252)
-
-
-def _max_drawdown(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    peak = values[0]
-    max_dd = 0.0
-    for value in values:
-        if value > peak:
-            peak = value
-        if peak > 0:
-            dd = (peak - value) / peak * 100.0
-            if dd > max_dd:
-                max_dd = dd
-    return max_dd
-
-
-def _alpha_beta(port_returns: list[float], bench_returns: list[float]) -> tuple[float | None, float | None]:
-    n = min(len(port_returns), len(bench_returns))
-    if n < 2:
-        return None, None
-    p = port_returns[:n]
-    b = bench_returns[:n]
-    mean_p = sum(p) / n
-    mean_b = sum(b) / n
-    cov = sum((p[i] - mean_p) * (b[i] - mean_b) for i in range(n)) / n
-    var_b = sum((b[i] - mean_b) ** 2 for i in range(n)) / n
-    if var_b <= 0:
-        return None, None
-    beta = cov / var_b
-    alpha_pct = (mean_p - beta * mean_b) * 252 * 100.0
-    return alpha_pct, beta

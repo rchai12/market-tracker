@@ -16,6 +16,8 @@ export type {
   Signal,
   SignalAccuracy,
   SignalWeights,
+  SignalFormulaDefaults,
+  SignalWeightsPayload,
   AccuracyTrendPoint,
   AccuracyBucket,
   AccuracyDistribution,

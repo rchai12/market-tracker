@@ -56,7 +56,7 @@
                     ┌─────────────┐
                     │ Yahoo News  │
                     │ Finviz      │
-                    │ Reuters RSS │
+                    │ Google News │
                     │ SEC EDGAR   │
                     │ MarketWatch │
                     │ Reddit      │

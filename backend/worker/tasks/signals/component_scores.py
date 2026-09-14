@@ -31,14 +31,20 @@ from worker.utils.article_quality import (
     SIGNAL_EXCLUDED_SOURCES,
     SIGNAL_MIN_TICKER_CONFIDENCE,
 )
-from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
+from worker.utils.component_math import (
+    BASELINE_DAYS,
+    PRICE_MOMENTUM_DAYS,
+    RSI_LOOKBACK_DAYS,
+    TREND_LOOKBACK_DAYS,
+    SentimentPoint,
+    exp_weighted_sentiment,
+    price_momentum,
+    rsi_score,
+    signed_volume_ratio,
+    trend_score,
+    volume_anomaly,
+)
 
-# ── Parameters ──
-SENTIMENT_HALF_LIFE_HOURS = 6
-BASELINE_DAYS = 20
-PRICE_MOMENTUM_DAYS = 5
-RSI_LOOKBACK_DAYS = 30
-TREND_LOOKBACK_DAYS = 60
 EARNINGS_WINDOW_DAYS = 2  # Score is active up to 2 days after earnings_date
 ANALYST_WINDOW_DAYS = 30
 INSIDER_WINDOW_DAYS = 30
@@ -117,21 +123,15 @@ async def calc_sentiment_momentum(
     if not deduped_rows:
         return None
 
-    decay_rate = math.log(2) / SENTIMENT_HALF_LIFE_HOURS
-    weighted_sum = 0.0
-    weight_total = 0.0
-
-    for row, credibility in deduped_rows:
-        sentiment_value = float(row.positive_score) - float(row.negative_score)
-        hours_ago = (now - row.processed_at).total_seconds() / 3600
-        weight = math.exp(-decay_rate * hours_ago) * credibility
-        weighted_sum += sentiment_value * weight
-        weight_total += weight
-
-    if weight_total == 0:
-        return None
-
-    return weighted_sum / weight_total
+    points = [
+        SentimentPoint(
+            value=float(row.positive_score) - float(row.negative_score),
+            hours_ago=(now - row.processed_at).total_seconds() / 3600,
+            weight=credibility,
+        )
+        for row, credibility in deduped_rows
+    ]
+    return exp_weighted_sentiment(points)
 
 
 async def calc_sentiment_volume(
@@ -217,16 +217,7 @@ async def calc_sentiment_volume(
         baseline_unique += 1
 
     baseline_daily_avg = baseline_unique / max(BASELINE_DAYS - 1, 1)
-
-    if baseline_daily_avg == 0:
-        ratio = min(unique_count, 5.0)
-    else:
-        ratio = unique_count / baseline_daily_avg
-
-    magnitude = math.tanh(ratio - 1.0)
-    direction_sign = 1.0 if recent_net_sentiment >= 0 else -1.0
-
-    return magnitude * direction_sign
+    return signed_volume_ratio(unique_count, baseline_daily_avg, recent_net_sentiment)
 
 
 async def calc_price_momentum(
@@ -242,17 +233,8 @@ async def calc_price_momentum(
     )
     rows = result.all()
 
-    if len(rows) < 2:
-        return None
-
-    latest_close = float(rows[0].close)
-    oldest_close = float(rows[-1].close)
-
-    if oldest_close == 0:
-        return None
-
-    pct_change = (latest_close - oldest_close) / oldest_close
-    return math.tanh(pct_change * 5)
+    closes = [float(r.close) for r in reversed(rows)]
+    return price_momentum(closes)
 
 
 async def calc_volume_anomaly(
@@ -268,30 +250,12 @@ async def calc_volume_anomaly(
     )
     rows = result.all()
 
-    if len(rows) < 3:
-        return None
-
-    latest_volume = rows[0].volume
-    latest_close = float(rows[0].close) if rows[0].close else None
-    prev_close = float(rows[1].close) if rows[1].close else None
-
-    volumes = [r.volume for r in rows[1:] if r.volume and r.volume > 0]
-    if not volumes:
-        return None
-
-    avg_volume = sum(volumes) / len(volumes)
-    if avg_volume == 0:
-        return None
-
-    ratio = latest_volume / avg_volume
-    magnitude = math.tanh(ratio - 1.0)
-
-    if latest_close is not None and prev_close is not None and prev_close > 0:
-        price_direction = 1.0 if latest_close >= prev_close else -1.0
-    else:
-        price_direction = 1.0
-
-    return magnitude * price_direction
+    closes: list[float] = []
+    volumes: list[float] = []
+    for row in reversed(rows):
+        closes.append(float(row.close) if row.close is not None else 0.0)
+        volumes.append(float(row.volume) if row.volume is not None else 0.0)
+    return volume_anomaly(closes, volumes)
 
 
 async def calc_rsi_score(
@@ -307,18 +271,8 @@ async def calc_rsi_score(
     )
     rows = result.all()
 
-    if len(rows) < 16:  # Need at least 14+1 for RSI + 1 for warmup
-        return None
-
     closes = [float(r.close) for r in reversed(rows)]
-    rsi_values = compute_rsi(closes, period=14)
-    latest_rsi = rsi_values[-1]
-    if latest_rsi is None:
-        return None
-
-    # Center at 50, scale so edges hit ~1: RSI<30 -> positive, RSI>70 -> negative
-    centered = (50 - latest_rsi) / 50
-    return math.tanh(centered * 2.5)
+    return rsi_score(closes)
 
 
 async def calc_trend_score(
@@ -334,29 +288,8 @@ async def calc_trend_score(
     )
     rows = result.all()
 
-    if len(rows) < 52:  # Need 50 for SMA50 + buffer
-        return None
-
     closes = [float(r.close) for r in reversed(rows)]
-
-    # SMA crossover component
-    sma20 = compute_sma(closes, 20)
-    sma50 = compute_sma(closes, 50)
-    sma_score = 0.0
-    if sma20[-1] is not None and sma50[-1] is not None and sma50[-1] != 0:
-        sma_diff = (sma20[-1] - sma50[-1]) / sma50[-1]
-        sma_score = math.tanh(sma_diff * 10)
-
-    # MACD crossover component
-    macd_data = compute_macd(closes)
-    macd_score = 0.0
-    latest_macd = macd_data[-1]
-    if latest_macd["histogram"] is not None and closes[-1] != 0:
-        norm_hist = latest_macd["histogram"] / closes[-1]
-        macd_score = math.tanh(norm_hist * 100)
-
-    # Combine: SMA crossover (60%) + MACD (40%)
-    return 0.6 * sma_score + 0.4 * macd_score
+    return trend_score(closes)
 
 
 async def calc_options_score(
@@ -486,21 +419,15 @@ async def calc_retail_sentiment_score(
     if not rows:
         return None
 
-    decay_rate = math.log(2) / SENTIMENT_HALF_LIFE_HOURS
-    weighted_sum = 0.0
-    weight_total = 0.0
-
-    for row in rows:
-        sentiment_value = float(row.positive_score) - float(row.negative_score)
-        hours_ago = (now - row.processed_at).total_seconds() / 3600
-        weight = math.exp(-decay_rate * hours_ago)
-        weighted_sum += sentiment_value * weight
-        weight_total += weight
-
-    if weight_total == 0:
-        return None
-
-    return weighted_sum / weight_total
+    points = [
+        SentimentPoint(
+            value=float(row.positive_score) - float(row.negative_score),
+            hours_ago=(now - row.processed_at).total_seconds() / 3600,
+            weight=1.0,
+        )
+        for row in rows
+    ]
+    return exp_weighted_sentiment(points)
 
 
 async def calc_earnings_surprise_score(

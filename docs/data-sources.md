@@ -7,7 +7,6 @@
 | Yahoo Finance News | HTTP scraping (httpx + BeautifulSoup) | 2 req/s (conservative) | News articles | **Done** | General + per-ticker news pages |
 | Finviz | HTTP scraping (httpx + BeautifulSoup) | 1 req/s | News aggregator | **Done** | Per-ticker news table scraping |
 | Google News | RSS feed (FeedScraper) | 1 req/min (polite) | News articles | **Done** | Stock market + earnings report feeds |
-| Reuters RSS | RSS feed parsing (feedparser) | 1 req/min (polite) | News articles | **Done** | business-finance + markets feeds |
 | SEC EDGAR | REST API (httpx) | 10 req/s (stated limit) | Filings (8-K, 10-Q, 10-K) | **Done** | Maps form types to event categories |
 | MarketWatch | RSS feed (FeedScraper) | 1 req/min (polite) | News articles | **Done** | Top stories + market pulse feeds |
 | Reddit (r/stocks, r/wallstreetbets) | PRAW (Reddit API) | 60 req/min | Posts | **Done** | Filters by score >= 10, skips stickied |

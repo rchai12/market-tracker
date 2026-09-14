@@ -14,6 +14,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   yahoo_finance: "Yahoo Finance",
   finviz: "Finviz",
   google_news: "Google News",
+  reuters: "Reuters",
+  reuters_rss: "Reuters",
   sec_edgar: "SEC EDGAR",
   marketwatch: "MarketWatch",
   reddit_stocks: "Reddit (stocks)",
