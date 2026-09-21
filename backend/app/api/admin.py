@@ -1,10 +1,11 @@
 """Admin-only endpoints for system management."""
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -12,6 +13,10 @@ from app.core.audit import record_audit
 from app.core.cache import cached
 from app.dependencies import get_current_admin, get_db
 from app.models.audit_log import AuditLog
+from app.models.ml_model import MLModel
+from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
+from app.models.signal_outcome import SignalOutcome
+from app.models.signal_weight import SignalWeight
 from app.models.task_failure import TaskFailure
 from app.models.user import User
 from app.schemas.admin import (
@@ -22,6 +27,8 @@ from app.schemas.admin import (
 )
 from app.schemas.common import PaginationMeta, PaginationParams, calc_total_pages, get_total_count
 from app.schemas.ml_model import MLModelStatusResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -324,13 +331,19 @@ async def reset_learning_layer(
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Truncate learning-layer tables. Idempotent. Does not touch raw signals."""
-    await db.execute(
-        text(
-            "TRUNCATE TABLE signal_outcomes, ml_models, signal_weights, "
-            "regime_adaptive_weights RESTART IDENTITY CASCADE"
-        )
-    )
+    """Clear learning-layer rows. Idempotent. Does not touch raw signals.
+
+    Uses DELETE rather than TRUNCATE: TRUNCATE takes ACCESS EXCLUSIVE and
+    waits on any Celery SELECT against these tables, which commonly 504s
+    the admin request on a live worker.
+    """
+    try:
+        for model in (SignalOutcome, MLModel, SignalWeight, RegimeAdaptiveWeight):
+            await db.execute(delete(model))
+    except Exception as exc:
+        logger.exception("reset-learning-layer failed")
+        raise HTTPException(status_code=500, detail=f"Reset failed: {exc}") from exc
+
     await record_audit(
         db,
         _admin.id,
@@ -339,7 +352,6 @@ async def reset_learning_layer(
         detail={"truncated": list(LEARNING_LAYER_TABLES)},
         ip_address=request.client.host if request.client else None,
     )
-    await db.commit()
     from app.core.cache import invalidate_pattern
 
     await invalidate_pattern("cache:signals:*")
@@ -353,7 +365,6 @@ async def get_ml_model_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get status of all trained ML models."""
-    from app.models.ml_model import MLModel
 
     result = await db.execute(
         select(MLModel)

@@ -23,6 +23,19 @@ import type { TaskResponse } from "../api/admin";
 import type { AxiosError } from "axios";
 import Card from "../components/common/Card";
 
+function formatApiError(err: unknown): string {
+  const axErr = err as AxiosError<{ detail?: string | Array<{ msg?: string }> }>;
+  const detail = axErr.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((item) => item.msg).filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  if (axErr.response?.status) return `Request failed (${axErr.response.status})`;
+  if (axErr.message) return axErr.message;
+  return "Failed";
+}
+
 function TaskButton({
   label,
   onTrigger,
@@ -42,8 +55,7 @@ function TaskButton({
       const res = await onTrigger();
       setResult(res.task_id);
     } catch (err) {
-      const axErr = err as AxiosError<{ detail: string }>;
-      setError(axErr?.response?.data?.detail ?? "Failed");
+      setError(formatApiError(err));
     } finally {
       setLoading(false);
     }
@@ -90,8 +102,7 @@ function ResetLearningButton() {
       const res = await resetLearningLayer();
       setResult(res.status);
     } catch (err) {
-      const axErr = err as AxiosError<{ detail: string }>;
-      setError(axErr?.response?.data?.detail ?? "Failed");
+      setError(formatApiError(err));
     } finally {
       setLoading(false);
     }

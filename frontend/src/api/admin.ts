@@ -97,7 +97,8 @@ export async function triggerAssignCanonicalArticles(): Promise<TaskResponse> {
 
 export async function resetLearningLayer(): Promise<{ status: string; truncated: string[] }> {
   const { data } = await apiClient.post<{ status: string; truncated: string[] }>(
-    "/admin/reset-learning-layer"
+    "/admin/reset-learning-layer",
+    {}
   );
   return data;
 }
