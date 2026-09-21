@@ -10,7 +10,7 @@ regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -18,20 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.sector import Sector
-from app.models.signal import Signal
 from app.models.signal_weight import SignalWeight
-from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
 from worker.utils.daily_aggregation import (
-    MIN_CONVICTION,
     bucket_signals,
     expand_view_credits,
     majority_regime,
 )
+from worker.utils.learning_queries import fetch_learning_view_outcomes, load_signals_for_views
 
 logger = logging.getLogger(__name__)
 
@@ -134,24 +131,11 @@ async def _compute_sector_weights(
     regime: str | None = None,
 ) -> dict | None:
     """Compute adaptive weights from 1-day daily-view outcomes."""
-    query = (
-        select(DailySignalView, DailySignalViewOutcome)
-        .join(DailySignalViewOutcome, DailySignalViewOutcome.daily_view_id == DailySignalView.id)
-        .join(Stock, DailySignalView.stock_id == Stock.id)
-        .where(DailySignalViewOutcome.window_days == 1)
-        .where(DailySignalViewOutcome.evaluated_at >= cutoff)
-        .where(DailySignalView.conviction >= MIN_CONVICTION)
-        .where(DailySignalView.direction.in_(["bullish", "bearish"]))
-    )
-    if sector_id is not None:
-        query = query.where(Stock.sector_id == sector_id)
-
-    result = await session.execute(query)
-    pairs = result.all()
+    pairs = await fetch_learning_view_outcomes(session, cutoff, sector_id)
     if not pairs:
         return None
 
-    signals_by_key = await _signals_for_views(session, [view for view, _ in pairs])
+    signals_by_key = await load_signals_for_views(session, [view for view, _ in pairs])
 
     expanded = []
     view_count = 0
@@ -176,30 +160,6 @@ async def _compute_sector_weights(
         expanded.extend(rows)
 
     return _weights_from_rows(expanded, sample_count=view_count, correct_count=correct_views)
-
-
-async def _signals_for_views(
-    session: AsyncSession, views: list[DailySignalView]
-) -> dict[tuple[int, date], list[Signal]]:
-    """Load contributing signals keyed by (stock_id, trading_date)."""
-    if not views:
-        return {}
-    stock_ids = {view.stock_id for view in views}
-    dates = {view.trading_date for view in views}
-    result = await session.execute(
-        select(Signal)
-        .where(Signal.stock_id.in_(stock_ids))
-        .where(Signal.trading_date.in_(dates))
-        .where(Signal.composite_score.isnot(None))
-    )
-    wanted = {(view.stock_id, view.trading_date) for view in views}
-    grouped: dict[tuple[int, date], list[Signal]] = {}
-    for signal in result.scalars().all():
-        key = (signal.stock_id, signal.trading_date)
-        if key not in wanted:
-            continue
-        grouped.setdefault(key, []).append(signal)
-    return grouped
 
 
 def _weights_from_rows(

@@ -23,7 +23,6 @@ from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.models.article import Article, ArticleStock
 from app.models.earnings_estimate import EarningsEstimate
 from app.models.insider_transaction import InsiderTransaction
-from app.models.market_data import MarketDataDaily
 from app.models.options_activity import OptionsActivity
 from app.models.sentiment import SentimentScore
 from worker.utils.article_quality import (
@@ -44,6 +43,7 @@ from worker.utils.component_math import (
     trend_score,
     volume_anomaly,
 )
+from worker.utils.market_data_queries import latest_close, recent_close_volume, recent_closes
 
 EARNINGS_WINDOW_DAYS = 2  # Score is active up to 2 days after earnings_date
 ANALYST_WINDOW_DAYS = 30
@@ -224,16 +224,7 @@ async def calc_price_momentum(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> float | None:
     """5-day price change, tanh-scaled to [-1, 1]."""
-    result = await session.execute(
-        select(MarketDataDaily.close, MarketDataDaily.date)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(PRICE_MOMENTUM_DAYS + 1)
-    )
-    rows = result.all()
-
-    closes = [float(r.close) for r in reversed(rows)]
+    closes = await recent_closes(session, stock_id, PRICE_MOMENTUM_DAYS + 1)
     return price_momentum(closes)
 
 
@@ -241,20 +232,7 @@ async def calc_volume_anomaly(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> float | None:
     """Trading volume vs 20-day average, signed by price direction."""
-    result = await session.execute(
-        select(MarketDataDaily.volume, MarketDataDaily.close, MarketDataDaily.date)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.volume != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(BASELINE_DAYS + 1)
-    )
-    rows = result.all()
-
-    closes: list[float] = []
-    volumes: list[float] = []
-    for row in reversed(rows):
-        closes.append(float(row.close) if row.close is not None else 0.0)
-        volumes.append(float(row.volume) if row.volume is not None else 0.0)
+    closes, volumes = await recent_close_volume(session, stock_id, BASELINE_DAYS + 1)
     return volume_anomaly(closes, volumes)
 
 
@@ -262,16 +240,7 @@ async def calc_rsi_score(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> float | None:
     """RSI-based score: oversold (<30) -> positive, overbought (>70) -> negative."""
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(RSI_LOOKBACK_DAYS)
-    )
-    rows = result.all()
-
-    closes = [float(r.close) for r in reversed(rows)]
+    closes = await recent_closes(session, stock_id, RSI_LOOKBACK_DAYS)
     return rsi_score(closes)
 
 
@@ -279,16 +248,7 @@ async def calc_trend_score(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> float | None:
     """Combined SMA crossover + MACD crossover trend score."""
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close != None)  # noqa: E711
-        .order_by(MarketDataDaily.date.desc())
-        .limit(TREND_LOOKBACK_DAYS)
-    )
-    rows = result.all()
-
-    closes = [float(r.close) for r in reversed(rows)]
+    closes = await recent_closes(session, stock_id, TREND_LOOKBACK_DAYS)
     return trend_score(closes)
 
 
@@ -538,15 +498,7 @@ async def calc_analyst_score(session: AsyncSession, stock_id: int, now: datetime
 
     net_rating_score = math.tanh(sum(rating_weights) / 2.0)
 
-    close_result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close.isnot(None))
-        .order_by(MarketDataDaily.date.desc())
-        .limit(1)
-    )
-    close_val = close_result.scalar_one_or_none()
-    current_close = float(close_val) if close_val is not None else 0.0
+    current_close = await latest_close(session, stock_id) or 0.0
 
     upside_values = [(pt - current_close) / current_close for pt in price_targets] if current_close > 0 else []
     if upside_values:

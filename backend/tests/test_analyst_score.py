@@ -15,7 +15,7 @@ def _analyst_session(metas, close=None):
     articles_result = MagicMock()
     articles_result.scalars.return_value.all.return_value = metas
     close_result = MagicMock()
-    close_result.scalar_one_or_none.return_value = close
+    close_result.all.return_value = [(1, close)] if close is not None else []
     session.execute = AsyncMock(side_effect=[articles_result, close_result])
     return session
 

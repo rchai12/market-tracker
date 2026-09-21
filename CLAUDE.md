@@ -100,14 +100,14 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Backtest API: create + queue (Celery), list (paginated), detail with equity curve + trades, delete (cascade), CSV export
 - Backtest frontend: configuration form (stock/sector, date range, mode, capital, strength, advanced settings), result cards, equity curve chart with benchmark overlay, metrics grid with benchmark row, trade log with exit reason badges, comparison mode
 - Code splitting: React.lazy + Suspense for all route pages, Vite auto chunk splitting
-- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), cache (key builder, decorator, invalidation), dead letter (failure recording, signal handler), API keys (generation, hashing), audit logging, slow query detection, password validation, secret key, paper portfolio (close/open gates, snapshot returns, Sharpe/drawdown, beat + skip guards), adaptive feedback (return-weighted votes, analyst in optimizer, regime weight fallback), ML promotion (accuracy/sample gate, weight scaling, has_ml combine, backtester forces ML off), insider Form 4 (role weights, sell discount, DataFrame parse, ML+insider weight pool), shared component_math (live/backtest kernel parity), Jensen alpha/Sharpe/drawdown, daily aggregation (net score, trading_date, proportional credit, 1-day view outcomes, excess return vs sector ETF, 4-hour buckets, recency weights)
+- Unit tests: ticker extraction, text cleaning, scraper parsers, sentiment, signal scoring, signal intelligence, event classifier, duplicate detector, indicators, feedback, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, ML trainer, options flow (aggregation, scoring, weights), cache (key builder, decorator, invalidation), dead letter (failure recording, signal handler), API keys (generation, hashing), audit logging, slow query detection, password validation, secret key, paper portfolio (close/open gates, snapshot returns, Sharpe/drawdown, beat + skip guards), adaptive feedback (return-weighted votes, analyst in optimizer, regime weight fallback), ML promotion (accuracy/sample gate, weight scaling, has_ml combine, backtester forces ML off), insider Form 4 (role weights, sell discount, DataFrame parse, ML+insider weight pool), shared component_math (live/backtest kernel parity), Jensen alpha/Sharpe/drawdown, daily aggregation (net score, trading_date, proportional credit, 1-day view outcomes, excess return vs sector ETF, 4-hour buckets, recency weights), shared close lookups, shared learning loaders
 - Mutation tests: 9 modules across 3 tiers — indicators, metrics, engine, component_scores (Tier 1); signal_generator, weight_optimizer, benchmark, security, dependencies (Tier 2); cache, event_classifier, duplicate_detector, ticker_extractor additions (Tier 3) (~138 mutation-killing tests)
 - Coverage reporting: `.coveragerc` with fail_under=60%, pytest-cov integration, HTML reports
 - Backend integration tests: full HTTP → FastAPI → SQLAlchemy → PostgreSQL cycle (auth flow, stocks/watchlist, signals/admin including daily-views + reset-learning-layer 403, error handling) with httpx AsyncClient + ASGITransport (~37 tests, requires Postgres)
 - Frontend E2E tests: Playwright (Chromium) with authenticated fixtures (auth, navigation, signals, admin) (~10 tests)
 - Vitest config: jsdom environment with @testing-library/react for future frontend unit tests
 - CI: coverage enforcement, integration test job (separate Postgres service), weekly mutation testing workflow
-- Total: 888 unit tests + 37 integration tests + 10 E2E tests
+- Total: 905 unit tests + 37 integration tests + 10 E2E tests
 
 ### What's next
 - TBD
@@ -133,9 +133,9 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     celery_app.py  Celery instance + Redis config
     beat_schedule  Cron schedule (*/5 health, :00 scrape, :05 market data, :10 options, :12 CBOE, :15 sentiment, :30 signals, :35 paper portfolio + matview refresh, :45 outcomes, 18:00 insider Form 4, 21:30 portfolio snapshot, 3AM maintenance, 4AM weights, 4:30AM ML training)
     tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest, paper_portfolio), maintenance/ (retention + matview refresh + health_check)
-    utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/, signal_formula, component_math, performance_metrics, paper_portfolio
+    utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/, signal_formula, component_math, performance_metrics, paper_portfolio, daily_aggregation, market_data_queries, learning_queries
   alembic/         Database migrations
-  tests/           pytest test suite (888 unit tests + 37 integration tests)
+  tests/           pytest test suite (905 unit tests + 37 integration tests)
     test_mutation/   Mutation-killing tests for 9 critical modules (3 tiers)
     integration/     API integration tests (requires PostgreSQL)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
@@ -226,6 +226,8 @@ cd /opt/stock-predictor/backend
 - Shared `get_stock_by_ticker()` dependency in `dependencies.py`
 - Signal formula is the single source of truth in `worker/utils/signal_formula.py` — both signal_generator and backtester import it; never duplicate weights or regime logic elsewhere
 - Component score math is the single source of truth in `worker/utils/component_math.py` — live `component_scores` queries then calls it; the backtester passes arrays; never copy tanh/RSI/sentiment-decay formulas
+- Daily OHLCV lookups live in `worker/utils/market_data_queries.py` — outcome eval, paper portfolio, portfolio API, and component scorers must not copy close/latest/nth-session queries
+- Daily-view learning loaders live in `worker/utils/learning_queries.py` — weight optimizer and ML trainer must not copy the 1-day conviction query or signals-for-views grouping
 - Sharpe, max drawdown, and Jensen alpha/beta live in `worker/utils/performance_metrics.py` (rf = 0); paper portfolio and backtests must not define their own
 
 ### TypeScript (frontend/)
@@ -295,6 +297,8 @@ cd /opt/stock-predictor/backend
 | `backend/worker/tasks/sentiment/sentiment_task.py` | Celery task: process unprocessed articles through FinBERT |
 | `backend/worker/utils/signal_formula.py` | Shared composite formula: weights, regime multiplier, gated ML, classification; imported by live generator and backtester |
 | `backend/worker/utils/daily_aggregation.py` | Trading-date assignment, net-view score/conviction, 4-hour buckets, recency weights, sector ETF map, feature aggregation, proportional credit |
+| `backend/worker/utils/market_data_queries.py` | Shared daily close lookups (on-or-before, nth session, latest, recent series) |
+| `backend/worker/utils/learning_queries.py` | Shared 1-day daily-view outcome query + signals-for-views grouping |
 | `backend/app/models/daily_signal_view.py` | Daily net view + daily-view outcome ORM |
 | `backend/worker/utils/component_math.py` | Shared pure scorers (price, volume, RSI, trend, sentiment decay); live + backtester |
 | `backend/worker/utils/performance_metrics.py` | Shared Sharpe, max drawdown, Jensen alpha/beta (rf = 0) |

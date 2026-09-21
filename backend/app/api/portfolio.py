@@ -7,7 +7,6 @@ from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import NotFoundError
 from app.dependencies import get_current_user, get_db
-from app.models.market_data import MarketDataDaily
 from app.models.paper_portfolio import (
     PaperPortfolio,
     PaperPortfolioSnapshot,
@@ -26,6 +25,7 @@ from app.schemas.portfolio import (
     PortfolioSummary,
     PortfolioTrade,
 )
+from worker.utils.market_data_queries import latest_closes
 from worker.utils.paper_portfolio import compute_portfolio_stats
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -38,7 +38,7 @@ async def get_portfolio_summary(
 ):
     portfolio = await _active_portfolio(db)
     positions = await _positions(db, portfolio.id)
-    closes = await _latest_closes(db, [p.stock_id for p in positions])
+    closes = await latest_closes(db, [p.stock_id for p in positions])
     equity = sum(p.shares * closes.get(p.stock_id, p.entry_price) for p in positions)
     total_value = portfolio.current_cash + equity
     cash_pct = (portfolio.current_cash / total_value * 100.0) if total_value else 0.0
@@ -52,7 +52,7 @@ async def get_portfolio_summary(
         spy_id = (
             await db.execute(select(Stock.id).where(Stock.ticker == portfolio.benchmark_ticker.upper()))
         ).scalar_one_or_none()
-        spy_close = (await _latest_closes(db, [spy_id])).get(spy_id) if spy_id is not None else None
+        spy_close = (await latest_closes(db, [spy_id])).get(spy_id) if spy_id is not None else None
         if spy_close is not None:
             bench_return = (
                 (spy_close - portfolio.benchmark_inception_price) / portfolio.benchmark_inception_price * 100.0
@@ -77,7 +77,7 @@ async def get_portfolio_positions(
 ):
     portfolio = await _active_portfolio(db)
     positions = await _positions(db, portfolio.id)
-    closes = await _latest_closes(db, [p.stock_id for p in positions])
+    closes = await latest_closes(db, [p.stock_id for p in positions])
     rows: list[PortfolioPosition] = []
     for pos in positions:
         stock = pos.stock
@@ -223,21 +223,3 @@ async def _positions(db: AsyncSession, portfolio_id: int) -> list[PaperPosition]
         .order_by(PaperPosition.opened_at.desc())
     )
     return list(result.unique().scalars().all())
-
-
-async def _latest_closes(db: AsyncSession, stock_ids: list[int]) -> dict[int, float]:
-    out: dict[int, float] = {}
-    for stock_id in stock_ids:
-        if stock_id is None:
-            continue
-        result = await db.execute(
-            select(MarketDataDaily.close)
-            .where(MarketDataDaily.stock_id == stock_id)
-            .where(MarketDataDaily.close.isnot(None))
-            .order_by(MarketDataDaily.date.desc())
-            .limit(1)
-        )
-        val = result.scalar_one_or_none()
-        if val is not None:
-            out[stock_id] = float(val)
-    return out

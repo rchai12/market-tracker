@@ -7,7 +7,7 @@ upsert results to ml_models table. Runs daily at 4:30 AM after weight optimizer.
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -15,14 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.ml_model import MLModel
 from app.models.sector import Sector
-from app.models.signal import Signal
-from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import MIN_CONVICTION, aggregate_feature_vector, bucket_signals
+from worker.utils.daily_aggregation import aggregate_feature_vector, bucket_signals
+from worker.utils.learning_queries import fetch_learning_view_outcomes, load_signals_for_views
 from worker.utils.ml_trainer import FEATURE_NAMES, train_model
 
 logger = logging.getLogger(__name__)
@@ -47,7 +45,7 @@ def train_ml_models(self):
 
 async def _train_ml_models_async() -> dict:
     """Train per-sector + global ML models from evaluated outcomes."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     lookback_cutoff = now - timedelta(days=settings.feedback_lookback_days)
     sectors_trained = 0
     global_trained = False
@@ -137,22 +135,8 @@ async def _get_training_data(
     cutoff: datetime,
 ) -> tuple[list[list[float]], list[bool]]:
     """Fetch feature matrix and labels from 1-day daily-view outcomes."""
-    query = (
-        select(DailySignalView, DailySignalViewOutcome)
-        .join(DailySignalViewOutcome, DailySignalViewOutcome.daily_view_id == DailySignalView.id)
-        .join(Stock, DailySignalView.stock_id == Stock.id)
-        .where(DailySignalViewOutcome.window_days == 1)
-        .where(DailySignalViewOutcome.evaluated_at >= cutoff)
-        .where(DailySignalView.conviction >= MIN_CONVICTION)
-        .where(DailySignalView.direction.in_(["bullish", "bearish"]))
-        .order_by(DailySignalView.trading_date.asc())
-    )
-    if sector_id is not None:
-        query = query.where(Stock.sector_id == sector_id)
-
-    result = await session.execute(query)
-    pairs = result.all()
-    signals_by_key = await _signals_for_views(session, [view for view, _ in pairs])
+    pairs = await fetch_learning_view_outcomes(session, cutoff, sector_id, order_by_date=True)
+    signals_by_key = await load_signals_for_views(session, [view for view, _ in pairs])
 
     features: list[list[float]] = []
     labels: list[bool] = []
@@ -163,27 +147,6 @@ async def _get_training_data(
         features.append(aggregate_feature_vector(contribs))
         labels.append(bool(outcome.is_correct))
     return features, labels
-
-
-async def _signals_for_views(session: AsyncSession, views: list[DailySignalView]) -> dict:
-    if not views:
-        return {}
-    stock_ids = {view.stock_id for view in views}
-    dates = {view.trading_date for view in views}
-    result = await session.execute(
-        select(Signal)
-        .where(Signal.stock_id.in_(stock_ids))
-        .where(Signal.trading_date.in_(dates))
-        .where(Signal.composite_score.isnot(None))
-    )
-    wanted = {(view.stock_id, view.trading_date) for view in views}
-    grouped: dict = {}
-    for signal in result.scalars().all():
-        key = (signal.stock_id, signal.trading_date)
-        if key not in wanted:
-            continue
-        grouped.setdefault(key, []).append(signal)
-    return grouped
 
 
 async def _get_existing_model(session: AsyncSession, sector_id: int | None) -> MLModel | None:
@@ -212,7 +175,7 @@ async def _upsert_ml_model(
         validation_f1=training_result.validation_f1,
         model_path=training_result.model_path,
         is_active=True,
-        trained_at=datetime.now(timezone.utc),
+        trained_at=datetime.now(UTC),
         feature_importances=json.dumps(training_result.feature_importances),
         training_config=json.dumps(training_result.training_config),
     )

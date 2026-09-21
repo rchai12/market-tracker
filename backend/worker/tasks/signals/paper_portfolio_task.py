@@ -12,7 +12,6 @@ from sqlalchemy.orm import joinedload
 
 from app.config import settings
 from app.database import async_session
-from app.models.market_data import MarketDataDaily
 from app.models.paper_portfolio import (
     PaperPortfolio,
     PaperPortfolioSnapshot,
@@ -22,6 +21,7 @@ from app.models.paper_portfolio import (
 from app.models.signal import Signal
 from app.models.stock import Stock
 from worker.utils.celery_helpers import async_task
+from worker.utils.market_data_queries import latest_close, latest_closes
 from worker.utils.paper_portfolio import (
     OpenCandidate,
     close_reason,
@@ -83,7 +83,7 @@ async def _update_portfolio(session: AsyncSession, now: datetime) -> dict:
 async def _snapshot_portfolio(session: AsyncSession, now: datetime) -> dict:
     portfolio = await _get_or_create_portfolio(session, now)
     positions = await _load_positions(session, portfolio.id)
-    closes = await _latest_closes(session, [p.stock_id for p in positions])
+    closes = await latest_closes(session, [p.stock_id for p in positions])
     equity = 0.0
     for pos in positions:
         price = closes.get(pos.stock_id)
@@ -92,7 +92,7 @@ async def _snapshot_portfolio(session: AsyncSession, now: datetime) -> dict:
         equity += pos.shares * price
     total_value = portfolio.current_cash + equity
     spy_id = await _stock_id_by_ticker(session, portfolio.benchmark_ticker)
-    spy_close = await _latest_close(session, spy_id) if spy_id is not None else None
+    spy_close = await latest_close(session, spy_id) if spy_id is not None else None
 
     prev = await session.execute(
         select(PaperPortfolioSnapshot)
@@ -165,7 +165,7 @@ async def _get_or_create_portfolio(session: AsyncSession, now: datetime) -> Pape
         return existing
 
     spy_id = await _stock_id_by_ticker(session, "SPY")
-    spy_close = await _latest_close(session, spy_id) if spy_id is not None else None
+    spy_close = await latest_close(session, spy_id) if spy_id is not None else None
     capital = settings.paper_portfolio_starting_capital
     portfolio = PaperPortfolio(
         inception_date=now.date(),
@@ -196,7 +196,7 @@ async def _close_positions(
 ) -> list[dict]:
     closed: list[dict] = []
     for pos in positions:
-        price = await _latest_close(session, pos.stock_id)
+        price = await latest_close(session, pos.stock_id)
         if price is None:
             continue
         signal = await _latest_signal(session, pos.stock_id)
@@ -240,7 +240,7 @@ async def _open_positions(
     positions: list[PaperPosition],
     now: datetime,
 ) -> int:
-    closes = await _latest_closes(session, [p.stock_id for p in positions])
+    closes = await latest_closes(session, [p.stock_id for p in positions])
     equity = sum(p.shares * closes.get(p.stock_id, p.entry_price) for p in positions)
     portfolio_value = portfolio.current_cash + equity
     sector_counts: dict[int | None, int] = {}
@@ -299,7 +299,7 @@ async def _open_candidates(session: AsyncSession, held: set[int]) -> list[OpenCa
         if signal.stock_id in held or signal.stock_id in seen:
             continue
         seen.add(signal.stock_id)
-        close = await _latest_close(session, signal.stock_id)
+        close = await latest_close(session, signal.stock_id)
         if close is None:
             continue
         stock = signal.stock
@@ -321,29 +321,6 @@ async def _latest_signal(session: AsyncSession, stock_id: int) -> Signal | None:
         select(Signal).where(Signal.stock_id == stock_id).order_by(Signal.generated_at.desc()).limit(1)
     )
     return result.scalar_one_or_none()
-
-
-async def _latest_close(session: AsyncSession, stock_id: int | None) -> float | None:
-    if stock_id is None:
-        return None
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.close.isnot(None))
-        .order_by(MarketDataDaily.date.desc())
-        .limit(1)
-    )
-    val = result.scalar_one_or_none()
-    return float(val) if val is not None else None
-
-
-async def _latest_closes(session: AsyncSession, stock_ids: list[int]) -> dict[int, float]:
-    out: dict[int, float] = {}
-    for stock_id in stock_ids:
-        price = await _latest_close(session, stock_id)
-        if price is not None:
-            out[stock_id] = price
-    return out
 
 
 async def _stock_id_by_ticker(session: AsyncSession, ticker: str) -> int | None:

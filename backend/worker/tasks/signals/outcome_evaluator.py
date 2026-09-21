@@ -6,7 +6,7 @@ the actual price change over 1, 3, and 5 trading day windows.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -16,7 +16,6 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import async_session
 from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
-from app.models.market_data import MarketDataDaily
 from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
 from app.models.stock import Stock
@@ -28,6 +27,8 @@ from worker.utils.daily_aggregation import (
     excess_return_pct,
     outcome_is_correct,
 )
+from worker.utils.market_data_queries import close_on_or_before as _get_close_on_or_before
+from worker.utils.market_data_queries import nth_trading_day_close as _get_nth_trading_day_close
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def evaluate_signal_outcomes(self):
 
 async def _evaluate_outcomes_async() -> dict:
     """Evaluate signal accuracy against actual price movements."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     windows = settings.feedback_windows_list
     evaluated = 0
     skipped = 0
@@ -276,40 +277,3 @@ async def _sector_benchmark_return(
     if etf_outcome is None:
         return None
     return (etf_outcome - etf_baseline) / etf_baseline
-
-
-async def _get_close_on_or_before(
-    session: AsyncSession, stock_id: int, target_date
-) -> float | None:
-    """Get the close price on or before the target date."""
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.date <= target_date)
-        .where(MarketDataDaily.close.isnot(None))
-        .order_by(MarketDataDaily.date.desc())
-        .limit(1)
-    )
-    row = result.scalar_one_or_none()
-    return float(row) if row is not None else None
-
-
-async def _get_nth_trading_day_close(
-    session: AsyncSession, stock_id: int, start_date, n: int
-) -> float | None:
-    """Get close price N trading days after start_date.
-
-    Uses offset on market_data_daily which only contains trading days,
-    so weekends/holidays are naturally skipped.
-    """
-    result = await session.execute(
-        select(MarketDataDaily.close)
-        .where(MarketDataDaily.stock_id == stock_id)
-        .where(MarketDataDaily.date > start_date)
-        .where(MarketDataDaily.close.isnot(None))
-        .order_by(MarketDataDaily.date.asc())
-        .offset(n - 1)
-        .limit(1)
-    )
-    row = result.scalar_one_or_none()
-    return float(row) if row is not None else None
