@@ -42,10 +42,10 @@ beat_schedule = {
         "task": "worker.tasks.sentiment.llm_extraction_task.run_llm_extraction",
         "schedule": crontab(minute=20, hour="*/2"),
     },
-    # Signal generation - runs at :30 (after sentiment processing)
+    # Signal generation - runs at :30 on weekdays (after sentiment processing)
     "generate-signals": {
         "task": "worker.tasks.signals.signal_generator.generate_all_signals",
-        "schedule": crontab(minute=30),
+        "schedule": crontab(minute=30, day_of_week="1-5"),
     },
     # Paper portfolio update (after signal generation at :30; weekdays gated in-task)
     "update-paper-portfolio": {

@@ -46,7 +46,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Admin audit logging: `record_audit()` helper on all admin POST actions, `audit_logs` table with user/action/resource/IP
 - Health alert notifications: Celery task every 5 min checks DB/Redis/queue depth, Discord webhook with 15-min throttle
 - Slow query detection: SQLAlchemy `before_cursor_execute`/`after_cursor_execute` event listeners, configurable threshold (default 500ms)
-- Admin API: trigger scrape, historical seed, maintenance, DB stats, task failures (list + retry), audit log, reset-learning-layer (truncate outcomes/models/weights)
+- Admin API: trigger scrape, historical seed, maintenance, DB stats, task failures (list + retry), audit log, reset-learning-layer (delete per-signal and daily-view outcomes, models, weights)
 - React frontend with AppLayout (sidebar + header), login/register, dark mode (default dark, persists on refresh)
 - Mobile responsive sidebar: collapsible drawer on small screens with hamburger toggle
 - Dynamic sidebar with sector links fetched from API, clickable to filtered signals view
@@ -107,7 +107,7 @@ Sentiment-driven stock market prediction system. Scrapes financial news, runs Fi
 - Frontend E2E tests: Playwright (Chromium) with authenticated fixtures (auth, navigation, signals, admin) (~10 tests)
 - Vitest config: jsdom environment with @testing-library/react for future frontend unit tests
 - CI: coverage enforcement, integration test job (separate Postgres service), weekly mutation testing workflow
-- Total: 877 unit tests + 37 integration tests + 10 E2E tests
+- Total: 888 unit tests + 37 integration tests + 10 E2E tests
 
 ### What's next
 - TBD
@@ -135,7 +135,7 @@ backend/           Python backend (FastAPI + Celery + SQLAlchemy)
     tasks/         Task modules: scraping/, sentiment/, signals/ (generator, component_scores, dispatcher, outcome evaluator, weight optimizer, ml_trainer, backtest, paper_portfolio), maintenance/ (retention + matview refresh + health_check)
     utils/         Rate limiter, text cleaner, ticker extractor, event classifier, duplicate detector, async_task helper, celery_helpers, technical_indicators, ml_trainer, backtester/, signal_formula, component_math, performance_metrics, paper_portfolio
   alembic/         Database migrations
-  tests/           pytest test suite (877 unit tests + 37 integration tests)
+  tests/           pytest test suite (888 unit tests + 37 integration tests)
     test_mutation/   Mutation-killing tests for 9 critical modules (3 tiers)
     integration/     API integration tests (requires PostgreSQL)
 frontend/          React 19 + TypeScript (Vite, Tailwind)
@@ -451,7 +451,7 @@ Hourly (Celery Beat on Compute VM):
   :12 → fetch CBOE put/call ratio (weekdays only, if OPTIONS_FLOW_ENABLED)
   :15 → sentiment catch-up (process any unprocessed articles)
   every 2h :20 → LLM extraction (Claude Haiku on earnings + analyst articles with quality_score ≥ 0.60, if LLM_EXTRACTION_ENABLED); extracts guidance_change + management_tone (earnings) and rating_change + price_target + analyst_firm (analyst)
-  :30 → generate composite signals (+ ML inference if enabled) → upsert daily net views → dispatch alerts → invalidate signals/sentiment cache
+  :30 → generate composite signals (+ ML inference if enabled; weekdays only) → upsert daily net views → dispatch alerts → invalidate signals/sentiment cache
   :35 → update paper portfolio (close/open from latest signals, if PAPER_PORTFOLIO_ENABLED; weekdays in-task) + refresh materialized views (daily sentiment)
 
   :45 → evaluate signal outcomes and daily-view outcomes (1/3/5-day windows; daily-view `is_correct` uses excess vs sector ETF; learning uses 1-day views with conviction ≥ 0.20)

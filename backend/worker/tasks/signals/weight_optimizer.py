@@ -91,6 +91,10 @@ async def _compute_adaptive_weights_async() -> dict:
 
         await session.commit()
 
+    from app.core.cache import invalidate_pattern
+
+    await invalidate_pattern("cache:signals:*")
+
     logger.info(
         "Adaptive weight computation complete: %s sectors, %s regime pairs updated",
         sectors_updated,

@@ -18,6 +18,22 @@ from worker.utils.async_task import run_async
 
 logger = logging.getLogger(__name__)
 
+RETRYABLE_TASK_PREFIX = "worker.tasks."
+
+
+def is_retryable_task(task_name: str) -> bool:
+    """True if admin DLQ retry may re-dispatch this Celery task name.
+
+    Prefix-only: the API process does not import every worker module, so
+    ``celery_app.tasks`` is not a reliable registry here. Names outside
+    ``worker.tasks.`` (Celery builtins, empty, or injected values) are rejected.
+    """
+    return (
+        isinstance(task_name, str)
+        and task_name.startswith(RETRYABLE_TASK_PREFIX)
+        and len(task_name) > len(RETRYABLE_TASK_PREFIX)
+    )
+
 
 def async_task(
     name: str,

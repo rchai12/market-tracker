@@ -47,7 +47,7 @@ from worker.tasks.signals.component_scores import (
     get_recent_article_count,
 )
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import bucket_signals, compute_net_view, trading_date_lower_bound
+from worker.utils.daily_aggregation import ET, bucket_signals, compute_net_view, trading_date_lower_bound
 from worker.utils.signal_formula import (
     MODERATE_THRESHOLD,
     STRONG_THRESHOLD,
@@ -182,9 +182,13 @@ def generate_all_signals(self):
         raise self.retry(exc=exc)
 
 
-async def _generate_signals_async() -> dict:
+async def _generate_signals_async(now: datetime | None = None) -> dict:
     """Iterate active stocks, compute scores, store signals."""
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
+    if now.astimezone(ET).weekday() >= 5:
+        logger.info("Skipping signal generation: weekend")
+        return {"skipped": True, "reason": "weekend"}
+
     window_end = now
     window_start = now - timedelta(hours=1)
 

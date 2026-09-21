@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.logging_config import _sanitize_credentials
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ async def _check_db(session: AsyncSession) -> dict:
     except Exception as exc:
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
         logger.error("Health check: database down — %s", exc)
-        return {"status": "down", "latency_ms": latency_ms, "error": str(exc)}
+        return {"status": "down", "latency_ms": latency_ms, "error": _sanitize_credentials(str(exc))}
 
 
 async def _check_redis() -> dict:
@@ -47,7 +48,7 @@ async def _check_redis() -> dict:
     except Exception as exc:
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
         logger.error("Health check: redis down — %s", exc)
-        return {"status": "down", "latency_ms": latency_ms, "error": str(exc)}
+        return {"status": "down", "latency_ms": latency_ms, "error": _sanitize_credentials(str(exc))}
 
 
 @router.get("/health")

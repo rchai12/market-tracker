@@ -13,6 +13,7 @@ from app.core.audit import record_audit
 from app.core.cache import cached
 from app.dependencies import get_current_admin, get_db
 from app.models.audit_log import AuditLog
+from app.models.daily_signal_view import DailySignalViewOutcome
 from app.models.ml_model import MLModel
 from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.signal_outcome import SignalOutcome
@@ -317,12 +318,14 @@ async def trigger_ml_training(
     return {"task_id": task.id, "status": "queued"}
 
 
-LEARNING_LAYER_TABLES = (
-    "signal_outcomes",
-    "ml_models",
-    "signal_weights",
-    "regime_adaptive_weights",
+LEARNING_LAYER_MODELS = (
+    DailySignalViewOutcome,
+    SignalOutcome,
+    MLModel,
+    SignalWeight,
+    RegimeAdaptiveWeight,
 )
+LEARNING_LAYER_TABLES = tuple(model.__tablename__ for model in LEARNING_LAYER_MODELS)
 
 
 @router.post("/reset-learning-layer", status_code=202)
@@ -338,7 +341,7 @@ async def reset_learning_layer(
     the admin request on a live worker.
     """
     try:
-        for model in (SignalOutcome, MLModel, SignalWeight, RegimeAdaptiveWeight):
+        for model in LEARNING_LAYER_MODELS:
             await db.execute(delete(model))
     except Exception as exc:
         logger.exception("reset-learning-layer failed")
@@ -480,6 +483,10 @@ async def retry_failed_task(
     kwargs = json_lib.loads(failure.task_kwargs) if failure.task_kwargs else {}
 
     from worker.celery_app import celery_app as celery
+    from worker.utils.celery_helpers import is_retryable_task
+
+    if not is_retryable_task(failure.task_name):
+        raise HTTPException(status_code=400, detail="Task is not on the retry allowlist")
 
     task_result = celery.send_task(failure.task_name, args=args, kwargs=kwargs)
 
