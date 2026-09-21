@@ -47,7 +47,7 @@ from worker.tasks.signals.component_scores import (
     get_recent_article_count,
 )
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import compute_net_view, trading_date_lower_bound
+from worker.utils.daily_aggregation import bucket_signals, compute_net_view, trading_date_lower_bound
 from worker.utils.signal_formula import (
     MODERATE_THRESHOLD,
     STRONG_THRESHOLD,
@@ -356,7 +356,11 @@ async def _resolve_trading_date(session: AsyncSession, stock_id: int, generated_
 
 
 async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date: date | None) -> None:
-    """Rebuild the net view for (stock, trading_date). Skip empty groups."""
+    """Rebuild the net view for (stock, trading_date). Skip empty groups.
+
+    Hourly signals are reduced to one strongest |composite| per 4-hour ET
+    bucket, then recency-weighted toward the session close.
+    """
     if trading_date is None:
         return
     result = await session.execute(
@@ -366,7 +370,8 @@ async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date:
         .where(Signal.composite_score.isnot(None))
     )
     signals = list(result.scalars().all())
-    view = compute_net_view(signals)
+    raw_signal_count = len(signals)
+    view = compute_net_view(bucket_signals(signals), trading_date)
     if view is None:
         return
     stmt = pg_insert(DailySignalView).values(
@@ -376,6 +381,7 @@ async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date:
         direction=view.direction,
         conviction=round(view.conviction, 6),
         signal_count=view.signal_count,
+        raw_signal_count=raw_signal_count,
         updated_at=datetime.now(UTC),
     )
     stmt = stmt.on_conflict_do_update(
@@ -385,6 +391,7 @@ async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date:
             "direction": stmt.excluded.direction,
             "conviction": stmt.excluded.conviction,
             "signal_count": stmt.excluded.signal_count,
+            "raw_signal_count": stmt.excluded.raw_signal_count,
             "updated_at": stmt.excluded.updated_at,
         },
     )

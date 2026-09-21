@@ -1,11 +1,13 @@
-"""Daily net-view aggregation for learning (Phase 24).
+"""Daily net-view aggregation for learning (Phase 24 / 24b).
 
-Pure helpers: trading-date assignment, net score, conviction, feature
-aggregation, and proportional component credit. DB/Celery stay in tasks.
+Pure helpers: trading-date assignment, net score, conviction, time buckets,
+recency weights, excess-return scoring, and proportional component credit.
+DB/Celery stay in tasks.
 """
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -17,6 +19,17 @@ MIN_CONVICTION = 0.20
 MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
 ET = ZoneInfo("America/New_York")
+RECENCY_LAMBDA = 0.15  # half-life ≈ 4.6 hours
+BUCKET_BOUNDARIES_ET = (time(9, 30), time(13, 30), time(16, 0))
+
+SECTOR_BENCHMARK = {
+    "Energy": "XLE",
+    "Financials": "XLF",
+    "Technology": "XLK",
+    "Communication Services": "XLC",
+    "Consumer Discretionary": "XLY",
+    "Market ETFs": None,
+}
 
 FEATURE_FIELDS = (
     "sentiment_score",
@@ -75,25 +88,24 @@ class NetView:
     weight_total: float
 
 
-def compute_net_view(signals: Sequence[object]) -> NetView | None:
-    """Magnitude-weighted net direction from per-signal composites.
+def compute_net_view(signals: Sequence[object], trading_date: date | None = None) -> NetView | None:
+    """Magnitude- and recency-weighted net direction from per-signal composites.
 
-    Each signal votes ``abs(composite) * sign(direction)``. Neutrals contribute
-    0 to the numerator. Returns None when no magnitude remains.
+    Each signal votes ``abs(composite) * recency * sign(direction)``. Neutrals
+    contribute 0 to the numerator. Returns None when no magnitude remains.
     """
     if not signals:
         return None
     weighted_sum = 0.0
     weight_total = 0.0
+    counted = 0
     for signal in signals:
-        composite = getattr(signal, "composite_score", None)
-        if composite is None:
+        weight = signal_vote_weight(signal, trading_date)
+        if weight == 0:
             continue
-        mag = abs(float(composite))
-        if mag == 0:
-            continue
-        weighted_sum += mag * direction_sign(getattr(signal, "direction", "") or "")
-        weight_total += mag
+        counted += 1
+        weighted_sum += weight * direction_sign(getattr(signal, "direction", "") or "")
+        weight_total += weight
     if weight_total == 0:
         return None
     net_score = weighted_sum / weight_total
@@ -101,9 +113,71 @@ def compute_net_view(signals: Sequence[object]) -> NetView | None:
         net_score=net_score,
         conviction=abs(net_score),
         direction="bullish" if net_score > 0 else "bearish",
-        signal_count=len(signals),
+        signal_count=counted,
         weight_total=weight_total,
     )
+
+
+def signal_vote_weight(signal: object, trading_date: date | None = None) -> float:
+    """``abs(composite)`` scaled by recency when *trading_date* and ``generated_at`` exist."""
+    composite = getattr(signal, "composite_score", None)
+    if composite is None:
+        return 0.0
+    mag = abs(float(composite))
+    if mag == 0:
+        return 0.0
+    generated_at = getattr(signal, "generated_at", None)
+    if trading_date is None or generated_at is None:
+        return mag
+    return mag * recency_weight(generated_at, trading_date)
+
+
+def recency_weight(generated_at: datetime, trading_date: date) -> float:
+    """1.0 at the session close, exponential decay for earlier signals."""
+    et = generated_at.astimezone(ET) if generated_at.tzinfo else generated_at.replace(tzinfo=ET)
+    close_dt = datetime.combine(trading_date, MARKET_CLOSE, tzinfo=ET)
+    hours_before = max(0.0, (close_dt - et).total_seconds() / 3600.0)
+    return math.exp(-RECENCY_LAMBDA * hours_before)
+
+
+def signal_bucket(generated_at: datetime) -> str:
+    """Map a timestamp to pre_market / morning / afternoon (ET)."""
+    et = generated_at.astimezone(ET) if generated_at.tzinfo else generated_at.replace(tzinfo=ET)
+    clock = et.time()
+    pre_market_end, morning_end, _close = BUCKET_BOUNDARIES_ET
+    if clock < pre_market_end:
+        return "pre_market"
+    if clock < morning_end:
+        return "morning"
+    return "afternoon"
+
+
+def bucket_signals(signals: Sequence[object]) -> list:
+    """One signal per 4-hour ET bucket: highest |composite_score| wins."""
+    buckets: dict[str, object] = {}
+    for signal in signals:
+        composite = getattr(signal, "composite_score", None)
+        if composite is None:
+            continue
+        generated_at = getattr(signal, "generated_at", None)
+        bucket = signal_bucket(generated_at) if generated_at is not None else "afternoon"
+        existing = buckets.get(bucket)
+        if existing is None or abs(float(composite)) > abs(float(getattr(existing, "composite_score", 0) or 0)):
+            buckets[bucket] = signal
+    return list(buckets.values())
+
+
+def outcome_is_correct(direction: str, scored_return: float) -> bool:
+    return (direction == "bullish" and scored_return > 0) or (
+        direction == "bearish" and scored_return < 0
+    )
+
+
+def excess_return_pct(stock_return: float, sector_return: float | None) -> float | None:
+    """Stock minus sector ETF; None when there is no benchmark."""
+    if sector_return is None:
+        return None
+    return float(stock_return) - float(sector_return)
 
 
 def majority_regime(signals: Sequence[object]) -> str | None:
@@ -149,20 +223,18 @@ def expand_view_credits(
     signals: Sequence[object],
     price_change_pct: float,
     is_correct: bool,
+    trading_date: date | None = None,
 ) -> list[SimpleNamespace]:
-    """One credit-row per contributing signal, return scaled by magnitude share."""
-    net = compute_net_view(signals)
+    """One credit-row per contributing signal, return scaled by vote-weight share."""
+    net = compute_net_view(signals, trading_date)
     if net is None or net.weight_total <= 0:
         return []
     rows: list[SimpleNamespace] = []
     for signal in signals:
-        composite = getattr(signal, "composite_score", None)
-        if composite is None:
+        weight = signal_vote_weight(signal, trading_date)
+        if weight == 0:
             continue
-        mag = abs(float(composite))
-        if mag == 0:
-            continue
-        share = magnitude_share(mag, net.weight_total)
+        share = weight / net.weight_total
         rows.append(
             SimpleNamespace(
                 sentiment_score=getattr(signal, "sentiment_score", None),

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from worker.tasks.signals.signal_generator import _resolve_trading_date, _upsert_daily_view
 from worker.utils.daily_aggregation import (
     MIN_CONVICTION,
+    bucket_signals,
     compute_net_view,
     expand_view_credits,
     in_cash_session,
@@ -139,3 +140,45 @@ class TestExpandCredits:
         magnitudes = sorted(abs(r.price_change_pct) for r in rows)
         assert abs(magnitudes[0] - 0.015) < 1e-9
         assert abs(magnitudes[1] - 0.035) < 1e-9
+
+    def test_recency_tilts_credit_share(self):
+        trading = date(2026, 9, 14)
+        morning = _sig(
+            0.5,
+            "bullish",
+            generated_at=datetime(2026, 9, 14, 9, 30, tzinfo=ET),
+            sentiment_score=0.1,
+        )
+        afternoon = _sig(
+            0.5,
+            "bullish",
+            generated_at=datetime(2026, 9, 14, 15, 30, tzinfo=ET),
+            sentiment_score=0.9,
+        )
+        rows = expand_view_credits([morning, afternoon], 0.04, True, trading_date=trading)
+        by_sent = {r.sentiment_score: r.share for r in rows}
+        assert by_sent[0.9] > by_sent[0.1]
+
+
+class TestBucketAndRecency:
+    def test_compute_net_view_with_trading_date_applies_recency(self):
+        trading = date(2026, 9, 14)
+        morning = _sig(0.8, "bullish", generated_at=datetime(2026, 9, 14, 9, 30, tzinfo=ET))
+        afternoon = _sig(0.5, "bearish", generated_at=datetime(2026, 9, 14, 15, 30, tzinfo=ET))
+        without = compute_net_view([morning, afternoon])
+        with_recency = compute_net_view([morning, afternoon], trading)
+        assert without is not None and with_recency is not None
+        assert without.direction == "bullish"
+        assert with_recency.direction == "bearish"
+
+    def test_bucket_then_recency_keeps_strongest_per_window(self):
+        trading = date(2026, 9, 14)
+        raw = [
+            _sig(0.3, "bullish", generated_at=datetime(2026, 9, 14, 10, 0, tzinfo=ET)),
+            _sig(0.9, "bullish", generated_at=datetime(2026, 9, 14, 11, 0, tzinfo=ET)),
+            _sig(0.4, "bearish", generated_at=datetime(2026, 9, 14, 14, 0, tzinfo=ET)),
+        ]
+        view = compute_net_view(bucket_signals(raw), trading)
+        assert view is not None
+        assert view.signal_count == 2
+        assert view.direction == "bullish"

@@ -2,7 +2,7 @@
 
 Analyzes historical daily-view accuracy per sector (and per market regime) to
 compute optimal weights for the predictive components. Votes are weighted by
-``abs(price_change_pct) * magnitude_share`` so large moves and larger contributors
+``abs(price_change_pct) * recency-adjusted magnitude share`` so large moves and larger contributors
 count more. Analyst is tracked alongside earnings/options. RSI and trend are
 regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
 """
@@ -26,7 +26,12 @@ from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import MIN_CONVICTION, expand_view_credits, majority_regime
+from worker.utils.daily_aggregation import (
+    MIN_CONVICTION,
+    bucket_signals,
+    expand_view_credits,
+    majority_regime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -148,12 +153,17 @@ async def _compute_sector_weights(
     view_count = 0
     correct_views = 0
     for view, outcome in pairs:
-        contribs = signals_by_key.get((view.stock_id, view.trading_date), [])
+        contribs = bucket_signals(signals_by_key.get((view.stock_id, view.trading_date), []))
         if not contribs:
             continue
         if regime is not None and majority_regime(contribs) != regime:
             continue
-        rows = expand_view_credits(contribs, float(outcome.price_change_pct), bool(outcome.is_correct))
+        rows = expand_view_credits(
+            contribs,
+            float(outcome.price_change_pct),
+            bool(outcome.is_correct),
+            trading_date=view.trading_date,
+        )
         if not rows:
             continue
         view_count += 1

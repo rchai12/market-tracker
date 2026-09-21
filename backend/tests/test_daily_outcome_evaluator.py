@@ -34,11 +34,16 @@ class TestEvaluateDailyView:
                 "worker.tasks.signals.outcome_evaluator._get_nth_trading_day_close",
                 new=AsyncMock(return_value=102.0),
             ),
+            patch(
+                "worker.tasks.signals.outcome_evaluator._sector_name_for_stock",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             outcome = asyncio.run(_evaluate_single_daily_view(AsyncMock(), view, 1))
         assert outcome is not None
         assert outcome.is_correct is True
         assert abs(outcome.price_change_pct - 0.02) < 1e-9
+        assert outcome.excess_return_pct is None
         assert view.baseline_close == 100.0
 
     def test_bearish_correct_when_price_down(self):
@@ -51,6 +56,10 @@ class TestEvaluateDailyView:
             patch(
                 "worker.tasks.signals.outcome_evaluator._get_nth_trading_day_close",
                 new=AsyncMock(return_value=97.0),
+            ),
+            patch(
+                "worker.tasks.signals.outcome_evaluator._sector_name_for_stock",
+                new=AsyncMock(return_value=None),
             ),
         ):
             outcome = asyncio.run(_evaluate_single_daily_view(AsyncMock(), view, 1))
@@ -103,6 +112,10 @@ class TestEvaluateDailyView:
             patch(
                 "worker.tasks.signals.outcome_evaluator._get_nth_trading_day_close",
                 new=fake_nth,
+            ),
+            patch(
+                "worker.tasks.signals.outcome_evaluator._sector_name_for_stock",
+                new=AsyncMock(return_value=None),
             ),
         ):
             asyncio.run(_evaluate_single_daily_view(AsyncMock(), view, 1))

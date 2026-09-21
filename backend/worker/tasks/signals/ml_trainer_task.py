@@ -22,7 +22,7 @@ from app.models.signal import Signal
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import MIN_CONVICTION, aggregate_feature_vector
+from worker.utils.daily_aggregation import MIN_CONVICTION, aggregate_feature_vector, bucket_signals
 from worker.utils.ml_trainer import FEATURE_NAMES, train_model
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ async def _get_training_data(
     features: list[list[float]] = []
     labels: list[bool] = []
     for view, outcome in pairs:
-        contribs = signals_by_key.get((view.stock_id, view.trading_date), [])
+        contribs = bucket_signals(signals_by_key.get((view.stock_id, view.trading_date), []))
         if not contribs:
             continue
         features.append(aggregate_feature_vector(contribs))

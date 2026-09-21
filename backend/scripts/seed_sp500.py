@@ -115,6 +115,11 @@ MARKET_ETFS = [
     ("DIA", "SPDR Dow Jones Industrial Average ETF", "ETF"),
     ("IWM", "iShares Russell 2000 ETF", "ETF"),
     ("VTI", "Vanguard Total Stock Market ETF", "ETF"),
+    ("XLE", "Energy Select Sector SPDR Fund", "ETF"),
+    ("XLF", "Financial Select Sector SPDR Fund", "ETF"),
+    ("XLK", "Technology Select Sector SPDR Fund", "ETF"),
+    ("XLC", "Communication Services Select Sector SPDR Fund", "ETF"),
+    ("XLY", "Consumer Discretionary Select Sector SPDR Fund", "ETF"),
 ]
 
 # All sectors and their stocks

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import async_session
@@ -18,9 +19,15 @@ from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.market_data import MarketDataDaily
 from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
+from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
-from worker.utils.daily_aggregation import MIN_CONVICTION
+from worker.utils.daily_aggregation import (
+    MIN_CONVICTION,
+    SECTOR_BENCHMARK,
+    excess_return_pct,
+    outcome_is_correct,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +178,8 @@ async def _evaluate_daily_views(
                     window_days=outcome.window_days,
                     outcome_close=outcome.outcome_close,
                     price_change_pct=outcome.price_change_pct,
+                    sector_return_pct=outcome.sector_return_pct,
+                    excess_return_pct=outcome.excess_return_pct,
                     is_correct=outcome.is_correct,
                 )
                 .on_conflict_do_nothing()
@@ -219,16 +228,54 @@ async def _evaluate_single_daily_view(
         return None
 
     price_change_pct = (outcome_close - baseline) / baseline
-    is_correct = (view.direction == "bullish" and price_change_pct > 0) or (
-        view.direction == "bearish" and price_change_pct < 0
-    )
+    sector_return_pct = None
+    sector_name = await _sector_name_for_stock(session, view.stock_id)
+    if sector_name is not None and SECTOR_BENCHMARK.get(sector_name):
+        sector_return_pct = await _sector_benchmark_return(session, sector_name, prior, window_days)
+
+    excess = excess_return_pct(price_change_pct, sector_return_pct)
+    scored = excess if excess is not None else price_change_pct
+    is_correct = outcome_is_correct(view.direction, scored)
     return DailySignalViewOutcome(
         daily_view_id=view.id,
         window_days=window_days,
         outcome_close=round(outcome_close, 4),
         price_change_pct=round(price_change_pct, 5),
+        sector_return_pct=round(sector_return_pct, 5) if sector_return_pct is not None else None,
+        excess_return_pct=round(excess, 5) if excess is not None else None,
         is_correct=is_correct,
     )
+
+
+async def _sector_name_for_stock(session: AsyncSession, stock_id: int) -> str | None:
+    """Sector name for excess-return lookup; None when unavailable or not a real string."""
+    result = await session.execute(select(Stock).options(selectinload(Stock.sector)).where(Stock.id == stock_id))
+    stock = result.scalar_one_or_none()
+    if stock is None:
+        return None
+    sector = getattr(stock, "sector", None)
+    name = getattr(sector, "name", None) if sector is not None else None
+    return name if isinstance(name, str) else None
+
+
+async def _sector_benchmark_return(
+    session: AsyncSession, sector_name: str, prior, window_days: int
+) -> float | None:
+    """Sector ETF return over the same window; None if unmapped or missing prices."""
+    ticker = SECTOR_BENCHMARK.get(sector_name)
+    if not ticker:
+        return None
+    result = await session.execute(select(Stock.id).where(Stock.ticker == ticker))
+    etf_id = result.scalar_one_or_none()
+    if etf_id is None or not isinstance(etf_id, int):
+        return None
+    etf_baseline = await _get_close_on_or_before(session, etf_id, prior)
+    if etf_baseline is None or etf_baseline == 0:
+        return None
+    etf_outcome = await _get_nth_trading_day_close(session, etf_id, prior, window_days)
+    if etf_outcome is None:
+        return None
+    return (etf_outcome - etf_baseline) / etf_baseline
 
 
 async def _get_close_on_or_before(

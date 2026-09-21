@@ -1,4 +1,4 @@
-"""Daily net signal views (Phase 24) — one row per stock per trading session."""
+"""Daily net signal views (Phase 24 / 24b) — one row per stock per trading session."""
 
 from datetime import date, datetime
 
@@ -19,6 +19,7 @@ class DailySignalView(Base):
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
     conviction: Mapped[float] = mapped_column(Float, nullable=False)
     signal_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    raw_signal_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     baseline_close: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -42,6 +43,8 @@ class DailySignalViewOutcome(Base):
     window_days: Mapped[int] = mapped_column(Integer, nullable=False)
     outcome_close: Mapped[float] = mapped_column(Float, nullable=False)
     price_change_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    sector_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excess_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
