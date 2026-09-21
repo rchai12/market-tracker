@@ -126,3 +126,27 @@ export interface SignalDetail {
   outcomes: SignalOutcome[];
   linked_articles: LinkedArticle[];
 }
+
+export interface DailyViewOutcome {
+  price_change_pct: number;
+  is_correct: boolean;
+}
+
+export interface DailySignalView {
+  ticker: string;
+  sector: string | null;
+  trading_date: string;
+  direction: "bullish" | "bearish" | "neutral";
+  net_score: number;
+  conviction: number;
+  signal_count: number;
+  outcome_1d: DailyViewOutcome | null;
+  outcome_3d: DailyViewOutcome | null;
+  outcome_5d: DailyViewOutcome | null;
+  live_change_pct: number | null;
+}
+
+export interface TodaysPredictions {
+  trading_date: string;
+  data: DailySignalView[];
+}

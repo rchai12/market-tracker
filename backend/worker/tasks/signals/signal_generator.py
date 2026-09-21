@@ -17,13 +17,16 @@ the stock is technically extended or trend opposes the signal).
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.daily_signal_view import DailySignalView
+from app.models.market_data import MarketDataDaily
 from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.signal import Signal
 from app.models.signal_weight import SignalWeight
@@ -44,6 +47,7 @@ from worker.tasks.signals.component_scores import (
     get_recent_article_count,
 )
 from worker.utils.async_task import run_async
+from worker.utils.daily_aggregation import compute_net_view, trading_date_lower_bound
 from worker.utils.signal_formula import (
     MODERATE_THRESHOLD,
     STRONG_THRESHOLD,
@@ -287,11 +291,13 @@ async def _generate_signals_async() -> dict:
                     analyst_score=round(analyst_raw, 5) if analyst_raw is not None else None,
                     insider_score=round(insider_raw, 5) if insider_raw is not None else None,
                     generated_at=now,
+                    trading_date=await _resolve_trading_date(session, stock.id, now),
                     window_start=window_start,
                     window_end=window_end,
                 )
                 session.add(signal)
                 await session.flush()
+                await _upsert_daily_view(session, stock.id, signal.trading_date)
 
                 signals_created += 1
 
@@ -324,6 +330,65 @@ def _dispatch_alert_task(signal_id: int):
     from worker.tasks.signals.alert_dispatcher import dispatch_alerts
 
     dispatch_alerts.delay(signal_id)
+
+
+async def _resolve_trading_date(session: AsyncSession, stock_id: int, generated_at: datetime) -> date:
+    """Next market close this signal is predicting, from market_data_daily."""
+    floor = trading_date_lower_bound(generated_at)
+    result = await session.execute(
+        select(MarketDataDaily.date)
+        .where(MarketDataDaily.stock_id == stock_id)
+        .where(MarketDataDaily.date >= floor)
+        .order_by(MarketDataDaily.date.asc())
+        .limit(1)
+    )
+    found = result.scalar_one_or_none()
+    if found is not None:
+        return found
+    fallback = await session.execute(
+        select(MarketDataDaily.date)
+        .where(MarketDataDaily.date >= floor)
+        .order_by(MarketDataDaily.date.asc())
+        .limit(1)
+    )
+    any_date = fallback.scalar_one_or_none()
+    return any_date if any_date is not None else floor
+
+
+async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date: date | None) -> None:
+    """Rebuild the net view for (stock, trading_date). Skip empty groups."""
+    if trading_date is None:
+        return
+    result = await session.execute(
+        select(Signal)
+        .where(Signal.stock_id == stock_id)
+        .where(Signal.trading_date == trading_date)
+        .where(Signal.composite_score.isnot(None))
+    )
+    signals = list(result.scalars().all())
+    view = compute_net_view(signals)
+    if view is None:
+        return
+    stmt = pg_insert(DailySignalView).values(
+        stock_id=stock_id,
+        trading_date=trading_date,
+        net_score=round(view.net_score, 6),
+        direction=view.direction,
+        conviction=round(view.conviction, 6),
+        signal_count=view.signal_count,
+        updated_at=datetime.now(UTC),
+    )
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_daily_signal_views_stock_date",
+        set_={
+            "net_score": stmt.excluded.net_score,
+            "direction": stmt.excluded.direction,
+            "conviction": stmt.excluded.conviction,
+            "signal_count": stmt.excluded.signal_count,
+            "updated_at": stmt.excluded.updated_at,
+        },
+    )
+    await session.execute(stmt)
 
 
 async def _compute_composite_score(

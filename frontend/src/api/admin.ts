@@ -95,6 +95,13 @@ export async function triggerAssignCanonicalArticles(): Promise<TaskResponse> {
   return data;
 }
 
+export async function resetLearningLayer(): Promise<{ status: string; truncated: string[] }> {
+  const { data } = await apiClient.post<{ status: string; truncated: string[] }>(
+    "/admin/reset-learning-layer"
+  );
+  return data;
+}
+
 export async function getMLModelStatus(): Promise<MLModelStatus[]> {
   const { data } = await apiClient.get<MLModelStatus[]>("/admin/ml-models");
   return data;

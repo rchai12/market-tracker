@@ -6,6 +6,8 @@ import type {
   AccuracyTrendPoint,
   AccuracyDistribution,
   SignalDetail,
+  DailySignalView,
+  TodaysPredictions,
   PaginatedResponse,
 } from "../types";
 
@@ -99,5 +101,22 @@ export async function getMLAccuracy(params?: {
   days?: number;
 }): Promise<SignalAccuracy[]> {
   const { data } = await apiClient.get("/signals/accuracy/ml", { params });
+  return data;
+}
+
+export async function getDailyViews(params?: {
+  page?: number;
+  per_page?: number;
+  date?: string;
+  sector?: string;
+  direction?: string;
+  min_conviction?: number;
+}): Promise<PaginatedResponse<DailySignalView>> {
+  const { data } = await apiClient.get("/signals/daily-views", { params });
+  return data;
+}
+
+export async function getTodaysPredictions(): Promise<TodaysPredictions> {
+  const { data } = await apiClient.get("/signals/daily-views/today");
   return data;
 }

@@ -1,12 +1,17 @@
 """Signal API endpoints — core signal CRUD and detail."""
 
+from datetime import UTC, date, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.cache import cached
 from app.dependencies import get_current_user, get_db, get_stock_by_ticker
 from app.models.article import Article
+from app.models.daily_signal_view import DailySignalView
+from app.models.market_data import MarketDataDaily
 from app.models.sector import Sector
 from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
@@ -14,12 +19,17 @@ from app.models.stock import Stock
 from app.models.user import User
 from app.schemas.common import PaginationMeta, PaginationParams, calc_total_pages, get_total_count
 from app.schemas.signal import (
+    DailySignalViewResponse,
+    DailyViewOutcome,
     LinkedArticle,
+    PaginatedDailyViews,
     PaginatedSignals,
     SignalDetailResponse,
     SignalOutcomeResponse,
     SignalResponse,
+    TodaysPredictionsResponse,
 )
+from worker.utils.daily_aggregation import trading_date_lower_bound
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -114,6 +124,85 @@ async def get_signal_detail(
         signal=_to_response(signal),
         outcomes=outcomes,
         linked_articles=linked_articles,
+    )
+
+
+@router.get("/daily-views/today", response_model=TodaysPredictionsResponse)
+@cached("signals:daily-views-today", ttl=300)
+async def get_todays_predictions(
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Today's net views for the dashboard. Cached 5 minutes."""
+    floor = trading_date_lower_bound(datetime.now(UTC))
+    trading = await _resolve_today_trading_date(db, floor)
+    if trading is None:
+        return TodaysPredictionsResponse(trading_date=floor, data=[])
+
+    query = (
+        select(DailySignalView)
+        .options(
+            joinedload(DailySignalView.stock).joinedload(Stock.sector),
+            joinedload(DailySignalView.outcomes),
+        )
+        .where(DailySignalView.trading_date == trading)
+        .order_by(DailySignalView.conviction.desc())
+    )
+    result = await db.execute(query)
+    views = list(result.unique().scalars().all())
+    live = await _live_change_map(db, views)
+    return TodaysPredictionsResponse(
+        trading_date=trading,
+        data=[_to_daily_view(v, live.get(v.id)) for v in views],
+    )
+
+
+@router.get("/daily-views", response_model=PaginatedDailyViews)
+async def list_daily_views(
+    pagination: PaginationParams = Depends(),
+    view_date: date | None = Query(None, alias="date"),
+    sector: str | None = Query(None),
+    direction: str | None = Query(None),
+    min_conviction: float | None = Query(None, ge=0.0, le=1.0),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Paginated daily net views with optional filters."""
+    base_query = select(DailySignalView)
+    if view_date is not None:
+        base_query = base_query.where(DailySignalView.trading_date == view_date)
+    if direction:
+        base_query = base_query.where(DailySignalView.direction == direction)
+    if min_conviction is not None:
+        base_query = base_query.where(DailySignalView.conviction >= min_conviction)
+    if sector:
+        base_query = (
+            base_query.join(Stock, DailySignalView.stock_id == Stock.id)
+            .join(Sector, Stock.sector_id == Sector.id)
+            .where(func.lower(Sector.name) == sector.lower())
+        )
+
+    total = await get_total_count(db, base_query)
+    query = (
+        base_query.options(
+            joinedload(DailySignalView.stock).joinedload(Stock.sector),
+            joinedload(DailySignalView.outcomes),
+        )
+        .order_by(DailySignalView.trading_date.desc(), DailySignalView.conviction.desc())
+        .offset(pagination.offset)
+        .limit(pagination.per_page)
+    )
+    result = await db.execute(query)
+    views = list(result.unique().scalars().all())
+    live = await _live_change_map(db, views)
+    return PaginatedDailyViews(
+        data=[_to_daily_view(v, live.get(v.id)) for v in views],
+        meta=PaginationMeta(
+            page=pagination.page,
+            per_page=pagination.per_page,
+            total=total,
+            total_pages=calc_total_pages(total, pagination.per_page),
+        ),
     )
 
 
@@ -242,3 +331,74 @@ def _to_response(signal: Signal) -> SignalResponse:
 def _f(val) -> float | None:
     """Preserve 0.0; only missing values become None."""
     return float(val) if val is not None else None
+
+
+def _outcome_window(view: DailySignalView, window_days: int) -> DailyViewOutcome | None:
+    for outcome in view.outcomes or []:
+        if outcome.window_days == window_days:
+            return DailyViewOutcome(
+                price_change_pct=float(outcome.price_change_pct),
+                is_correct=bool(outcome.is_correct),
+            )
+    return None
+
+
+def _to_daily_view(view: DailySignalView, live_change_pct: float | None) -> DailySignalViewResponse:
+    stock = view.stock
+    sector_name = stock.sector.name if stock and stock.sector else None
+    return DailySignalViewResponse(
+        ticker=stock.ticker if stock else "???",
+        sector=sector_name,
+        trading_date=view.trading_date,
+        direction=view.direction,
+        net_score=float(view.net_score),
+        conviction=float(view.conviction),
+        signal_count=view.signal_count,
+        outcome_1d=_outcome_window(view, 1),
+        outcome_3d=_outcome_window(view, 3),
+        outcome_5d=_outcome_window(view, 5),
+        live_change_pct=live_change_pct,
+    )
+
+
+async def _resolve_today_trading_date(db: AsyncSession, floor: date) -> date | None:
+    result = await db.execute(
+        select(func.min(DailySignalView.trading_date)).where(DailySignalView.trading_date >= floor)
+    )
+    found = result.scalar_one_or_none()
+    if found is not None:
+        return found
+    fallback = await db.execute(select(func.max(DailySignalView.trading_date)))
+    return fallback.scalar_one_or_none()
+
+
+async def _live_change_map(db: AsyncSession, views: list[DailySignalView]) -> dict[int, float | None]:
+    """Latest close vs close before each view's trading_date."""
+    if not views:
+        return {}
+    stock_ids = {view.stock_id for view in views}
+    min_date = min(view.trading_date for view in views) - timedelta(days=14)
+    result = await db.execute(
+        select(MarketDataDaily.stock_id, MarketDataDaily.date, MarketDataDaily.close)
+        .where(MarketDataDaily.stock_id.in_(stock_ids))
+        .where(MarketDataDaily.date >= min_date)
+        .where(MarketDataDaily.close.isnot(None))
+        .order_by(MarketDataDaily.stock_id, MarketDataDaily.date.asc())
+    )
+    by_stock: dict[int, list[tuple[date, float]]] = {}
+    for stock_id, bar_date, close in result.all():
+        by_stock.setdefault(stock_id, []).append((bar_date, float(close)))
+
+    live: dict[int, float | None] = {}
+    for view in views:
+        bars = by_stock.get(view.stock_id, [])
+        if not bars:
+            live[view.id] = None
+            continue
+        prev = next((close for bar_date, close in reversed(bars) if bar_date < view.trading_date), None)
+        latest = bars[-1][1]
+        if prev is None or prev == 0:
+            live[view.id] = None
+            continue
+        live[view.id] = (latest - prev) / prev
+    return live

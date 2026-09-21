@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getLatestSignals, getSignalAccuracy } from "../api/signals";
+import { getLatestSignals, getSignalAccuracy, getTodaysPredictions } from "../api/signals";
 import { getSectorSentiment } from "../api/sentiment";
 import { listSources } from "../api/articles";
 import AccuracyCard from "../components/dashboard/AccuracyCard";
@@ -8,6 +8,7 @@ import SignalCard from "../components/signals/SignalCard";
 import SectorHeatmapCard from "../components/dashboard/SectorHeatmapCard";
 import TopMoversCard from "../components/dashboard/TopMoversCard";
 import ArticleActivityCard from "../components/dashboard/ArticleActivityCard";
+import TodaysPredictionsCard from "../components/dashboard/TodaysPredictionsCard";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import ErrorRetry from "../components/common/ErrorRetry";
 import Card from "../components/common/Card";
@@ -53,6 +54,16 @@ export default function DashboardPage() {
     queryFn: () => getSignalAccuracy({ window_days: 5 }),
   });
 
+  const {
+    data: todays,
+    isLoading: todaysLoading,
+    isError: todaysError,
+    refetch: refetchTodays,
+  } = useQuery({
+    queryKey: ["dashboard-todays-predictions"],
+    queryFn: getTodaysPredictions,
+  });
+
   const displaySignals = useMemo(() => (signals ?? []).slice(0, 10), [signals]);
 
   const bullishSignals = useMemo(
@@ -76,6 +87,18 @@ export default function DashboardPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Dashboard</h1>
+
+      <section className="mb-6">
+        {todaysLoading ? (
+          <LoadingSkeleton variant="card" count={1} />
+        ) : todaysError ? (
+          <ErrorRetry onRetry={() => refetchTodays()} />
+        ) : (
+          <TodaysPredictionsCard
+            payload={todays ?? { trading_date: new Date().toISOString().slice(0, 10), data: [] }}
+          />
+        )}
+      </section>
 
       {/* Latest Signals */}
       <section className="mb-6">

@@ -24,6 +24,9 @@ export type {
   SignalOutcome,
   LinkedArticle,
   SignalDetail,
+  DailyViewOutcome,
+  DailySignalView,
+  TodaysPredictions,
 } from "./signal";
 export type { AlertConfig, AlertLog } from "./alert";
 export type {

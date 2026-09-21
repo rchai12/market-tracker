@@ -13,6 +13,7 @@ import {
   triggerLlmExtraction,
   triggerBackfillQualityScores,
   triggerAssignCanonicalArticles,
+  resetLearningLayer,
   getDbStats,
   getTaskFailures,
   retryFailedTask,
@@ -68,6 +69,53 @@ function TaskButton({
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
+    </Card>
+  );
+}
+
+function ResetLearningButton() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    const confirmed = window.confirm(
+      "Reset the learning layer? This truncates signal outcomes, ML models, and adaptive weights. Raw signals, articles, and market data are kept."
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await resetLearningLayer();
+      setResult(res.status);
+    } catch (err) {
+      const axErr = err as AxiosError<{ detail: string }>;
+      setError(axErr?.response?.data?.detail ?? "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Reset Learning Layer</h3>
+        <button
+          onClick={handleClick}
+          disabled={loading}
+          className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-lg transition-colors"
+        >
+          {loading ? "Resetting..." : "Reset"}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+        One-time after Phase 24 deploy. Does not delete signals or prices.
+      </p>
+      {result && (
+        <p className="text-xs text-green-600 dark:text-green-400">Done: {result}</p>
+      )}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </Card>
   );
 }
@@ -137,6 +185,7 @@ export default function AdminPage() {
           <TaskButton label="Train ML Models" onTrigger={triggerMLTraining} />
           <TaskButton label="Backfill Quality Scores" onTrigger={triggerBackfillQualityScores} />
           <TaskButton label="Assign Canonical Articles" onTrigger={triggerAssignCanonicalArticles} />
+          <ResetLearningButton />
         </div>
       </section>
 

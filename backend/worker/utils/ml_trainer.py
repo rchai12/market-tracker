@@ -12,7 +12,15 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
+from worker.utils.daily_aggregation import aggregate_feature_vector
+
 logger = logging.getLogger(__name__)
+
+
+def aggregate_daily_features(signals) -> list[float]:
+    """Weighted-mean 6-vector for one daily view (training row)."""
+    return aggregate_feature_vector(signals)
+
 
 FEATURE_NAMES = [
     "sentiment_momentum",

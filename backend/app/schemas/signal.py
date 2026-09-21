@@ -1,6 +1,6 @@
 """Signal schemas for API request/response."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -141,3 +141,32 @@ class SignalDetailResponse(BaseModel):
     signal: SignalResponse
     outcomes: list[SignalOutcomeResponse]
     linked_articles: list[LinkedArticle]
+
+
+class DailyViewOutcome(BaseModel):
+    price_change_pct: float
+    is_correct: bool
+
+
+class DailySignalViewResponse(BaseModel):
+    ticker: str
+    sector: str | None = None
+    trading_date: date
+    direction: str
+    net_score: float
+    conviction: float
+    signal_count: int
+    outcome_1d: DailyViewOutcome | None = None
+    outcome_3d: DailyViewOutcome | None = None
+    outcome_5d: DailyViewOutcome | None = None
+    live_change_pct: float | None = None
+
+
+class PaginatedDailyViews(BaseModel):
+    data: list[DailySignalViewResponse]
+    meta: PaginationMeta
+
+
+class TodaysPredictionsResponse(BaseModel):
+    trading_date: date
+    data: list[DailySignalViewResponse]

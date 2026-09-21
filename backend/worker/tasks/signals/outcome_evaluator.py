@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.market_data import MarketDataDaily
 from app.models.signal import Signal
 from app.models.signal_outcome import SignalOutcome
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
+from worker.utils.daily_aggregation import MIN_CONVICTION
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,10 @@ async def _evaluate_outcomes_async() -> dict:
                     evaluated += 1
                 else:
                     skipped += 1
+
+        daily_evaluated, daily_skipped = await _evaluate_daily_views(session, now, windows)
+        evaluated += daily_evaluated
+        skipped += daily_skipped
 
         await session.commit()
 
@@ -136,6 +142,89 @@ async def _evaluate_single_signal(
         signal_id=signal.id,
         window_days=window_days,
         signal_close=round(signal_close, 4),
+        outcome_close=round(outcome_close, 4),
+        price_change_pct=round(price_change_pct, 5),
+        is_correct=is_correct,
+    )
+
+
+async def _evaluate_daily_views(
+    session: AsyncSession, now: datetime, windows: list[int]
+) -> tuple[int, int]:
+    """Evaluate daily net views that meet the conviction floor."""
+    evaluated = 0
+    skipped = 0
+    today = now.date()
+    for window_days in windows:
+        cutoff_max = today - timedelta(days=window_days)
+        cutoff_min = today - timedelta(days=max(window_days * 2 + 14, 30))
+        views = await _get_unevaluated_daily_views(session, window_days, cutoff_min, cutoff_max)
+        for view in views:
+            outcome = await _evaluate_single_daily_view(session, view, window_days)
+            if outcome is None:
+                skipped += 1
+                continue
+            stmt = (
+                pg_insert(DailySignalViewOutcome)
+                .values(
+                    daily_view_id=outcome.daily_view_id,
+                    window_days=outcome.window_days,
+                    outcome_close=outcome.outcome_close,
+                    price_change_pct=outcome.price_change_pct,
+                    is_correct=outcome.is_correct,
+                )
+                .on_conflict_do_nothing()
+            )
+            await session.execute(stmt)
+            evaluated += 1
+    return evaluated, skipped
+
+
+async def _get_unevaluated_daily_views(
+    session: AsyncSession,
+    window_days: int,
+    cutoff_min,
+    cutoff_max,
+) -> list[DailySignalView]:
+    existing_subq = (
+        select(DailySignalViewOutcome.daily_view_id)
+        .where(DailySignalViewOutcome.window_days == window_days)
+        .subquery()
+    )
+    result = await session.execute(
+        select(DailySignalView)
+        .where(DailySignalView.conviction >= MIN_CONVICTION)
+        .where(DailySignalView.trading_date >= cutoff_min)
+        .where(DailySignalView.trading_date <= cutoff_max)
+        .where(DailySignalView.id.notin_(select(existing_subq.c.daily_view_id)))
+        .order_by(DailySignalView.trading_date.asc())
+        .limit(500)
+    )
+    return list(result.scalars().all())
+
+
+async def _evaluate_single_daily_view(
+    session: AsyncSession, view: DailySignalView, window_days: int
+) -> DailySignalViewOutcome | None:
+    prior = view.trading_date - timedelta(days=1)
+    baseline = await _get_close_on_or_before(session, view.stock_id, prior)
+    if baseline is None:
+        return None
+    if view.baseline_close is None:
+        view.baseline_close = round(baseline, 4)
+
+    # 1-day = close on trading_date (the predicted session); 3/5 count further sessions.
+    outcome_close = await _get_nth_trading_day_close(session, view.stock_id, prior, window_days)
+    if outcome_close is None:
+        return None
+
+    price_change_pct = (outcome_close - baseline) / baseline
+    is_correct = (view.direction == "bullish" and price_change_pct > 0) or (
+        view.direction == "bearish" and price_change_pct < 0
+    )
+    return DailySignalViewOutcome(
+        daily_view_id=view.id,
+        window_days=window_days,
         outcome_close=round(outcome_close, 4),
         price_change_pct=round(price_change_pct, 5),
         is_correct=is_correct,

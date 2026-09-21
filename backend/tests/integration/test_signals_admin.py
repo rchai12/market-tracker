@@ -44,6 +44,20 @@ class TestSignals:
         assert payload["defaults"]["sentiment_momentum"] == 0.4
         assert payload["defaults"]["insider"] == 0.08
 
+    def test_daily_views_empty(self, client, auth_headers):
+        resp = _run(client.get("/api/signals/daily-views", headers=auth_headers))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"] == []
+        assert body["meta"]["total"] == 0
+
+    def test_todays_predictions_empty(self, client, auth_headers):
+        resp = _run(client.get("/api/signals/daily-views/today", headers=auth_headers))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "trading_date" in body
+        assert body["data"] == []
+
 
 class TestAdmin:
     def test_db_stats_admin_only(self, client, admin_headers):
@@ -64,3 +78,7 @@ class TestAdmin:
             resp = _run(client.post("/api/admin/scrape-now", headers=admin_headers))
             # Accept 200 or 202 depending on implementation
             assert resp.status_code in (200, 202)
+
+    def test_reset_learning_layer_admin_only(self, client, auth_headers):
+        resp = _run(client.post("/api/admin/reset-learning-layer", headers=auth_headers))
+        assert resp.status_code == 403

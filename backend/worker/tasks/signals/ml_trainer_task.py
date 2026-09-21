@@ -1,6 +1,6 @@
 """ML model training Celery task.
 
-Trains per-sector LightGBM classifiers from evaluated signal outcomes.
+Trains per-sector LightGBM classifiers from 1-day daily-view outcomes.
 Follows the weight_optimizer.py pattern: gate on settings, per-sector + global,
 upsert results to ml_models table. Runs daily at 4:30 AM after weight optimizer.
 """
@@ -15,13 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.ml_model import MLModel
 from app.models.sector import Sector
 from app.models.signal import Signal
-from app.models.signal_outcome import SignalOutcome
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
+from worker.utils.daily_aggregation import MIN_CONVICTION, aggregate_feature_vector
 from worker.utils.ml_trainer import FEATURE_NAMES, train_model
 
 logger = logging.getLogger(__name__)
@@ -135,47 +136,54 @@ async def _get_training_data(
     sector_id: int | None,
     cutoff: datetime,
 ) -> tuple[list[list[float]], list[bool]]:
-    """Fetch feature matrix and labels from evaluated signals."""
+    """Fetch feature matrix and labels from 1-day daily-view outcomes."""
     query = (
-        select(
-            Signal.sentiment_score,
-            Signal.sentiment_volume_score,
-            Signal.price_score,
-            Signal.volume_score,
-            Signal.rsi_score,
-            Signal.trend_score,
-            SignalOutcome.is_correct,
-        )
-        .join(Signal, SignalOutcome.signal_id == Signal.id)
-        .join(Stock, Signal.stock_id == Stock.id)
-        .where(SignalOutcome.window_days == 5)
-        .where(SignalOutcome.evaluated_at >= cutoff)
-        .where(Signal.direction.in_(["bullish", "bearish"]))
-        .order_by(Signal.generated_at.asc())  # chronological for time-series split
+        select(DailySignalView, DailySignalViewOutcome)
+        .join(DailySignalViewOutcome, DailySignalViewOutcome.daily_view_id == DailySignalView.id)
+        .join(Stock, DailySignalView.stock_id == Stock.id)
+        .where(DailySignalViewOutcome.window_days == 1)
+        .where(DailySignalViewOutcome.evaluated_at >= cutoff)
+        .where(DailySignalView.conviction >= MIN_CONVICTION)
+        .where(DailySignalView.direction.in_(["bullish", "bearish"]))
+        .order_by(DailySignalView.trading_date.asc())
     )
-
     if sector_id is not None:
         query = query.where(Stock.sector_id == sector_id)
 
     result = await session.execute(query)
-    rows = result.all()
+    pairs = result.all()
+    signals_by_key = await _signals_for_views(session, [view for view, _ in pairs])
 
     features: list[list[float]] = []
     labels: list[bool] = []
-
-    for row in rows:
-        feature_vec = [
-            float(row.sentiment_score) if row.sentiment_score is not None else 0.0,
-            float(row.sentiment_volume_score) if row.sentiment_volume_score is not None else 0.0,
-            float(row.price_score) if row.price_score is not None else 0.0,
-            float(row.volume_score) if row.volume_score is not None else 0.0,
-            float(row.rsi_score) if row.rsi_score is not None else 0.0,
-            float(row.trend_score) if row.trend_score is not None else 0.0,
-        ]
-        features.append(feature_vec)
-        labels.append(row.is_correct)
-
+    for view, outcome in pairs:
+        contribs = signals_by_key.get((view.stock_id, view.trading_date), [])
+        if not contribs:
+            continue
+        features.append(aggregate_feature_vector(contribs))
+        labels.append(bool(outcome.is_correct))
     return features, labels
+
+
+async def _signals_for_views(session: AsyncSession, views: list[DailySignalView]) -> dict:
+    if not views:
+        return {}
+    stock_ids = {view.stock_id for view in views}
+    dates = {view.trading_date for view in views}
+    result = await session.execute(
+        select(Signal)
+        .where(Signal.stock_id.in_(stock_ids))
+        .where(Signal.trading_date.in_(dates))
+        .where(Signal.composite_score.isnot(None))
+    )
+    wanted = {(view.stock_id, view.trading_date) for view in views}
+    grouped: dict = {}
+    for signal in result.scalars().all():
+        key = (signal.stock_id, signal.trading_date)
+        if key not in wanted:
+            continue
+        grouped.setdefault(key, []).append(signal)
+    return grouped
 
 
 async def _get_existing_model(session: AsyncSession, sector_id: int | None) -> MLModel | None:

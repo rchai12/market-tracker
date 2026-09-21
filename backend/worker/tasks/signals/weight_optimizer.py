@@ -1,16 +1,16 @@
 """Adaptive weight computation Celery task.
 
-Analyzes historical signal accuracy per sector (and per market regime) to
+Analyzes historical daily-view accuracy per sector (and per market regime) to
 compute optimal weights for the predictive components. Votes are weighted by
-``abs(price_change_pct)`` so large moves count more than noise. Analyst is
-tracked alongside earnings/options. RSI and trend are regime-only and always
-stored as 0.0. Runs daily at 4 AM after maintenance.
+``abs(price_change_pct) * magnitude_share`` so large moves and larger contributors
+count more. Analyst is tracked alongside earnings/options. RSI and trend are
+regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -18,14 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.daily_signal_view import DailySignalView, DailySignalViewOutcome
 from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
 from app.models.sector import Sector
 from app.models.signal import Signal
-from app.models.signal_outcome import SignalOutcome
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
 from worker.celery_app import celery_app
 from worker.utils.async_task import run_async
+from worker.utils.daily_aggregation import MIN_CONVICTION, expand_view_credits, majority_regime
 
 logger = logging.getLogger(__name__)
 
@@ -123,44 +124,83 @@ async def _compute_sector_weights(
     cutoff: datetime,
     regime: str | None = None,
 ) -> dict | None:
-    """Compute adaptive weights from 5-day outcomes, optionally filtered by regime."""
+    """Compute adaptive weights from 1-day daily-view outcomes."""
     query = (
-        select(
-            Signal.sentiment_score,
-            Signal.price_score,
-            Signal.volume_score,
-            Signal.options_score,
-            Signal.earnings_score,
-            Signal.analyst_score,
-            Signal.insider_score,
-            Signal.direction,
-            Signal.market_regime,
-            SignalOutcome.is_correct,
-            SignalOutcome.price_change_pct,
-        )
-        .join(Signal, SignalOutcome.signal_id == Signal.id)
-        .join(Stock, Signal.stock_id == Stock.id)
-        .where(SignalOutcome.window_days == 5)
-        .where(SignalOutcome.evaluated_at >= cutoff)
-        .where(Signal.direction.in_(["bullish", "bearish"]))
+        select(DailySignalView, DailySignalViewOutcome)
+        .join(DailySignalViewOutcome, DailySignalViewOutcome.daily_view_id == DailySignalView.id)
+        .join(Stock, DailySignalView.stock_id == Stock.id)
+        .where(DailySignalViewOutcome.window_days == 1)
+        .where(DailySignalViewOutcome.evaluated_at >= cutoff)
+        .where(DailySignalView.conviction >= MIN_CONVICTION)
+        .where(DailySignalView.direction.in_(["bullish", "bearish"]))
     )
-
     if sector_id is not None:
         query = query.where(Stock.sector_id == sector_id)
-    if regime is not None:
-        query = query.where(Signal.market_regime == regime)
 
     result = await session.execute(query)
-    return _weights_from_rows(result.all())
+    pairs = result.all()
+    if not pairs:
+        return None
+
+    signals_by_key = await _signals_for_views(session, [view for view, _ in pairs])
+
+    expanded = []
+    view_count = 0
+    correct_views = 0
+    for view, outcome in pairs:
+        contribs = signals_by_key.get((view.stock_id, view.trading_date), [])
+        if not contribs:
+            continue
+        if regime is not None and majority_regime(contribs) != regime:
+            continue
+        rows = expand_view_credits(contribs, float(outcome.price_change_pct), bool(outcome.is_correct))
+        if not rows:
+            continue
+        view_count += 1
+        if outcome.is_correct:
+            correct_views += 1
+        expanded.extend(rows)
+
+    return _weights_from_rows(expanded, sample_count=view_count, correct_count=correct_views)
 
 
-def _weights_from_rows(rows: list) -> dict | None:
+async def _signals_for_views(
+    session: AsyncSession, views: list[DailySignalView]
+) -> dict[tuple[int, date], list[Signal]]:
+    """Load contributing signals keyed by (stock_id, trading_date)."""
+    if not views:
+        return {}
+    stock_ids = {view.stock_id for view in views}
+    dates = {view.trading_date for view in views}
+    result = await session.execute(
+        select(Signal)
+        .where(Signal.stock_id.in_(stock_ids))
+        .where(Signal.trading_date.in_(dates))
+        .where(Signal.composite_score.isnot(None))
+    )
+    wanted = {(view.stock_id, view.trading_date) for view in views}
+    grouped: dict[tuple[int, date], list[Signal]] = {}
+    for signal in result.scalars().all():
+        key = (signal.stock_id, signal.trading_date)
+        if key not in wanted:
+            continue
+        grouped.setdefault(key, []).append(signal)
+    return grouped
+
+
+def _weights_from_rows(
+    rows: list,
+    sample_count: int | None = None,
+    correct_count: int | None = None,
+) -> dict | None:
     """Return-weighted component accuracies → clamped, normalized weights.
 
     Each signal votes with ``abs(price_change_pct)`` so a correct 5% move
     outweighs a correct 0.1% move. Returns None below ``feedback_min_samples``.
+    ``sample_count`` is the number of daily views (not exploded signals).
     """
-    if len(rows) < settings.feedback_min_samples:
+    n = sample_count if sample_count is not None else len(rows)
+    if n < settings.feedback_min_samples:
         return None
 
     components = ["sentiment_momentum", "sentiment_volume", "price_momentum", "volume_anomaly", "earnings", "analyst"]
@@ -230,7 +270,8 @@ def _weights_from_rows(rows: list) -> dict | None:
 
     clamped = clamp_weights(normalized, settings.feedback_weight_min, settings.feedback_weight_max)
 
-    overall_accuracy = (total_correct / len(rows) * 100) if rows else 0
+    scored = correct_count if correct_count is not None else total_correct
+    overall_accuracy = (scored / n * 100) if n else 0
 
     result_weights = {
         "sentiment_momentum": round(clamped["sentiment_momentum"], 4),
@@ -239,7 +280,7 @@ def _weights_from_rows(rows: list) -> dict | None:
         "volume_anomaly": round(clamped["volume_anomaly"], 4),
         "earnings": round(clamped.get("earnings", 0.10), 4),
         "analyst": round(clamped.get("analyst", 0.07), 4),
-        "sample_count": len(rows),
+        "sample_count": n,
         "accuracy_pct": round(overall_accuracy, 2),
     }
     if settings.options_flow_enabled:

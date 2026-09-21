@@ -310,6 +310,43 @@ async def trigger_ml_training(
     return {"task_id": task.id, "status": "queued"}
 
 
+LEARNING_LAYER_TABLES = (
+    "signal_outcomes",
+    "ml_models",
+    "signal_weights",
+    "regime_adaptive_weights",
+)
+
+
+@router.post("/reset-learning-layer", status_code=202)
+async def reset_learning_layer(
+    request: Request,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Truncate learning-layer tables. Idempotent. Does not touch raw signals."""
+    await db.execute(
+        text(
+            "TRUNCATE TABLE signal_outcomes, ml_models, signal_weights, "
+            "regime_adaptive_weights RESTART IDENTITY CASCADE"
+        )
+    )
+    await record_audit(
+        db,
+        _admin.id,
+        "reset_learning_layer",
+        "admin/reset-learning-layer",
+        detail={"truncated": list(LEARNING_LAYER_TABLES)},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    from app.core.cache import invalidate_pattern
+
+    await invalidate_pattern("cache:signals:*")
+    await invalidate_pattern("cache:admin:*")
+    return {"status": "completed", "truncated": list(LEARNING_LAYER_TABLES)}
+
+
 @router.get("/ml-models", response_model=list[MLModelStatusResponse])
 async def get_ml_model_status(
     _admin: User = Depends(get_current_admin),

@@ -28,7 +28,7 @@ from worker.tasks.signals.signal_generator import (
     _default_weights,
     apply_regime_multiplier,
 )
-from worker.tasks.signals.weight_optimizer import _compute_sector_weights, _upsert_weights
+from worker.tasks.signals.weight_optimizer import _upsert_weights, _weights_from_rows
 
 NOW = datetime(2026, 8, 31, 16, 0, tzinfo=UTC)
 
@@ -193,10 +193,6 @@ def _score_row(**overrides):
 class TestWeightOptimizerComponents:
     def test_rsi_and_trend_not_in_result(self):
         rows = [_score_row() for _ in range(3)]
-        session = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.all.return_value = rows
-        session.execute = AsyncMock(return_value=result_mock)
 
         with patch("worker.tasks.signals.weight_optimizer.settings") as mock_settings:
             mock_settings.feedback_min_samples = 2
@@ -204,7 +200,7 @@ class TestWeightOptimizerComponents:
             mock_settings.insider_flow_enabled = False
             mock_settings.feedback_weight_min = 0.05
             mock_settings.feedback_weight_max = 0.60
-            result = asyncio.run(_compute_sector_weights(session, 1, NOW))
+            result = _weights_from_rows(rows)
 
         assert result is not None
         assert "rsi" not in result
