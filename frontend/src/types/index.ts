@@ -27,6 +27,11 @@ export type {
   DailyViewOutcome,
   DailySignalView,
   TodaysPredictions,
+  DailyViewAccuracySummary,
+  DailyViewAccuracyTrendBucket,
+  DailyViewCalibrationBucket,
+  DailyViewSectorAccuracy,
+  DailyViewRegimeAccuracy,
 } from "./signal";
 export type { AlertConfig, AlertLog } from "./alert";
 export type {

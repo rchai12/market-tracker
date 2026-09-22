@@ -92,6 +92,11 @@ async def _evaluate_outcomes_async() -> dict:
 
         await session.commit()
 
+        from app.core.cache import invalidate_pattern
+
+        await invalidate_pattern("cache:signals:daily-accuracy:*")
+        await invalidate_pattern("cache:signals:*")
+
     logger.info(f"Signal outcome evaluation: {evaluated} evaluated, {skipped} skipped")
     return {"evaluated": evaluated, "skipped": skipped}
 

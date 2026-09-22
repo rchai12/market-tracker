@@ -170,3 +170,65 @@ class PaginatedDailyViews(BaseModel):
 class TodaysPredictionsResponse(BaseModel):
     trading_date: date
     data: list[DailySignalViewResponse]
+
+
+class DailyViewAccuracySummary(BaseModel):
+    total_views: int
+    evaluated_views: int
+    correct: int
+    accuracy_pct: float
+    avg_conviction: float
+    avg_excess_return_correct: float
+    avg_excess_return_incorrect: float
+    avg_excess_return_all: float
+    insufficient_data: bool
+    min_views_for_confidence: int
+
+
+class DailyViewAccuracyTrendBucket(BaseModel):
+    week_start: date
+    view_count: int
+    accuracy_pct: float
+    avg_conviction: float
+    avg_excess_return: float
+
+
+class DailyViewAccuracyTrendResponse(BaseModel):
+    buckets: list[DailyViewAccuracyTrendBucket]
+
+
+class DailyViewCalibrationBucket(BaseModel):
+    label: str
+    min_conviction: float
+    max_conviction: float
+    count: int
+    accuracy_pct: float
+    avg_excess_return: float
+
+
+class DailyViewCalibrationResponse(BaseModel):
+    buckets: list[DailyViewCalibrationBucket]
+
+
+class DailyViewSectorAccuracy(BaseModel):
+    sector: str
+    count: int
+    accuracy_pct: float
+    avg_excess_return: float
+    avg_conviction: float
+
+
+class DailyViewSectorAccuracyResponse(BaseModel):
+    sectors: list[DailyViewSectorAccuracy]
+
+
+class DailyViewRegimeAccuracy(BaseModel):
+    regime: str
+    count: int
+    accuracy_pct: float
+    avg_excess_return: float
+    avg_conviction: float
+
+
+class DailyViewRegimeAccuracyResponse(BaseModel):
+    regimes: list[DailyViewRegimeAccuracy]

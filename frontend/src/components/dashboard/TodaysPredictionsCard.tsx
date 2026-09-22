@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import type { DailySignalView, TodaysPredictions } from "../../types";
+import { getDailyViewAccuracy, isoDateDaysAgo } from "../../api/signals";
 import Card from "../common/Card";
 import { ConvictionBar, DirectionChip } from "../signals/DailyViewBadge";
 
@@ -35,20 +37,35 @@ function changeValue(view: DailySignalView): number | null {
 
 export default function TodaysPredictionsCard({ payload }: TodaysPredictionsCardProps) {
   const isLive = payload.data.some((row) => row.outcome_1d == null);
+  const params = { window_days: 1, date_from: isoDateDaysAgo(30) };
+  const { data: accuracy } = useQuery({
+    queryKey: ["daily-view-accuracy", params],
+    queryFn: () => getDailyViewAccuracy(params),
+  });
+  const showHistory = accuracy && !accuracy.insufficient_data;
 
   return (
     <Card padding="none" className="overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Today's Predictions</h2>
-        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-          <span>{formatDate(payload.trading_date)}</span>
-          {isLive && (
-            <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              Live
-            </span>
-          )}
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Today's Predictions</h2>
+          <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+            <span>{formatDate(payload.trading_date)}</span>
+            {isLive && (
+              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
         </div>
+        {showHistory && (
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Historical accuracy: {accuracy.accuracy_pct.toFixed(1)}% · Avg alpha:{" "}
+            {accuracy.avg_excess_return_all > 0 ? "+" : ""}
+            {accuracy.avg_excess_return_all.toFixed(2)}%
+          </p>
+        )}
       </div>
       {payload.data.length === 0 ? (
         <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-8 px-4">

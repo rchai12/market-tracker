@@ -150,3 +150,50 @@ export interface TodaysPredictions {
   trading_date: string;
   data: DailySignalView[];
 }
+
+export interface DailyViewAccuracySummary {
+  total_views: number;
+  evaluated_views: number;
+  correct: number;
+  accuracy_pct: number;
+  avg_conviction: number;
+  avg_excess_return_correct: number;
+  avg_excess_return_incorrect: number;
+  avg_excess_return_all: number;
+  insufficient_data: boolean;
+  min_views_for_confidence: number;
+}
+
+export interface DailyViewAccuracyTrendBucket {
+  week_start: string;
+  view_count: number;
+  accuracy_pct: number;
+  avg_conviction: number;
+  avg_excess_return: number;
+}
+
+export interface DailyViewCalibrationBucket {
+  label: string;
+  min_conviction: number;
+  max_conviction: number;
+  count: number;
+  accuracy_pct: number;
+  avg_excess_return: number;
+}
+
+export interface DailyViewSectorAccuracy {
+  sector: string;
+  count: number;
+  accuracy_pct: number;
+  avg_excess_return: number;
+  avg_conviction: number;
+}
+
+export interface DailyViewRegimeAccuracy {
+  regime: string;
+  count: number;
+  accuracy_pct: number;
+  avg_excess_return: number;
+  avg_conviction: number;
+}
+

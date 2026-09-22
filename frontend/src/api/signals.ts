@@ -8,6 +8,11 @@ import type {
   SignalDetail,
   DailySignalView,
   TodaysPredictions,
+  DailyViewAccuracySummary,
+  DailyViewAccuracyTrendBucket,
+  DailyViewCalibrationBucket,
+  DailyViewSectorAccuracy,
+  DailyViewRegimeAccuracy,
   PaginatedResponse,
 } from "../types";
 
@@ -120,3 +125,54 @@ export async function getTodaysPredictions(): Promise<TodaysPredictions> {
   const { data } = await apiClient.get("/signals/daily-views/today");
   return data;
 }
+
+export interface DailyViewAccuracyParams {
+  window_days?: number;
+  sector?: string;
+  direction?: string;
+  date_from?: string;
+  date_to?: string;
+  min_conviction?: number;
+}
+
+export async function getDailyViewAccuracy(
+  params?: DailyViewAccuracyParams
+): Promise<DailyViewAccuracySummary> {
+  const { data } = await apiClient.get("/signals/daily-views/accuracy", { params });
+  return data;
+}
+
+export async function getDailyViewAccuracyTrend(
+  params?: DailyViewAccuracyParams
+): Promise<{ buckets: DailyViewAccuracyTrendBucket[] }> {
+  const { data } = await apiClient.get("/signals/daily-views/accuracy/trend", { params });
+  return data;
+}
+
+export async function getDailyViewCalibration(
+  params?: DailyViewAccuracyParams
+): Promise<{ buckets: DailyViewCalibrationBucket[] }> {
+  const { data } = await apiClient.get("/signals/daily-views/accuracy/calibration", { params });
+  return data;
+}
+
+export async function getDailyViewSectorAccuracy(
+  params?: DailyViewAccuracyParams
+): Promise<{ sectors: DailyViewSectorAccuracy[] }> {
+  const { data } = await apiClient.get("/signals/daily-views/accuracy/sectors", { params });
+  return data;
+}
+
+export async function getDailyViewRegimeAccuracy(
+  params?: DailyViewAccuracyParams
+): Promise<{ regimes: DailyViewRegimeAccuracy[] }> {
+  const { data } = await apiClient.get("/signals/daily-views/accuracy/regimes", { params });
+  return data;
+}
+
+export function isoDateDaysAgo(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+

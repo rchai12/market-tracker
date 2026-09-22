@@ -3,9 +3,10 @@ from fastapi import APIRouter
 from app.api.admin import router as admin_router
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
-from app.api.backtests import router as backtests_router
 from app.api.articles import router as articles_router
 from app.api.auth import router as auth_router
+from app.api.backtests import router as backtests_router
+from app.api.daily_view_accuracy import router as daily_view_accuracy_router
 from app.api.health import router as health_router
 from app.api.market_data import router as market_data_router
 from app.api.portfolio import router as portfolio_router
@@ -26,6 +27,7 @@ router.include_router(market_data_router)
 router.include_router(articles_router)
 router.include_router(sentiment_router)
 router.include_router(signal_accuracy_router)
+router.include_router(daily_view_accuracy_router)
 router.include_router(signals_router)
 router.include_router(portfolio_router)
 router.include_router(alerts_router)

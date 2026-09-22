@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getLatestSignals, getSignalAccuracy, getTodaysPredictions } from "../api/signals";
+import { getLatestSignals, getTodaysPredictions } from "../api/signals";
 import { getSectorSentiment } from "../api/sentiment";
 import { listSources } from "../api/articles";
 import AccuracyCard from "../components/dashboard/AccuracyCard";
@@ -42,16 +42,6 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ["dashboard-sources"],
     queryFn: listSources,
-  });
-
-  const {
-    data: accuracy,
-    isLoading: accuracyLoading,
-    isError: accuracyError,
-    refetch: refetchAccuracy,
-  } = useQuery({
-    queryKey: ["dashboard-accuracy"],
-    queryFn: () => getSignalAccuracy({ window_days: 5 }),
   });
 
   const {
@@ -127,15 +117,9 @@ export default function DashboardPage() {
       {/* Signal Accuracy */}
       <Card className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-          Signal Accuracy
+          Daily View Accuracy
         </h2>
-        {accuracyLoading ? (
-          <LoadingSkeleton variant="row" count={2} />
-        ) : accuracyError ? (
-          <ErrorRetry onRetry={() => refetchAccuracy()} />
-        ) : (
-          <AccuracyCard data={accuracy ?? []} />
-        )}
+        <AccuracyCard />
       </Card>
 
       {/* Sector Heatmap + Top Movers */}

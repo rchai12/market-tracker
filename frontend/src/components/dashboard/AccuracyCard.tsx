@@ -1,69 +1,101 @@
-import type { SignalAccuracy } from "../../types";
+import { useQuery } from "@tanstack/react-query";
+import {
+  getDailyViewAccuracy,
+  getDailyViewCalibration,
+  isoDateDaysAgo,
+} from "../../api/signals";
 import AccuracyBadge from "../signals/AccuracyBadge";
+import LoadingSkeleton from "../common/LoadingSkeleton";
+import ErrorRetry from "../common/ErrorRetry";
+import { accumulatingMessage } from "../signals/DailyViewAccuracyCard";
 
-interface AccuracyCardProps {
-  data: SignalAccuracy[];
+const LOOKBACK_DAYS = 30;
+const DOT_LABELS = ["Low", "Medium", "High"] as const;
+
+function dotClass(accuracy: number | null): string {
+  if (accuracy == null) return "bg-gray-300 dark:bg-gray-600";
+  if (accuracy >= 55) return "bg-emerald-500";
+  if (accuracy >= 50) return "bg-yellow-400";
+  return "bg-red-500";
 }
 
-export default function AccuracyCard({ data }: AccuracyCardProps) {
-  // Find the 5-day global/overall entry as primary, fall back to first
-  const primary = data.find((d) => d.window_days === 5) ?? data[0];
+function formatAlpha(pct: number): string {
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toFixed(2)}%`;
+}
 
-  if (!primary) {
+export default function AccuracyCard() {
+  const params = { window_days: 1, date_from: isoDateDaysAgo(LOOKBACK_DAYS) };
+  const summaryQuery = useQuery({
+    queryKey: ["daily-view-accuracy", params],
+    queryFn: () => getDailyViewAccuracy(params),
+  });
+  const calibrationQuery = useQuery({
+    queryKey: ["daily-view-calibration", params],
+    queryFn: () => getDailyViewCalibration(params),
+  });
+
+  if (summaryQuery.isLoading || calibrationQuery.isLoading) {
+    return <LoadingSkeleton variant="row" count={2} />;
+  }
+  if (summaryQuery.isError) {
+    return <ErrorRetry onRetry={() => summaryQuery.refetch()} />;
+  }
+
+  const summary = summaryQuery.data;
+  if (!summary) {
     return (
       <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
-        No accuracy data yet. Data will appear after signal outcomes are evaluated.
+        No accuracy data yet. Data will appear after daily views are evaluated.
       </p>
     );
   }
+
+  if (summary.insufficient_data) {
+    const pct = Math.min(
+      100,
+      (summary.evaluated_views / Math.max(summary.min_views_for_confidence, 1)) * 100
+    );
+    return (
+      <div>
+        <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">Building accuracy history...</p>
+        <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden mb-2">
+          <div className="h-full rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{accumulatingMessage(summary)}</p>
+      </div>
+    );
+  }
+
+  const byLabel = new Map(
+    (calibrationQuery.data?.buckets ?? []).map((b) => [b.label, b.accuracy_pct] as const)
+  );
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {primary.accuracy_pct.toFixed(1)}%
+            {summary.accuracy_pct.toFixed(1)}%
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {primary.total_evaluated} signals evaluated ({primary.window_days}-day window)
+            {summary.evaluated_views} daily views · 1-day excess return · {LOOKBACK_DAYS}d
           </p>
         </div>
-        <AccuracyBadge accuracy={primary.accuracy_pct} size="md" />
+        <AccuracyBadge accuracy={summary.accuracy_pct} size="md" />
       </div>
 
-      {(primary.bullish_accuracy_pct !== null || primary.bearish_accuracy_pct !== null) && (
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          {primary.bullish_accuracy_pct !== null && (
-            <div className="text-center rounded-lg bg-green-50 dark:bg-green-900/20 p-2">
-              <p className="text-lg font-semibold text-green-700 dark:text-green-400">
-                {primary.bullish_accuracy_pct.toFixed(1)}%
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Bullish</p>
-            </div>
-          )}
-          {primary.bearish_accuracy_pct !== null && (
-            <div className="text-center rounded-lg bg-red-50 dark:bg-red-900/20 p-2">
-              <p className="text-lg font-semibold text-red-700 dark:text-red-400">
-                {primary.bearish_accuracy_pct.toFixed(1)}%
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Bearish</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="text-center">
-          <p className="font-semibold text-green-600 dark:text-green-400">
-            {primary.avg_return_correct >= 0 ? "+" : ""}{primary.avg_return_correct.toFixed(2)}%
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Avg Return (Correct)</p>
-        </div>
-        <div className="text-center">
-          <p className="font-semibold text-red-600 dark:text-red-400">
-            {primary.avg_return_wrong >= 0 ? "+" : ""}{primary.avg_return_wrong.toFixed(2)}%
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Avg Return (Wrong)</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          Avg α {formatAlpha(summary.avg_excess_return_all)}
+        </p>
+        <div className="flex items-center gap-2" title="Low / Medium / High conviction accuracy">
+          {DOT_LABELS.map((label) => (
+            <span key={label} className="flex items-center gap-1">
+              <span className={`h-2.5 w-2.5 rounded-full ${dotClass(byLabel.get(label) ?? null)}`} />
+              <span className="text-[10px] text-gray-400">{label[0]}</span>
+            </span>
+          ))}
         </div>
       </div>
     </div>
