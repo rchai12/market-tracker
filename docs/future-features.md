@@ -1,12 +1,13 @@
 # Future Features
 
-Context document for planned features and improvements. Each section captures the motivation, rough approach, and key decisions to make before implementation.
+Context document for planned features and improvements. Each section captures the motivation,
+rough approach, and key decisions to make before implementation.
 
 ## Completed Phases
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|-----------------|
-| 1-7 | Core platform | FastAPI backend, React frontend, scraping pipeline, FinBERT sentiment, signal generation, alerts, charts, watchlists |
+| 1–7 | Core platform | FastAPI backend, React frontend, scraping pipeline, FinBERT sentiment, signal generation, alerts, charts, watchlists |
 | 8 | Hardening + deployment | Docker hardening, Nginx SSL, security headers, Oracle Cloud deployment |
 | 9 | Data retention + optimization | Performance indexes, article compression, log cleanup, materialized views, admin endpoints |
 | 10 | Signal feedback loop | Outcome evaluation (1/3/5-day windows), adaptive per-sector weight optimization, accuracy UI |
@@ -18,66 +19,108 @@ Context document for planned features and improvements. Each section captures th
 | 16 | Enhanced news intelligence | Event classification (10 categories), fuzzy duplicate detection, source credibility weighting |
 | 17 | ML signal ensemble | LightGBM binary classifier per-sector, A/B comparison with rule-based, admin training trigger, ML accuracy dashboard |
 | 18 | Options flow | yfinance options chain data, CBOE P/C ratio, 7th signal component (options score), P/C ratio & IV skew display |
-| 19 | Infrastructure | Redis caching (5 endpoints), dead letter queue, API key auth, admin audit logging, health alerts (Discord), slow query detection |
-| 20 | Comprehensive testing | Coverage reporting, mutation tests (3 tiers), integration test suite (34 tests), E2E tests (Playwright), Vitest config, signal dedup fix |
+| 19 | Infrastructure | Redis caching (6 endpoints), dead letter queue, API key auth, admin audit logging, health alerts (Discord), slow query detection |
+| 20 | Comprehensive testing | Coverage reporting, mutation tests (3 tiers, ~138 tests), integration test suite (37 tests), E2E tests (Playwright), Vitest config |
+| 21a | Data quality gates | Ticker confidence floor, Reddit signal isolation, article quality score (0–1), canonical article deduplication |
+| 21b | Earnings surprise component | yfinance EPS beat/miss data, tanh(surprise_pct/5.0) scoring, 48h gate, earnings_score on signals |
+| 21c | Signal formula refactor | RSI/trend repurposed as regime multiplier (±15%); base weights rebalanced to sm=40%/sv=25%/pm=20%/va=15%; market_regime label on every signal |
+| 21d | LLM extraction (earnings) | Claude Haiku extracts guidance_change + management_tone from earnings articles; every 2h at :20; anthropic SDK |
+| 21e | LLM quality gate | quality_score ≥ 0.60 gate for LLM extraction; reduced to every-2h frequency |
+| 21f | LLM extraction (analyst) | Claude Haiku extracts rating_change, price_target, analyst_firm from analyst_rating articles → article.metadata_ JSONB |
+| 21g | LLM data wired into scoring | management_tone ±0.10 modifier on earnings_score; analyst_score as gated 8th component (0.07 weight) |
+| 22a | Live paper portfolio | 4 tables (portfolios/positions/trades/snapshots), :35 position management, 21:30 UTC SPY snapshot, 5 API endpoints, /portfolio page |
+| 22b | Adaptive feedback upgrade | Return-weighted component votes (abs(price_change_pct) scaled by bucketed share), analyst_score in optimizer, per-(sector, regime) weights with fallback chain |
+| 23a | ML ensemble promotion | ml_score gated into live composite as 8% component when validation_accuracy ≥ 55% and training_samples ≥ 50; has_ml stored on signal |
+| 23b | Insider Form 4 signal | yfinance Form 4 scraper, insider_transactions table, gated 8% insider_score (role-weighted, sells at 40%), stock-detail insider section |
+| 24 | Daily signal aggregation | daily_signal_views table, trading_date on signals, learning loop reads 1-day daily-view outcomes (conviction ≥ 0.20), Today's Predictions dashboard primary panel |
+| 24b | Outcome quality + bucketing | Excess return vs sector ETF for is_correct (absolute for Market ETFs), 4-hour ET time buckets (pre_market/morning/afternoon), recency weighting λ=0.15 toward session close |
 
 ---
 
-## Phase 12 Candidates
+## What's Next
 
-### Backtesting Engine
+### Phase 24c: Daily View Accuracy Observability
 
-**Motivation:** Validate signal strategies against historical data before deploying them live. Currently we can only measure accuracy forward-looking via the feedback loop.
+**Motivation:** With daily views now scored on excess return, the Accuracy tab still shows
+per-signal is_correct counts. Users cannot see how well bucketed predictions perform over
+time or how conviction calibrates against actual outcomes.
 
 **Approach:**
-- Replay historical OHLCV + sentiment data to simulate signal generation at past timestamps
-- Compare simulated signals against actual price movements
-- Generate performance reports: Sharpe ratio, max drawdown, win rate by sector/timeframe
-- Frontend: backtest configuration page, equity curve chart, performance breakdown table
+- Conviction calibration chart: bucket daily views by conviction decile, plot actual win rate
+- Sector accuracy table: per-sector win rate + avg excess return from daily-view outcomes
+- Accuracy tab update: replace or supplement per-signal accuracy with daily-view accuracy
+- New endpoint: `GET /api/signals/daily-views/accuracy` — aggregated is_correct by sector/regime/period
 
 **Key decisions:**
-- How far back to backtest (limited by sentiment data availability — scraping only started recently)
-- Whether to store backtest results in DB or compute on-the-fly
-- Simulated vs actual slippage/fees modeling
+- Minimum sample threshold before showing a sector row (avoid misleading low-n stats)
+- Whether to retire the per-signal accuracy tab entirely or keep both
 
-### Portfolio Simulation / Paper Trading
+---
 
-**Motivation:** Let users test strategies with virtual portfolios without risking real money.
+### Pending Correctness Fixes (Pass 1 — do before structural refactors)
 
-**Approach:**
-- Virtual portfolio model: starting capital, positions, trade history
-- Auto-trade based on signal thresholds (e.g., buy on strong bullish, sell on strong bearish)
-- Track P&L, position sizing, portfolio value over time
-- Frontend: portfolio dashboard, trade log, performance chart
+These are bugs or security gaps that are small in scope but high in impact. They should be
+addressed before any structural refactoring that might reshuffle code around an unfixed bug.
 
-**Key decisions:**
-- Position sizing strategy (fixed amount vs percentage of portfolio)
-- Whether to support manual trades alongside auto-trades
-- How to handle dividends, splits, after-hours gaps
+| ID | Issue | Impact |
+|----|-------|--------|
+| B1 | `reset-learning-layer` does not truncate `daily_signal_view_outcomes` | Learning layer reset is incomplete; stale outcomes survive |
+| B2 | `signals:weights:v2` Redis key not invalidated after weight optimizer runs | Methodology tab shows stale weights until TTL expires |
+| B3 | Signal generation task has no weekday gate | Signals generated on Saturdays/Sundays with no market data |
+| S1 | `/api/health` leaks `str(exc)` containing DB/Redis credentials in error responses | Credential exposure on health endpoint errors |
+| S2 | DLQ retry (`/api/admin/task-failures/{id}/retry`) has no task_name allowlist | Admin can re-queue arbitrary task strings |
 
-### ~~Enhanced News Intelligence~~ (Done — Phase 16)
+---
 
-Implemented: rule-based event classification (10 categories, ~100 keywords), fuzzy duplicate detection via rapidfuzz token_set_ratio, source credibility weighting in signal scoring. Named entity extraction deferred.
+### Pending Deduplication Fixes (Pass 2 — shared helpers)
 
-### ~~Real-time Data Streaming~~ (Unfeasible)
+These are cases where a canonical shared module exists but call sites still have their own
+copy of the same logic. They introduce drift risk (fix in one place, forget the others).
 
-> **Not viable on current Oracle Cloud free-tier infrastructure.** Persistent WebSocket connections for 86 tickers would create constant network load (vs current bursty hourly batch), competing with the Compute VM's 2 ARM cores already running Celery + FinBERT. Free-tier bandwidth throttling and egress limits make real-time streaming impractical. A middle ground (reducing batch interval to 15-30 min) would work within existing constraints without architectural changes.
+| ID | Issue | Canonical Module |
+|----|-------|-----------------|
+| D1 | Close-price queries still duplicated in 4+ places | `worker/utils/market_data_queries.py` |
+| D2 | Learning loaders duplicated between weight_optimizer and ml_trainer_task | `worker/utils/learning_queries.py` |
+| D3 | `get_db` defined in both `database.py` and `dependencies.py` | `app/dependencies.py` |
+| D4 | Strength rank map in 3 places (STRENGTH_ORDER, STRENGTH_RANK, inline dict) | Consolidate into `app/core/constants.py` or `worker/utils/signal_formula.py` |
+| D5 | `@async_task` decorator adoption incomplete (most tasks still hand-roll `run_async`) | `worker/utils/celery_helpers.py` |
 
-**Motivation:** Move from hourly batch processing to real-time for faster signal generation.
+---
 
-**Approach:**
+### Deferred Structural Refactors (Pass 3)
+
+These are real improvements but should be deferred until Pass 1 bugs are fixed and Pass 2
+drift is reduced. Splitting files around an unfixed bug or duplicated helper makes the fix
+harder, not easier.
+
+| ID | Item | Reason to defer |
+|----|------|----------------|
+| T1 | Split `signal_generator.py` (558 lines) into Celery entry / ML inference / persist / reasoning modules | B3 (weekend gate) lives here; fix first |
+| T2 | Batch N+1 queries in signal generation (~910 queries per :30 run, ~10 per ticker × 91 tickers) | Needs T1 split to organize batching cleanly |
+| T3 | Chain outcomes → weights → ML as a Celery chain rather than clock-offset beat entries | Requires D2 cleanup to avoid duplicating loader logic in chain glue |
+
+---
+
+## Deferred Feature Candidates
+
+### Real-time Data Streaming
+
+> **Not viable on current Oracle Cloud free-tier infrastructure.** Persistent WebSocket
+connections for 91 tickers would create constant network load (vs current bursty hourly
+batch), competing with the Compute VM's 2 ARM cores already running Celery + FinBERT.
+Free-tier bandwidth throttling and egress limits make real-time streaming impractical.
+A middle ground (reducing batch interval to 15–30 min) would work within existing
+constraints without architectural changes.
+
+**Approach (if infrastructure improves):**
 - WebSocket connections for live price updates (replace hourly yfinance polling)
 - Server-sent events (SSE) or WebSocket push for live signal/alert delivery to frontend
 - Streaming sentiment processing (process articles immediately on scrape rather than batched)
 
-**Key decisions:**
-- WebSocket provider (Polygon.io, Alpaca, IEX Cloud — all have free tiers)
-- Whether frontend uses WebSocket directly or SSE for simpler server push
-- How to handle market hours vs after-hours differently
-
 ### Multi-timeframe Analysis
 
-**Motivation:** Current signals use a single timeframe. Different timeframes can provide confluence signals.
+**Motivation:** Current signals use a single daily timeframe. Different timeframes can provide
+confluence signals.
 
 **Approach:**
 - Compute indicators across multiple timeframes (daily, weekly, monthly)
@@ -89,21 +132,15 @@ Implemented: rule-based event classification (10 categories, ~100 keywords), fuz
 - How to weight timeframe confluence in composite score
 - Whether this replaces or augments the current single-timeframe approach
 
-### ~~Social Sentiment Integration~~ (Deferred)
+### Social Sentiment Integration
 
-> **Deprioritized due to signal noise.** Social platforms (StockTwits, Twitter/X) are heavily polluted by bots, spam, and pump-and-dump campaigns. Twitter/X API is $100/month minimum for read access. StockTwits is free but noisy — user-tagged sentiment is unreliable compared to FinBERT on curated news. Adding low-quality social data risks degrading signal accuracy rather than improving it. Reddit (already scraped, filtered by score >= 10) provides the best signal-to-noise ratio for retail sentiment.
-
-**Motivation:** Reddit scraping is limited. Twitter/X, StockTwits, and other social platforms carry significant retail sentiment.
-
-**Approach:**
-- Add scrapers for StockTwits (public API), Twitter/X (if API access available)
-- Social-specific sentiment analysis (FinBERT may not capture internet slang well)
-- Volume-weighted social sentiment as a new signal component
-
-**Key decisions:**
-- API access and rate limits (Twitter API pricing, StockTwits terms)
-- Whether to add a separate "social sentiment" component vs mixing into existing sentiment
-- Handling bot/spam detection in social data
+> **Deprioritized due to signal noise.** Social platforms (StockTwits, Twitter/X) are
+heavily polluted by bots, spam, and pump-and-dump campaigns. Twitter/X API is $100/month
+minimum for read access. StockTwits is free but noisy — user-tagged sentiment is
+unreliable compared to FinBERT on curated news. Adding low-quality social data risks
+degrading signal accuracy rather than improving it. Reddit (already scraped, filtered by
+score >= 10, isolated into retail_sentiment_score) provides the best signal-to-noise ratio
+for retail sentiment without contaminating the main composite.
 
 ### Improved Frontend UX
 
@@ -114,42 +151,24 @@ Implemented: rule-based event classification (10 categories, ~100 keywords), fuz
 - **Chart drawing tools**: Support lines, Fibonacci, annotations on TradingView charts
 - **Comparison mode**: Overlay multiple tickers on the same chart
 - **Alert notifications in-app**: Toast/bell notifications, not just Discord/email
-- **Mobile responsive**: Current layout is desktop-focused
 - **Keyboard shortcuts**: Power-user navigation (j/k for next/prev stock, etc.)
 
-### ~~Options Flow / Unusual Activity~~ (Done — Phase 18)
-
-Implemented: yfinance options chain data (nearest 3 expirations per ticker), aggregated daily snapshots with put/call ratio, volume-weighted IV, ATM strike IV identification, and IV skew computation. CBOE market-wide put/call ratio from public CSV. 7th signal component (options score) using PCR anomaly (60%) + IV skew signal (40%) vs 20-day baseline, tanh-scaled. Feature-toggled via `OPTIONS_FLOW_ENABLED` (default off). Frontend: P/C ratio + IV summary cards, call/put volume comparison, P/C ratio history bar chart, data quality badges. Admin trigger for immediate fetch.
-
-### ~~Machine Learning Signal Ensemble~~ (Done — Phase 17)
-
-Implemented: LightGBM binary classifier trained per-sector (+ global fallback) on 6 component scores from SignalOutcome data. Runs alongside rule-based scoring for A/B comparison — does NOT replace composite scores. Admin-triggered training with automatic daily retraining at 4:30 AM. ML score, direction, and confidence stored on every signal. Frontend shows ML badge on signal cards, A/B accuracy comparison, and ML model status table with feature importances.
-
----
-
-## Infrastructure Improvements
+## Infrastructure Notes
 
 ### Performance
-- ~~Frontend code splitting (bundle > 500KB currently)~~ (Done — Phase 13)
-- ~~Redis caching for expensive queries (sector summaries, trending stocks)~~ (Done — Phase 19)
 - Database connection pooling tuning under load
 - CDN for static frontend assets
 
 ### Reliability
 - Database replication (read replica for heavy queries) — not feasible on free-tier
 - Worker autoscaling based on queue depth — only 2 ARM cores, no headroom
-- ~~Dead letter queue for failed tasks~~ (Done — Phase 19)
-- ~~Health check alerts (PagerDuty/Slack when services go down)~~ (Done — Phase 19, Discord webhook)
 
 ### Observability
 - Prometheus metrics export (request latency, task duration, queue depth) — too heavy for free-tier
 - Grafana dashboards for system monitoring — too heavy for free-tier
 - Distributed tracing (OpenTelemetry) across API → Celery → DB — overkill for 2-VM setup
 - Error tracking (Sentry integration) — structured logs + dead letter queue covers the gap
-- ~~Slow query detection~~ (Done — Phase 19, SQLAlchemy event listeners)
 
 ### Security
-- ~~API key support (for programmatic access alongside JWT)~~ (Done — Phase 19)
 - OAuth2 social login (Google, GitHub) — complex UX, low ROI
 - Two-factor authentication — complex UX, low ROI
-- ~~Audit logging for admin actions~~ (Done — Phase 19)

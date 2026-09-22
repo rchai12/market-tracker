@@ -29,16 +29,21 @@
 │  │  (concurrency=2)      │  │   (task scheduler)     │   │
 │  │                        │  │                        │   │
 │  │  Queues:               │  │  Schedules:            │   │
-│  │  - scraping            │  │  - */5 health check    │   │
-│  │  - sentiment           │  │  - :00 scrape all      │   │
-│  │  - signals             │  │  - :05 market data     │   │
-│  │  - maintenance         │  │  - :15 sentiment       │   │
-│  │  - default             │  │  - :20 LLM extract     │   │
-│  │                        │  │  - :30 gen signals     │   │
-│  │                        │  │  - :35 matview refresh │   │
-│  │                        │  │  - :45 eval outcomes   │   │
-│  │                        │  │  - 3AM maintenance     │   │
-│  │                        │  │  - 4AM adapt weights   │   │
+│  │  - scraping            │  │  - */5  health check   │   │
+│  │  - sentiment           │  │  - :00  scrape all     │   │
+│  │  - signals             │  │  - :05  market data    │   │
+│  │  - maintenance         │  │  - :10  options chain  │   │
+│  │  - default             │  │  - :12  CBOE P/C ratio │   │
+│  │                        │  │  - :15  sentiment      │   │
+│  │                        │  │  - */2h :20 LLM extract│   │
+│  │                        │  │  - :30  gen signals    │   │
+│  │                        │  │  - :35  paper portfolio│   │
+│  │                        │  │         + matview      │   │
+│  │                        │  │  - :45  eval outcomes  │   │
+│  │                        │  │  - 18:00 insider Form 4│   │
+│  │                        │  │  - 21:30 portfolio snap│   │
+│  │                        │  │  - 3AM  maintenance    │   │
+│  │                        │  │  - 4AM  adapt weights  │   │
 │  │                        │  │  - 4:30AM ML training  │   │
 │  └──────────────────────┘  └────────────────────────┘   │
 │                                                          │
@@ -61,7 +66,7 @@
                     │ MarketWatch │
                     │ Reddit      │
                     │ FRED        │
-                    │ yfinance    │
+                    │ yfinance    │ ← also options, insider Form 4
                     └──────┬──────┘
                            │
                     ┌──────▼──────┐
@@ -71,15 +76,15 @@
                            │
                     ┌──────▼──────┐
                     │   Ticker    │  $TICKER (0.95), (TICKER) (0.90),
-                    │ Extraction  │  ALL-CAPS (0.70), company name (0.60),
-                    │ + Industry  │  industry keywords (0.45)
-                    │  Matching   │
+                    │ Extraction  │  ALL-CAPS (0.70), company name (0.60)
+                    │             │
                     └──────┬──────┘
                            │
                     ┌──────▼──────┐
                     │   Event     │  10 categories (earnings, M&A, etc.)
                     │ Classifier  │  + fuzzy dedup (rapidfuzz)
-                    │ + Dedup     │  + source credibility scoring
+                    │ + Dedup     │  + source credibility weighting
+                    │ + Quality   │  article quality score 0–1
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
@@ -89,10 +94,10 @@
        │  (raw text) │ │      │ │  (OHLCV)   │
        └──────┬──────┘ └──────┘ └──────┬──────┘
               │                        │
-       ┌──────▼──────┐                 │
-       │  FinBERT    │                 │
-       │ Sentiment   │                 │
-       └──────┬──────┘                 │
+       ┌──────▼──────┐           ┌─────▼──────┐
+       │  FinBERT    │           │  Options   │  yfinance P/C ratio
+       │ Sentiment   │           │  + Insider │  Form 4 transactions
+       └──────┬──────┘           └─────┬──────┘
               │                        │
        ┌──────▼──────┐                 │
        │  Sentiment  │                 │
@@ -100,48 +105,60 @@
        └──────┬──────┘                 │
               │                        │
        ┌──────▼──────┐                 │
-       │ Claude Haiku│  earnings only  │
-       │ LLM extract │  if enabled     │
+       │ Claude Haiku│  earnings +     │
+       │ LLM extract │  analyst arts   │
        └──────┬──────┘                 │
               │                        │
               └───────────┬────────────┘
                           │
                    ┌──────▼──────┐
-                   │   Signal    │  (+ ML inference via LightGBM
-                   │  Generator  │   if ML_ENSEMBLE_ENABLED)
+                   │   Signal    │  rule-based composite
+                   │  Generator  │  + ML inference (LightGBM)
+                   │             │  → upsert daily_signal_views
                    └──────┬──────┘
                           │
               ┌───────────┼───────────┐
-              │                       │
-       ┌──────▼──────┐        ┌──────▼──────┐
-       │  Signals    │        │   Alerts    │
-       │  (stored)   │        │ (Discord +  │
-       │             │        │   Email)    │
-       └──────┬──────┘        └─────────────┘
-              │
-       ┌──────▼──────┐
-       │  Outcome    │  (evaluate after 1/3/5 days)
-       │  Evaluator  │
-       └──────┬──────┘
-              │
-       ┌──────▼──────┐
-       │  Adaptive   │  (re-weight components daily)
-       │  Weights    │──── feeds back to Signal Generator
-       └──────┬──────┘
-              │
-       ┌──────▼──────┐
-       │  React App  │
-       │ (Dashboard, │
-       │  Charts,    │
-       │  Indicators,│
-       │  Accuracy,  │
-       │  Backtest,  │
-       │  Signal     │
-       │  Intel)     │
-       └─────────────┘
+              │           │           │
+       ┌──────▼──────┐ ┌──▼──────┐ ┌─▼────────────┐
+       │  Signals    │ │ Alerts  │ │  Daily View  │
+       │  (stored)   │ │Discord  │ │  (net score, │
+       │             │ │+ Email  │ │  conviction, │
+       │             │ └─────────┘ │  direction)  │
+       └──────┬──────┘             └──────┬───────┘
+              │                           │
+              └──────────┬────────────────┘
+                         │
+                  ┌──────▼──────┐
+                  │  Outcome    │  per-signal (1/3/5d) +
+                  │  Evaluator  │  daily-view (excess return
+                  │             │  vs sector ETF)
+                  └──────┬──────┘
+                         │
+              ┌──────────┼──────────┐
+              │                     │
+       ┌──────▼──────┐       ┌──────▼──────┐
+       │  Adaptive   │       │  ML Trainer │
+       │  Weights    │       │  LightGBM   │
+       │ (per-sector │       │ (per-sector │
+       │  + regime)  │       │  + global)  │
+       └──────┬──────┘       └──────┬──────┘
+              │                     │
+              └──────────┬──────────┘
+                         │ feeds back to Signal Generator
+                  ┌──────▼──────┐
+                  │  React App  │
+                  │ (Dashboard, │
+                  │  Portfolio, │
+                  │  Charts,    │
+                  │  Signals,   │
+                  │  Backtest,  │
+                  │  Admin)     │
+                  └─────────────┘
 ```
 
 ## Database Schema
+
+32 tables total.
 
 ### Entity Relationships
 
@@ -153,16 +170,22 @@ users ──< api_keys
 stocks ──< article_stocks >── articles
 stocks ──< market_data_daily
 stocks ──< market_data_intraday
-articles ──< sentiment_scores
 stocks ──< signals
-signals ──< alert_logs
+stocks ──< daily_signal_views ──< daily_signal_view_outcomes
+stocks ──< options_activity
+stocks ──< insider_transactions
+stocks ──< earnings_estimates
+articles ──< sentiment_scores
 signals ──< signal_outcomes
-stocks >── sectors
 sectors ──< signal_weights
+sectors ──< regime_adaptive_weights
 sectors ──< ml_models
 backtests ──< backtest_trades
 backtests >── stocks (nullable)
 backtests >── sectors (nullable)
+paper_portfolios ──< paper_positions >── stocks
+paper_portfolios ──< paper_trades
+paper_portfolios ──< paper_portfolio_snapshots
 ```
 
 ### Tables
@@ -171,106 +194,260 @@ backtests >── sectors (nullable)
 |-------|---------|-------------|
 | users | Authentication and preferences | email, username, password_hash, discord_webhook_url |
 | sectors | Stock groupings (Energy, Financials, Technology, ...) | name, is_active |
-| stocks | S&P 500 tickers | ticker, company_name, sector_id, industry, is_active |
-| market_data_daily | Historical OHLCV | stock_id, date, open/high/low/close/volume |
+| stocks | ~91 tickers across 6 sectors + ETFs | ticker, company_name, sector_id, industry, is_active |
+| market_data_daily | Historical OHLCV (30+ years) | stock_id, date, open/high/low/close/volume |
 | market_data_intraday | Intraday prices | stock_id, timestamp, OHLCV |
-| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, duplicate_group_id, llm_extracted |
+| articles | Scraped news/filings | source, source_url, title, raw_text, is_processed, event_category, quality_score, duplicate_group_id, canonical_article_id, llm_extracted, metadata_ (JSONB) |
 | article_stocks | Article-to-ticker mapping | article_id, stock_id, confidence |
 | sentiment_scores | FinBERT analysis results | article_id, stock_id, label, positive/negative/neutral scores |
-| signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_volume_score, rsi_score, trend_score, reasoning, ml_score, ml_direction, ml_confidence |
-| signal_outcomes | Signal accuracy evaluation | signal_id, window_days, is_correct, price_change_pct |
-| signal_weights | Adaptive component weights (per-sector) | sector_id, sentiment_momentum, rsi, trend, accuracy_pct |
+| signals | Composite trading signals | stock_id, direction, strength, composite_score, sentiment_score, sentiment_volume_score, price_score, volume_score, rsi_score, trend_score, options_score, earnings_score, analyst_score, ml_score, ml_direction, ml_confidence, has_ml, insider_score, market_regime, trading_date, reasoning |
+| signal_outcomes | Per-signal accuracy (1/3/5d) | signal_id, window_days, is_correct, price_change_pct |
+| daily_signal_views | Daily net view per stock/session | stock_id, trading_date, net_score, direction, conviction, signal_count, raw_signal_count, baseline_close |
+| daily_signal_view_outcomes | Daily view accuracy evaluation | daily_view_id, window_days, is_correct, price_change_pct, sector_return_pct, excess_return_pct |
+| signal_weights | Per-sector adaptive weights | sector_id (nullable=global), sentiment_momentum, sentiment_volume, price_momentum, volume_anomaly, earnings, options, analyst, insider, rsi, trend, accuracy_pct, sample_count |
+| regime_adaptive_weights | Per-(sector, regime) adaptive weights | sector_id, regime, sentiment_momentum, sentiment_volume, price_momentum, volume_anomaly, earnings, options, analyst, insider, rsi, trend, accuracy_pct, sample_count |
+| ml_models | ML model registry (one active per sector) | sector_id, model_version, training_samples, validation_accuracy, validation_f1, model_path, feature_importances |
 | alert_configs | User alert preferences | user_id, stock_id, min_strength, channel |
 | alert_logs | Sent alert history | signal_id, user_id, channel, success |
 | watchlist_items | User watchlists | user_id, stock_id |
 | scrape_logs | Scraper execution logs | source, articles_found, articles_new, errors |
-| backtests | Backtest run configurations and results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON), commission/slippage/position_size/stop_loss/take_profit, benchmark_ticker, benchmark metrics (alpha/beta), benchmark_equity_curve (JSON) |
-| backtest_trades | Individual trades within a backtest | backtest_id, ticker, action, price, shares, signal_score, return_pct, exit_reason |
-| ml_models | ML model registry (one active per sector) | sector_id, model_version, training_samples, validation_accuracy, validation_f1, model_path, feature_importances |
-| task_failures | Dead letter queue for failed Celery tasks | task_name, task_args, exception_type, exception_message, traceback, failed_at, retried_at |
-| api_keys | API key authentication (per-user) | user_id, key_hash (SHA-256), key_prefix, name, is_active, last_used_at, expires_at |
-| audit_logs | Admin action audit trail | user_id, action, resource, detail (JSON), ip_address, created_at |
-| options_activity | Daily per-ticker options aggregates | stock_id, date, put_call_ratio, iv_skew, volume/OI, data_quality |
+| backtests | Backtest configurations + results | user_id, stock_id/sector_id, mode, status, metrics, equity_curve (JSON), commission/slippage/position_size/stop_loss/take_profit, benchmark_ticker, alpha, beta, benchmark_equity_curve (JSON) |
+| backtest_trades | Individual backtest trades | backtest_id, ticker, action, price, shares, signal_score, return_pct, exit_reason |
+| options_activity | Daily per-ticker options aggregates | stock_id, date, put_call_ratio, iv_skew, weighted_avg_iv, volume/OI aggregates, data_quality |
 | cboe_put_call_ratio | Market-wide CBOE put/call ratio | date, put_call_ratio, equity_pc_ratio |
-| earnings_estimates | Consensus vs actual EPS per ticker/quarter | stock_id, earnings_date, eps_estimate, eps_actual, surprise_pct, guidance_change |
+| earnings_estimates | EPS consensus vs actual | stock_id, earnings_date, eps_estimate, eps_actual, surprise_pct, guidance_change |
+| insider_transactions | Form 4 insider trades | stock_id, insider_name, insider_title, transaction_type (P/S/A/D), shares, price_per_share, transaction_value, transaction_date |
+| paper_portfolios | Simulated long-only portfolio | starting_capital, current_cash, inception_date, benchmark_ticker |
+| paper_positions | Open simulated positions | portfolio_id, stock_id, entry_price, shares, stop_loss_price, take_profit_price |
+| paper_trades | Closed simulated trades | portfolio_id, stock_id, entry_price, exit_price, realized_pnl, return_pct, exit_reason |
+| paper_portfolio_snapshots | Daily equity vs SPY | portfolio_id, snapshot_date, total_value, equity_value, cash, benchmark_price, cumulative_return_pct, benchmark_cumulative_return_pct |
+| task_failures | Dead letter queue for failed Celery tasks | task_name, task_args, exception_type, exception_message, traceback, failed_at, retried_at |
+| api_keys | Per-user API key auth (SHA-256 hashed) | user_id, key_hash, key_prefix, name, is_active, last_used_at, expires_at |
+| audit_logs | Admin action audit trail | user_id, action, resource, detail (JSON), ip_address, created_at |
 
 ## Signal Scoring Algorithm
 
-Live scoring and backtests share `worker/utils/signal_formula.py` (`combine_component_scores`) so they cannot drift.
+Live scoring and backtests share `worker/utils/signal_formula.py` so they cannot drift. The module owns all weights, regime logic, gating, and classification.
 
-Four predictive components, plus gated earnings/options. RSI and trend are **not** additive — they apply a regime multiplier to the composite.
+### Components
+
+Four base predictive components always contribute. Five additional components are gated — they only activate when data is available or features are enabled. RSI and trend are **never additive**; they classify market regime and apply a ±15% multiplier to the composite.
 
 ```
-raw = 0.40 * sentiment_momentum + 0.25 * sentiment_volume
-    + 0.20 * price_momentum    + 0.15 * volume_anomaly
-    + 0.10 * earnings_score   (when a report is within 48h; other weights scale down)
-    + 0.08 * options_score    (when OPTIONS_FLOW_ENABLED; other weights scale down)
+raw = w_sm * sentiment_momentum
+    + w_sv * sentiment_volume
+    + w_pm * price_momentum
+    + w_va * volume_anomaly
+    + 0.10 * earnings_score   (gated: within 48h of earnings report)
+    + 0.08 * options_score    (gated: OPTIONS_FLOW_ENABLED)
+    + 0.07 * analyst_score    (gated: 30-day LLM-extracted analyst articles)
+    + 0.08 * ml_score         (gated: model accuracy ≥ 55% AND samples ≥ 50)
+    + 0.08 * insider_score    (gated: INSIDER_FLOW_ENABLED, 30-day Form 4)
 
 composite, market_regime = apply_regime_multiplier(raw, rsi_score, trend_score)
 ```
 
-| Component | Default weight | Description | Range |
-|-----------|----------------|-------------|-------|
-| sentiment_momentum | 0.40 | Exponentially weighted avg of sentiment scores (half-life 6h) | [-1, 1] |
-| sentiment_volume | 0.25 | Article count vs 20-day baseline, signed by net sentiment | [-1, 1] |
-| price_momentum | 0.20 | 5-day price change, tanh scaled | [-1, 1] |
-| volume_anomaly | 0.15 | Trading volume vs 20-day avg, signed by price direction | [-1, 1] |
-| earnings_score | 0.10 (gated) | EPS beat/miss vs consensus (`tanh(surprise_pct/5)`), plus +0.2/−0.2 if LLM `guidance_change` is raised/lowered; active only within 48h of report | [-1, 1] |
-| options_score | 0.08 (gated) | P/C ratio + IV skew z-scores vs 20-day baseline | [-1, 1] |
-| rsi_score | regime only | RSI(14) mapped to [-1,1]; extreme → dampen composite 15% | [-1, 1] |
-| trend_score | regime only | 60% SMA crossover + 40% MACD; confirm ×1.15 / oppose ×0.85 | [-1, 1] |
+When gated components activate, the four base weights scale down proportionally so the full set always sums to 1.0. For example, with no gated components active the base weights are 40/25/20/15. With analyst + insider both active (15% combined gated), the base weights become roughly 34/21/17/13.
 
-**Regime multiplier:** `|rsi| > 0.4` → overbought/oversold (×0.85). Else `|trend| > 0.3` confirming → ×1.15, opposing → ×0.85. Otherwise sideways (×1.0).
+| Component | Default weight | Activation | Calculation |
+|-----------|---------------|------------|-------------|
+| sentiment_momentum | 0.40 (base) | Always | Exp-weighted avg of (positive − negative) sentiment scores, half-life 6h, 48h window |
+| sentiment_volume | 0.25 (base) | Always | Article count vs 20-day baseline, tanh-scaled, signed by net sentiment direction |
+| price_momentum | 0.20 (base) | Always | 5-day price change, tanh-scaled (×5 multiplier) |
+| volume_anomaly | 0.15 (base) | Always | Trading volume vs 20-day avg, tanh-scaled, signed by price direction |
+| earnings_score | 0.10 (gated) | EPS report within 48h | `tanh(surprise_pct / 5.0)` + guidance_change modifier (±0.20) + management_tone modifier (±0.10) from LLM extraction |
+| options_score | 0.08 (gated) | OPTIONS_FLOW_ENABLED | `0.6 * -tanh(pcr_z) + 0.4 * -tanh(skew_z)` vs 20-day baseline |
+| analyst_score | 0.07 (gated) | 30-day LLM-extracted analyst articles exist | `0.6 * tanh(net_rating/2) + 0.4 * tanh(mean_upside*5)` |
+| ml_score | 0.08 (gated) | Model accuracy ≥ 55% AND samples ≥ 50 | LightGBM P(correct) mapped to signed [-1, 1] |
+| insider_score | 0.08 (gated) | INSIDER_FLOW_ENABLED | `tanh(net_value / 500_000)`, role-weighted, sells counted at 40% |
+| rsi_score | regime only | Always computed | `tanh((50 − rsi) / 50 * 2.5)` — oversold → positive, overbought → negative |
+| trend_score | regime only | Always computed | `0.6 * sma_crossover + 0.4 * macd_histogram_signal` |
 
-**Thresholds:**
-- Strong: |composite| > 0.6
-- Moderate: |composite| > 0.35
-- Weak: everything else
+### Regime Multiplier
 
-### Adaptive Weights
+Priority order (first match wins):
 
-Default weights are overridden by per-sector adaptive weights computed daily at 4 AM. The weight optimizer analyzes signal outcomes (1/3/5-day windows) to determine which components are most predictive for each sector, then rebalances weights accordingly. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0.
+1. `|rsi_score| > 0.4` → dampen composite 15%, label = `overbought` or `oversold`
+2. `|trend_score| > 0.3` and trend confirms signal direction → boost 15%, label = `trending_up` or `trending_down`
+3. `|trend_score| > 0.3` and trend opposes signal → dampen 15%
+4. Default → no change, label = `sideways`
 
-### Technical Indicators
+The `market_regime` label is stored on every signal and used by the weight optimizer to build per-(sector, regime) adaptive weights.
 
-All indicators are computed on-the-fly from stored OHLCV data (no extra DB tables):
+### Classification Thresholds
 
-| Indicator | Parameters | Purpose |
-|-----------|-----------|---------|
-| SMA | 20-period, 50-period | Moving average overlays, trend direction |
-| EMA | Configurable period | MACD calculation building block |
-| RSI | 14-period (Wilder's) | Overbought/oversold detection for signal scoring |
-| MACD | Fast=12, Slow=26, Signal=9 | Trend momentum for signal scoring and charting |
-| Bollinger Bands | 20-period, 2 std deviations | Volatility visualization on price chart |
+| Label | Condition |
+|-------|-----------|
+| Strong | `|composite| > 0.6` |
+| Moderate | `|composite| > 0.35` |
+| Weak | Everything else |
+| Bullish | `composite > 0.01` |
+| Bearish | `composite < -0.01` |
+| Neutral | `|composite| <= 0.01` |
 
-## Historical Data Initialization
+## Daily Signal Views (Phase 24 / 24b)
 
-On first setup, `scripts/seed_historical_data.py` backfills the full available price history for all active tickers via yfinance (`period="max"`). This provides ~30+ years of daily OHLCV data per ticker (~7,500 rows each, ~340K total rows, ~50MB in Postgres).
+Each :30 signal generation upserts a `daily_signal_views` row — one net view per stock per trading session. This collapses multiple intra-day signals into a single learning unit and is the primary input to the adaptive weight optimizer and ML trainer.
 
-This ensures the signal algorithm has deep historical baselines (20-day moving averages for price momentum and volume anomaly) from day one, rather than starting blind and needing weeks to accumulate enough data.
+### Trading Date Assignment
 
-The historical seed is idempotent (upserts via `ON CONFLICT DO UPDATE`) and skips tickers that already have 5,000+ rows.
+The `trading_date` on each signal is the next market-session close the signal predicts:
+
+- Weekday before 16:00 ET (including pre-market) → same-day close
+- After 16:00 ET or weekend → next calendar day (then resolved to the next actual trading session from `market_data_daily` to skip holidays)
+
+### 4-Hour Bucket Collapsing (Phase 24b)
+
+Before netting, signals are collapsed into three 4-hour ET buckets. Only the strongest signal (`|composite_score|`) per bucket contributes to the net view. This prevents a single noisy hour from dominating a session.
+
+| Bucket | ET Window |
+|--------|-----------|
+| pre_market | Before 09:30 |
+| morning | 09:30 – 13:30 |
+| afternoon | 13:30 – 16:00 |
+
+After bucketing, `raw_signal_count` records how many signals existed before collapsing; `signal_count` records the number of buckets that contributed.
+
+### Net Score Calculation
+
+The net score is a magnitude- and recency-weighted average over bucketed signals:
+
+```
+weight(signal) = |composite_score| * exp(-λ * hours_before_close)
+                 where λ = 0.15
+
+net_score = Σ weight(s) * sign(direction(s)) / Σ weight(s)
+conviction = |net_score|
+```
+
+The recency weight (`λ=0.15`, half-life ≈ 4.6 hours) means signals generated closer to the market close are trusted more than pre-market signals when they conflict.
+
+### Learning Filter
+
+Daily views with `conviction < 0.20` are stored but excluded from the learning loop (weight optimizer and ML trainer). This avoids training on ambiguous sessions where intra-day signals cancelled out.
+
+### Outcome Evaluation
+
+Daily-view outcomes are evaluated against **excess return**: stock return minus the sector ETF return (XLE for Energy, XLF for Financials, XLK for Technology, XLC for Communication Services, XLY for Consumer Discretionary). Market ETFs use absolute return since there is no sector benchmark for them.
+
+`is_correct` = direction was `bullish` and excess return > 0, or `bearish` and excess return < 0.
+
+Both `sector_return_pct` and `excess_return_pct` are stored alongside `price_change_pct` for analysis.
+
+## Adaptive Learning Loop
+
+The system learns from outcomes to improve signal accuracy over time. All learning reads from `daily_signal_view_outcomes`, not individual `signal_outcomes`.
+
+### Weight Optimizer (4:00 AM daily)
+
+`compute_adaptive_weights` loads 1-day daily-view outcomes with `conviction ≥ 0.20`. For each outcome, the contributing signals (grouped by `stock_id, trading_date`) cast weighted votes: each signal's vote weight is `abs(composite_score) * recency_weight`, scaled to a proportional share of the session's total weight. The vote magnitude is the return scaled by that share.
+
+The optimizer then builds per-(sector, regime) weight vectors using `return_weighted` votes and writes them to two tables:
+
+- `signal_weights` — per-sector weights (sector_id nullable = global fallback)
+- `regime_adaptive_weights` — per-(sector, regime) pairs when enough samples exist
+
+**Weight lookup priority at signal generation time:**
+
+```
+(sector_id, market_regime) → regime_adaptive_weights
+(None, market_regime)      → regime_adaptive_weights (global regime)
+sector_id                  → signal_weights
+None                       → signal_weights (global)
+code defaults              → 40/25/20/15 + gated defaults
+```
+
+The `majority_regime` among a session's bucketed signals determines which regime key to use at learning time. RSI and trend weights are always written as 0.0 (regime context only, never additive).
+
+### ML Trainer (4:30 AM daily)
+
+`train_ml_models` trains per-sector LightGBM binary classifiers. Features are the weighted-mean 6-vector per daily view (magnitude-weighted over contributing signals):
+
+```
+features = [sentiment_score, sentiment_volume_score, price_score,
+            volume_score, rsi_score, trend_score]
+label    = daily_view_outcome.is_correct (1-day window)
+```
+
+The per-view feature vector is computed by `aggregate_feature_vector()` in `daily_aggregation.py`. Training uses a chronological 80/20 train/val split. Minimum 50 samples required. A global fallback model is trained from all sectors combined.
+
+### ML Promotion (Phase 23a)
+
+After training, the model's `validation_accuracy` and `training_samples` are checked against configurable thresholds (default: accuracy ≥ 55%, samples ≥ 50). When both thresholds are met, the model is considered **qualified** and the `has_ml=True` flag is written onto subsequent signals. When qualified, `ml_score` enters the composite as an 8% component. When unqualified, `ml_score` is still stored for A/B comparison but `has_ml=False` and it does not affect the composite.
+
+The backtester always sets `has_ml=False` — it never replays ML inference.
+
+### Reset Learning Layer
+
+`POST /api/admin/reset-learning-layer` (admin only) truncates all four learning tables:
+`signal_outcomes`, `daily_signal_view_outcomes`, `ml_models`, `signal_weights`, `regime_adaptive_weights`. This is the safe starting point when the signal formula changes significantly and historical learning data is no longer meaningful.
+
+## Single-Source-of-Truth (SSOT) Modules
+
+After multiple refactoring passes, critical calculations live in exactly one place:
+
+| Module | What it owns | Who imports it |
+|--------|-------------|----------------|
+| `worker/utils/signal_formula.py` | Weights, regime multiplier, gating, ML qualification, classification thresholds | `signal_generator`, backtester, weight optimizer |
+| `worker/utils/component_math.py` | Pure scorers: price/volume tanh kernels, RSI calculation, sentiment decay, trend formula | `component_scores` task (queries DB then calls it), backtester (passes arrays directly) |
+| `worker/utils/market_data_queries.py` | `close_on_or_before`, `nth_trading_day_close`, `latest_close(s)`, `recent_closes`, `recent_close_volume` | Outcome evaluator, paper portfolio task, portfolio API, component scorers |
+| `worker/utils/learning_queries.py` | 1-day daily-view outcome query, signals-for-views grouping | Weight optimizer, ML trainer |
+| `worker/utils/performance_metrics.py` | Sharpe ratio, max drawdown, Jensen alpha/beta (rf=0) | Paper portfolio, backtester |
+| `worker/utils/daily_aggregation.py` | Trading-date assignment, 4-hour buckets, recency weights, net-view calculation, feature aggregation, sector ETF map, proportional vote credit | Signal generator (upsert), outcome evaluator, weight optimizer, ML trainer |
+
+This design prevents the live pipeline and the backtester from computing the same formula differently, which was a class of bugs found and fixed in the post-Phase 21 refactoring.
 
 ## Sentiment Analysis Pipeline
 
-FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on first use to avoid startup overhead.
+FinBERT (ProsusAI/finbert) runs as a singleton on the Compute VM, lazy-loaded on first use.
 
 **Flow:**
 1. Scraper orchestration completes → automatically chains `process_new_articles_sentiment`
 2. Task queries all articles where `is_processed = false` with eager-loaded `article_stocks`
 3. For each article, selects best text source: `raw_text` → `summary` → `title`
-4. FinBERT analyzes text (chunking at ~2048 chars for long articles, averaging scores across chunks)
-5. Stores `SentimentScore` per article-stock pair (or `stock_id=NULL` for unlinked articles)
+4. FinBERT analyzes text (chunking at ~512 tokens for long articles, averaging scores across chunks)
+5. Stores `SentimentScore` per article-stock pair
 6. Marks article as `is_processed = true`
 
-**Configuration (via pydantic-settings):**
-- `finbert_model_path`: path to model files (default: `ProsusAI/finbert`)
-- `finbert_batch_size`: inference batch size (default: 16)
-- `finbert_max_length`: max token length (default: 512)
+A catch-up task at `:15` runs the same task to process any articles missed by the chain.
 
-**Safety net:** A Celery Beat task at `:15` runs sentiment processing as a catch-up for any articles missed by the chained flow.
+**Quality gates applied before signal inclusion:**
+- `quality_score ≥ 0.40`: composite score from source credibility (40%), quantitative content (25%), ticker confidence (25%), length (10%)
+- `canonical_article_id` check: non-canonical duplicates (grouped by rapidfuzz fuzzy dedup) are excluded from signal scoring
 
-**LLM extraction (`:20`, opt-in):** When `LLM_EXTRACTION_ENABLED=true`, Claude Haiku (`claude-haiku-4-5-20251001`) runs on up to 50 recent canonical earnings articles. It writes `guidance_change` onto matching `earnings_estimates` (never overwrites a set value) and `management_tone` into `article.metadata_`. `articles.llm_extracted` is `NULL` until attempted, then `true`/`false`. Silently skipped if `ANTHROPIC_API_KEY` is unset.
+## LLM Extraction Pipeline
+
+When `LLM_EXTRACTION_ENABLED=true`, Claude Haiku (`claude-haiku-4-5-20251001`) runs every 2 hours at `:20` via the Anthropic SDK.
+
+**Two extraction targets (shared 50-article/run cap):**
+
+| Target | Article category | Extracted fields | Stored in |
+|--------|-----------------|------------------|-----------|
+| Earnings | `earnings` event category | `guidance_change` (raised/lowered/maintained/none), `management_tone` (float) | `earnings_estimates.guidance_change`, `article.metadata_` |
+| Analyst ratings | `analyst_rating` event category | `rating_change`, `price_target`, `analyst_firm` | `article.metadata_` (JSONB) |
+
+**Gate:** `quality_score ≥ 0.60` required. Articles with empty text or no content are skipped (increments a skip counter). `articles.llm_extracted` is `NULL` until attempted, then `true` or `false`.
+
+**How extracted data feeds signals:**
+- `management_tone` modifies `earnings_score` by ±0.10
+- `guidance_change` modifies `earnings_score` by ±0.20
+- `rating_change` + `price_target` → `analyst_score` component (gated 7%)
+
+## Insider Trading (Phase 23b)
+
+yfinance `Ticker.insider_transactions` is scraped daily at 18:00 UTC when `INSIDER_FLOW_ENABLED=true`.
+
+**Scoring (`insider_score`):**
+```
+net_value = Σ role_weight(title) * tx_value * sign(type)
+            where purchases count +1, sales count −0.4 (sells discounted 60%)
+                  CEO/CFO role_weight = 1.5x, others = 1.0x
+                  30-day rolling window
+
+insider_score = tanh(net_value / 500_000)
+```
+
+Stored in `insider_transactions` with deduplication on (stock_id, insider_name, transaction_date, transaction_type, shares). The stock-detail page shows an Insider Activity table. The signal detail panel shows the `insider_score` bar in the Gated section of ComponentBreakdown.
 
 ## Article-to-Stock Linking
 
@@ -280,166 +457,195 @@ Articles are linked to stocks via the `article_stocks` join table using a tiered
 |--------|-----------|---------|
 | `$TICKER` in text | 0.95 | "$XOM rallies on earnings" |
 | `(TICKER)` parenthetical | 0.90 | "Exxon Mobil (XOM) reports..." |
-| ALL-CAPS word matching | 0.70 | "...shares of XOM rose..." |
+| ALL-CAPS word matching | 0.70 | "shares of XOM rose..." |
 | Company name matching | 0.60 | "Exxon Mobil announced..." |
-| Industry keyword matching | 0.45 | "OPEC cuts oil production" → all Oil & Gas Integrated stocks |
 
-**Industry keyword matching** enables linking of broad sector/macro news to relevant stocks without explicit ticker mentions. A mapping of 80+ keywords (including cross-cutting macro themes like tariffs, sanctions, interest rates) maps to 20 sub-industries. When an article matches industry keywords but not specific tickers, it creates low-confidence links to all stocks in the matched industries.
+Reddit articles are isolated from company-name and ALL-CAPS matching to reduce false positives from informal writing. Each article also receives a `quality_score` (0–1) that determines whether it is eligible for signal scoring (gate: ≥ 0.40) and LLM extraction (gate: ≥ 0.60).
 
-Example: *"US could lift sanctions on more Russian oil"* → matches "sanctions" + "oil" → links to XOM, CVX, COP, OXY at confidence 0.45.
+**Duplicate detection:** rapidfuzz `token_set_ratio` matches article titles across sources within 24-hour windows. Duplicate groups share a `duplicate_group_id`. Only the `canonical_article_id` (oldest in group) contributes to signal scoring.
 
-## Signal Generation + Alert Dispatch
+## Signal Generation
 
-At `:30` every hour, `generate_all_signals` iterates all active stocks and computes a composite score from four predictive components (sentiment momentum/volume, price momentum, volume anomaly), plus gated earnings surprise and options flow. RSI and trend classify market regime and apply a ±15% multiplier. **Deduplication:** before creating a new signal, the generator queries the most recent signal for each stock and skips creation if the direction, strength, and composite score (within a `SIGNAL_DEDUP_THRESHOLD` of 0.005) are unchanged — preventing near-identical signals from accumulating when underlying data barely moves between hourly runs.
+At `:30` every hour (weekdays), `generate_all_signals` iterates all active stocks and:
 
-| Component (default weight) | Source | Calculation |
-|---------------------|--------|-------------|
-| Sentiment momentum (40%) | `sentiment_scores` (48h) | Exponentially weighted avg (half-life 6h) of (positive - negative) |
-| Sentiment volume (25%) | `sentiment_scores` (24h vs 20d) | Article count ratio, tanh-scaled, signed by net sentiment |
-| Price momentum (20%) | `market_data_daily` (5d) | % change in close price, tanh-scaled (×5 multiplier) |
-| Volume anomaly (15%) | `market_data_daily` (20d) | Trading vol vs 20-day avg, tanh-scaled, signed by price direction |
-| Earnings surprise (10%, gated) | `earnings_estimates` | `tanh(surprise_pct / 5.0)` within 48h of report, then +0.2 / −0.2 if `guidance_change` is raised / lowered |
-| Options flow (8%, gated) | `options_activity` | P/C + IV skew z-scores vs 20-day baseline |
-| RSI / trend (regime only) | `market_data_daily` | Multiplier: extreme RSI dampens 15%; confirming trend boosts 15% |
+1. Computes 9 component scores (sentiment momentum/volume, price momentum, volume anomaly, plus gated: earnings, options, analyst, insider, ML)
+2. Calls `combine_component_scores` from `signal_formula.py` to apply weights, gating, and regime multiplier
+3. Runs ML inference (LightGBM) if `ML_ENSEMBLE_ENABLED=true`, stores `ml_score/ml_direction/ml_confidence`; if the model qualifies, re-runs combine with `has_ml=True`
+4. Assigns a `trading_date` via `trading_date_lower_bound()` → resolves to next available session from `market_data_daily`
+5. Upserts `daily_signal_views` (bucket → net score → conviction → direction)
+6. Deduplicates: skips creation if the previous signal has identical direction, strength, and composite within ±0.005
+7. Chains `dispatch_alerts` for moderate+ signals
 
-Weights are loaded from `signal_weights` table (per-sector or global fallback), falling back to defaults if no adaptive weights exist yet.
+**Weights used at scoring time** follow the lookup hierarchy: (sector, regime) → (global, regime) → sector → global → code defaults. The current `market_regime` label (from the regime multiplier) is used to select the regime-conditional weight row.
 
-**Thresholds:** |composite| > 0.6 = strong, > 0.35 = moderate, else weak. Direction: > 0.01 = bullish, < -0.01 = bearish.
+## Paper Portfolio (Phase 22a)
 
-**Alert flow:** For moderate+ signals, `dispatch_alerts` is chained via `.delay()`. It matches against active `AlertConfig` records (by stock, strength, direction), then sends notifications:
-- **Discord**: Embedded message via webhook URL (per-user or global)
-- **Email**: HTML email via SMTP (smtplib, run in thread to avoid blocking)
+A simulated long-only portfolio runs automatically when `PAPER_PORTFOLIO_ENABLED=true`.
 
-Each attempt is logged in `AlertLog` with success/error status.
+**Position management (:35 task, weekdays only):**
+- Open: bullish signal with strength ≥ moderate → allocate 10% of mark-to-market equity; max 10 open positions, max 3 per sector
+- Close triggers: stop-loss (position down 8% from entry), take-profit (position up 20% from entry), signal reversal (bearish moderate+ signal on a held ticker)
+- `exit_reason` on closed trades: `stop_loss`, `take_profit`, `signal_reversal`
 
-## Signal Feedback Loop
+**Daily snapshot (21:30 UTC):**
+- Records portfolio equity vs SPY benchmark
+- Computes Sharpe ratio, max drawdown, Jensen alpha/beta via `performance_metrics.py`
 
-### Outcome Evaluation (`:45` hourly)
-
-After signals are generated, `evaluate_signal_outcomes` checks signals that have reached their evaluation window (1, 3, or 5 trading days). For each:
-1. Fetches the closing price at signal generation and at the evaluation date
-2. Computes price change percentage
-3. Determines correctness: bullish + price up = correct, bearish + price down = correct
-4. Stores result in `signal_outcomes` table
-
-### Adaptive Weight Optimization (4 AM daily)
-
-`compute_adaptive_weights` analyzes evaluated outcomes per sector to find optimal component weights:
-1. For each sector with sufficient samples (configurable minimum), checks which components' sign aligned with actual price direction
-2. Components that predicted direction more accurately get higher weights
-3. Weights are clamped to configurable min/max bounds and normalized to sum to 1.0
-4. Results stored in `signal_weights` table (upserted per sector + global fallback)
-
-## ML Signal Ensemble
-
-LightGBM binary classifiers trained per-sector (+ global fallback) to predict signal correctness. Disabled by default (`ML_ENSEMBLE_ENABLED=true` to activate).
-
-**Training (4:30 AM daily):**
-1. Query `SignalOutcome` + `Signal` for 6 component scores + `is_correct` label
-2. Per-sector: chronological train/val split (80/20), minimum 100 samples
-3. Train LightGBM with conservative params (`num_leaves=15`, `num_threads=1`) for ARM compatibility
-4. Store model file to disk, upsert `ml_models` row with validation metrics + feature importances
-5. Train global fallback model from all sectors combined
-
-**Inference (inline in signal generation):**
-1. Load active model for stock's sector (or global fallback) from module-level cache
-2. Predict P(correct) from 6 component scores (< 0.1ms)
-3. High confidence correct → agree with rule-based direction; high confidence wrong → disagree; near 0.5 → neutral
-4. Store `ml_score` (signed [-1,1]), `ml_direction`, `ml_confidence` on the Signal
-
-**Resource footprint:** ~50MB peak during training, ~20-50KB model files, < 0.1ms inference. Negligible on 2 ARM core / 12GB VM.
+**API endpoints:** summary, positions, trades, performance curve, stats (Sharpe/drawdown/alpha/beta/win-rate). The `/portfolio` page shows equity curve, open positions, trade history with exit-reason badges, and metrics.
 
 ## Backtesting Engine
 
-The backtesting engine replays signal generation over historical OHLCV data to validate trading strategies. It runs as a Celery task on the `signals` queue.
+The backtesting engine replays signal generation over historical OHLCV data. It runs as a Celery task on the `signals` queue.
 
 ### Two Modes
 
-| Mode | Components | Data Range |
-|------|-----------|------------|
-| **Technical** | Live formula with sentiment omitted (price + volume predictive; RSI/trend as regime multiplier) | Full historical (~30+ years) |
-| **Full** | Same formula plus historical sentiment momentum + volume. Earnings/options are not replayed. | Limited to period since sentiment scraping began |
+| Mode | Components Active | Sentiment Data |
+|------|-----------------|----------------|
+| Technical | Price + volume predictive; RSI/trend as regime multiplier | Omitted (treated as 0) |
+| Full | All of technical + historical sentiment momentum + volume | Uses stored sentiment scores |
 
-Both modes import `combine_component_scores` from `worker/utils/signal_formula.py` — the same combiner used by live signal generation.
-
-### Technical Mode
-
-Sentiment inputs are `None` (treated as 0.0). Default weights are 40/25/20/15 with earnings and options gated off. Strong signals are rarer than the old RSI/trend-additive formula; that is intentional so backtests compare against live scoring.
+Earnings, options, analyst, and insider are never replayed in either mode. `has_ml` is always `False` in the backtester. Both modes import `combine_component_scores` from `signal_formula.py`.
 
 ### Engine Flow
 
 ```
-1. Warmup period: 60 days (for SMA50 calculation)
+1. Warmup period: 60 days (for SMA50 baseline)
 2. For each trading day after warmup:
    a. Compute OHLCV signal components from historical slices
-   b. If "full" mode: compute sentiment components from pre-fetched data
-   c. Weighted sum → composite score → classify direction + strength
-   d. Check stop-loss / take-profit (if configured, before signal logic):
-      - If price dropped ≥ stop_loss_pct from entry → SELL (exit_reason="stop_loss")
-      - If price rose ≥ take_profit_pct from entry → SELL (exit_reason="take_profit")
+   b. If "full" mode: compute sentiment components
+   c. combine_component_scores → direction + strength
+   d. Check stop-loss / take-profit before signal logic
    e. Trading logic:
-      - No position + bullish + meets min strength → BUY (invest position_size_pct of cash)
-        - Apply slippage on entry price, deduct commission from allocation
-      - In position + bearish + meets min strength → SELL (exit_reason="signal")
-        - Apply slippage on exit price, deduct commission from proceeds
+      - No position + bullish + meets min strength → BUY
+        (invest position_size_pct of cash, apply slippage, deduct commission)
+      - In position + bearish + meets min strength → SELL
+        (apply slippage, deduct commission)
    f. Record equity point (cash + position market value)
-3. Force-close any open position at end (exit_reason="end_of_period")
-4. Compute performance metrics from equity curve + trade log
-5. Fetch benchmark (SPY or configured ticker) OHLCV, compute alpha/beta
+3. Force-close open position at end (exit_reason="end_of_period")
+4. Compute performance metrics
+5. Fetch benchmark OHLCV, compute alpha/beta via performance_metrics.py
 ```
 
 ### Transaction Costs
 
-| Parameter | Default (API) | Range | Effect |
-|-----------|--------------|-------|--------|
-| `commission_pct` | 0.1% | 0–5% | Deducted on both buy (from allocation) and sell (from proceeds) |
-| `slippage_pct` | 0.05% | 0–5% | Price adjusted unfavorably: buy at `close × (1 + slippage)`, sell at `close × (1 - slippage)` |
-| `position_size_pct` | 100% | 10–100% | Fraction of cash allocated per trade; remaining cash stays uninvested |
-| `stop_loss_pct` | null | 0–50% | Auto-exit if position drops by this % from entry price |
-| `take_profit_pct` | null | 0–500% | Auto-exit if position rises by this % from entry price |
+| Parameter | Default | Range | Effect |
+|-----------|---------|-------|--------|
+| `commission_pct` | 0.1% | 0–5% | Deducted on buy (from allocation) and sell (from proceeds) |
+| `slippage_pct` | 0.05% | 0–5% | Buy at `close × (1 + slippage)`, sell at `close × (1 - slippage)` |
+| `position_size_pct` | 100% | 10–100% | Fraction of cash per trade |
+| `stop_loss_pct` | null | 0–50% | Auto-exit if position drops by this % from entry |
+| `take_profit_pct` | null | 0–500% | Auto-exit if position rises by this % from entry |
 
 ### Performance Metrics
 
+All metrics are computed by `worker/utils/performance_metrics.py` (Sharpe, max drawdown, Jensen alpha/beta) and used by both the backtester and the paper portfolio.
+
 | Metric | Calculation |
 |--------|-------------|
-| Total return | `(final_equity - starting_capital) / starting_capital × 100` |
-| Annualized return | `((final/start)^(252/trading_days) - 1) × 100` |
-| Sharpe ratio | `mean(daily_returns) / std(daily_returns) × sqrt(252)` |
+| Total return | `(final_equity − starting_capital) / starting_capital × 100` |
+| Annualized return | `((final/start)^(252/trading_days) − 1) × 100` |
+| Sharpe ratio | `mean(daily_returns) / std(daily_returns) × sqrt(252)`, rf = 0 |
 | Max drawdown | Largest peak-to-trough decline in equity curve |
-| Win rate | % of completed round-trip trades with positive return |
-| Alpha | Strategy annualized return − benchmark annualized return |
-| Beta | `Cov(strategy_daily, benchmark_daily) / Var(benchmark_daily)` |
+| Win rate | % of completed trades with positive return |
+| Jensen alpha | `(mean(Rp) − beta × mean(Rb)) × 252 × 100`, rf = 0 |
+| Beta | `Cov(Rp, Rb) / Var(Rb)` on aligned daily decimal returns |
 
-### Benchmark Comparison
+## Data Pipeline Schedule
 
-After the main backtest completes, the task fetches OHLCV for the benchmark ticker (default SPY) and computes:
-- Benchmark equity curve normalized to starting capital
-- Total and annualized benchmark returns
-- Alpha (excess annualized return over benchmark)
-- Beta (systematic risk measure from daily return covariance)
+```
+Initialization:
+  make seed-all → seed ~91 tickers across 6 sectors + backfill full OHLCV history
 
-### Sector Backtests
+Every 5 minutes:
+  */5  → health check (DB + Redis + queue depth) → Discord alert if unhealthy (15-min throttle)
 
-When targeting a sector, capital is divided equally across tickers. Each ticker runs independently, then results are aggregated: equity curves summed per date, trade logs merged, metrics computed on the combined curve.
+Hourly (weekdays unless noted):
+  :00  → fan-out 7 scrapers → store articles, extract tickers, classify events, dedup → chain FinBERT sentiment
+  :05  → fetch market data via yfinance (5-day window) → invalidate market-data cache
+  :10  → fetch options chain via yfinance (OPTIONS_FLOW_ENABLED)
+  :12  → fetch CBOE put/call ratio (OPTIONS_FLOW_ENABLED)
+  :15  → sentiment catch-up (process any unprocessed articles)
+  :20  → LLM extraction every 2 hours (LLM_EXTRACTION_ENABLED; quality_score ≥ 0.60; 50 articles/run)
+  :30  → generate composite signals + upsert daily_signal_views + dispatch alerts → invalidate signals cache
+  :35  → update paper portfolio (close/open positions, weekday gate in-task) + refresh materialized views
+  :45  → evaluate signal outcomes (1/3/5d per-signal) + daily-view outcomes (excess return vs sector ETF)
 
-### Storage
+Daily:
+  06:00 → fetch earnings calendars via yfinance
+  18:00 → fetch insider Form 4 transactions via yfinance (INSIDER_FLOW_ENABLED)
+  21:30 → snapshot paper portfolio equity vs SPY (PAPER_PORTFOLIO_ENABLED)
+  03:00 → data maintenance: compress old article text, clean logs, purge weak signals, trim task failures (30d) + audit logs (90d)
+  04:00 → compute adaptive weights: per-(sector, regime) return-weighted votes from 1-day daily-view outcomes
+  04:30 → train ML models: per-sector LightGBM from daily-view feature vectors (ML_ENSEMBLE_ENABLED)
+```
 
-- Equity curve stored as JSON text in the `backtests` table (~100KB for 10 years). Written once, consumed whole for charting.
-- Benchmark equity curve stored as JSON text alongside strategy curve.
-- Individual trades stored in `backtest_trades` with CASCADE delete on the parent backtest.
-- Each sell trade records `exit_reason`: `signal`, `stop_loss`, `take_profit`, or `end_of_period`.
+## Redis Caching Layer
 
-### CSV Export
+Six high-traffic read endpoints are cached in Redis using the `@cached()` decorator from `app/core/cache.py`:
 
-`GET /backtests/{id}/export?type=trades` or `?type=equity_curve` returns a streaming CSV download.
+| Endpoint | TTL | Invalidated by |
+|----------|-----|---------------|
+| Sector summary | Configurable | Sentiment task, signal generator |
+| Trending stocks | Configurable | Sentiment task, signal generator |
+| Technical indicators | Configurable | Market data task |
+| Signal weights | Configurable | Weight optimizer |
+| Today's predictions | Configurable | Signal generator |
+| DB stats | Configurable | Maintenance task |
 
-## Network Security
+Cache keys are deterministic from endpoint path + query parameters. SCAN-based invalidation clears all keys matching a pattern (e.g., all sector-summary keys when sentiment updates). The Celery tasks call the invalidation helper after writing new data.
 
-- Postgres (5432) and Redis (6379): internal VPC only, not exposed to internet
-- Nginx (80/443): only public-facing service
-- Compute VM connects to Docker VM over Oracle VCN internal subnet
-- Oracle Cloud security lists restrict inter-VM traffic to required ports only
-- HTTPS via Let's Encrypt on nginx
+## Infrastructure
+
+### API Authentication
+
+Two authentication methods are accepted on all protected endpoints via `get_current_user`:
+
+- **JWT Bearer tokens**: issued at login, 30-minute access tokens, refresh tokens
+- **API keys**: `sp_` prefix + 32 hex chars (SHA-256 hashed in DB), max 5 per user, soft-revoke, optional expiry. Used for automated access.
+
+Admin endpoints use `get_current_admin` (requires `is_admin=True` on the user).
+
+### Dead Letter Queue
+
+Celery `task_failure` signal writes to the `task_failures` table for all tasks that exhaust retries. `GET /api/admin/task-failures` lists them. `POST /api/admin/task-failures/{id}/retry` re-queues via `send_task()`.
+
+### Admin Audit Logging
+
+All admin POST actions call `record_audit()` which writes to `audit_logs`. `GET /api/admin/audit-log` returns paginated history.
+
+### Health Checks
+
+`GET /api/health?detail=true` checks DB connectivity, Redis connectivity, and returns component status. A separate Celery task runs every 5 minutes to check DB/Redis/queue depth and sends a Discord webhook if any check fails (throttled to one alert per 15 minutes).
+
+### Slow Query Detection
+
+SQLAlchemy `before_cursor_execute` / `after_cursor_execute` event listeners measure every query. Queries exceeding the threshold (default 500ms) emit a structured log warning with the SQL and duration.
+
+### Security
+
+- Postgres (5432) and Redis (6379): internal VPC only
+- Nginx (443): HTTPS with Let's Encrypt, HSTS, CSP, security headers
+- Rate limiting on `/api/auth/`: 5 req/min per IP
+- Password complexity: min 8 chars, uppercase + lowercase + digit
+- `detect-secrets` pre-commit hook
+
+## Historical Data Initialization
+
+On first setup, `scripts/seed_historical_data.py` backfills the full available price history for all tickers via yfinance (`period="max"`), providing ~30+ years of daily OHLCV (~340K rows, ~50MB). The seed is idempotent (upserts via `ON CONFLICT DO UPDATE`) and skips tickers with 5,000+ rows.
+
+This depth matters because the signal algorithm's 20-day baselines for price momentum and volume anomaly need at least 20 sessions of history before generating meaningful signals. Having 30+ years enables meaningful backtesting from day one.
+
+## Technical Indicators
+
+All indicators are computed on-the-fly from stored OHLCV data by `worker/utils/technical_indicators.py` (no extra DB tables):
+
+| Indicator | Parameters | Purpose |
+|-----------|-----------|---------|
+| SMA | 20-period, 50-period | Moving average overlays, trend direction for regime multiplier |
+| EMA | Configurable period | MACD calculation building block |
+| RSI | 14-period (Wilder's) | Overbought/oversold detection for regime multiplier |
+| MACD | Fast=12, Slow=26, Signal=9 | Trend momentum for regime multiplier and MACD sub-chart |
+| Bollinger Bands | 20-period, 2 std deviations | Volatility visualization on price chart |
 
 ## Resource Budget (Free Tier)
 
@@ -463,46 +669,33 @@ When targeting a sector, capital is divided equally across tickers. Each ticker 
 
 | Layer | Framework | Count | Location |
 |-------|-----------|-------|----------|
-| Unit tests | pytest | 555+ | `backend/tests/` (excluding `integration/`) |
-| Mutation tests | mutmut | 3 tiers | `backend/tests/test_mutation/` |
-| Integration tests | pytest + httpx | 34 | `backend/tests/integration/` |
+| Unit tests | pytest | 905+ | `backend/tests/` (excluding `integration/`) |
+| Mutation tests | mutmut | 3 tiers, ~138 killing tests | `backend/tests/test_mutation/` |
+| Integration tests | pytest + httpx | 37 | `backend/tests/integration/` |
 | E2E tests | Playwright | 10 | `frontend/e2e/` |
 | Frontend unit | Vitest + Testing Library | — | `frontend/src/**/*.test.ts` |
 
 ### Unit Tests
 
-Cover ticker extraction, text cleaning, scraper parsers, sentiment analysis, signal scoring, signal intelligence, event classification, duplicate detection, technical indicators, feedback loop, backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, password validation, and secret key security.
+Cover ticker extraction, text cleaning, scraper parsers, sentiment analysis, signal scoring, signal intelligence, event classification, duplicate detection, technical indicators, feedback loop (including return-weighted votes, analyst/insider in optimizer, regime weight fallback), backtester (costs, sizing, stop-loss, benchmark), market data, maintenance, password validation, secret key security, paper portfolio (close/open gates, snapshot returns, Sharpe/drawdown, beat/skip guards), ML promotion (accuracy/sample gate, weight scaling, has_ml combine), insider Form 4 (role weights, sell discount, DataFrame parse), shared `component_math` (live/backtest kernel parity), shared `performance_metrics` (Jensen alpha/Sharpe/drawdown), daily aggregation (net score, trading_date, excess return vs sector ETF, 4-hour buckets, recency weights), shared close lookups, shared learning loaders.
 
 ### Mutation Tests (3 Tiers)
 
 Mutation testing verifies that tests detect real code changes. Run via `mutmut` on critical calculation modules:
 
-- **Tier 1**: `technical_indicators.py` — RSI, SMA, MACD, Bollinger Bands
-- **Tier 2**: `backtester/metrics.py`, `backtester/engine.py`, `component_scores.py` — Sharpe ratio, drawdown, scoring functions
-- **Tier 3**: `duplicate_detector.py`, `ticker_extractor.py`, `signal_generator.py` — threshold boundaries, dedup logic
+- **Tier 1**: `technical_indicators.py`, `backtester/metrics.py`, `backtester/engine.py`, `component_scores.py`
+- **Tier 2**: `signal_generator.py`, `weight_optimizer.py`, `backtester/benchmark.py`, `security.py`, `dependencies.py`
+- **Tier 3**: `cache.py`, `event_classifier.py`, `duplicate_detector.py`, `ticker_extractor.py`
 
 ### Integration Tests
 
-Full HTTP → FastAPI → SQLAlchemy → PostgreSQL cycle using `httpx.AsyncClient` with `ASGITransport`. Uses `NullPool` for test isolation across event loops.
-
-**Suites:** auth flow (register/login/refresh/profile/password), stocks & watchlist CRUD, signals & admin endpoints, error handling (auth failures, pagination bounds, API keys).
-
-Requires a running Postgres instance (`TEST_DATABASE_URL` env var). Tables are truncated between tests for isolation.
-
-### E2E Tests (Playwright)
-
-Browser-based tests with custom fixtures for authenticated and admin page contexts:
-
-- Auth: login form, invalid credentials, unauthenticated redirect, successful login
-- Navigation: sidebar links, page transitions
-- Signals: page load, tab structure
-- Admin: admin access, non-admin redirect
+Full HTTP → FastAPI → SQLAlchemy → PostgreSQL cycle using `httpx.AsyncClient` with `ASGITransport`. Uses `NullPool` for test isolation. Covers auth flow, stocks/watchlist CRUD, signals/admin endpoints (including daily-views, reset-learning-layer 403), and error handling.
 
 ### CI Pipeline
 
 GitHub Actions runs on every push/PR:
 1. **Lint** — ruff check + format
-2. **Unit tests** — pytest with coverage reporting (`fail_under=60%`)
+2. **Unit tests** — pytest with coverage (`fail_under=60%`)
 3. **Integration tests** — pytest with Postgres service container
 4. **Docker build** — validates container builds
 

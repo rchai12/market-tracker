@@ -40,6 +40,17 @@ python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 # HEALTH_ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
+Feature flags — set these on both the Docker VM and Compute VM (FastAPI reads them for API
+responses; Celery reads them to gate task execution):
+```
+ML_ENSEMBLE_ENABLED=true
+OPTIONS_FLOW_ENABLED=true
+INSIDER_FLOW_ENABLED=true
+PAPER_PORTFOLIO_ENABLED=true
+LLM_EXTRACTION_ENABLED=true
+ANTHROPIC_API_KEY=<your-key>
+```
+
 ### 3. Create shared Docker network
 
 The `proxy_net` network connects stock-predictor to the existing shared nginx proxy on the VM.
@@ -54,11 +65,19 @@ docker network create proxy_net
 docker compose up -d
 docker compose exec backend alembic upgrade head
 
-# Seed tickers (6 sectors, ~86 tickers, 20 sub-industries) + full historical market data (~30+ years)
+# Seed tickers (6 sectors, ~91 tickers including XLE/XLF/XLK/XLC/XLY) + full historical market data (~30+ years)
 make seed-all
 # Or step by step:
-# make seed          # Seed 6 sectors (~86 tickers) with industry classifications
+# make seed          # Seed 6 sectors (~91 tickers) with industry classifications
 # make seed-history  # Backfill full OHLCV history (takes a few minutes)
+```
+
+**Note for Phase 24b deployments:** The sector ETF tickers (XLE, XLF, XLK, XLC, XLY) are used
+as benchmarks for excess-return outcome scoring. If upgrading from an earlier phase, re-run seeding
+to ensure they are present:
+```bash
+make seed          # adds XLE, XLF, XLK, XLC, XLY to stocks table if missing
+make seed-history  # backfills their OHLCV history
 ```
 
 ### 5. Verify
@@ -140,15 +159,34 @@ DATABASE_URL=postgresql+asyncpg://sp_user:YOUR_PASSWORD@10.0.0.X:5432/stock_pred
 REDIS_URL=redis://:YOUR_PASSWORD@10.0.0.X:6379/0
 ```
 
-Optional — Claude Haiku LLM extraction (earnings guidance / management tone). Off by default; the `:20` task **silently skips** unless both are set:
+Feature flags — mirror these from the Docker VM `.env`:
 ```
-LLM_EXTRACTION_ENABLED=false
-ANTHROPIC_API_KEY=
-ANTHROPIC_WORKSPACE_ID=
+ML_ENSEMBLE_ENABLED=true
+OPTIONS_FLOW_ENABLED=true
+INSIDER_FLOW_ENABLED=true
+PAPER_PORTFOLIO_ENABLED=true
+LLM_EXTRACTION_ENABLED=true
+ANTHROPIC_API_KEY=<your-key>
 ```
-Set `LLM_EXTRACTION_ENABLED=true` and a real `ANTHROPIC_API_KEY` only when you want extraction to run. Required for an All-workspaces (identity-linked) key: `ANTHROPIC_WORKSPACE_ID=wrkspc_...`. Optional knobs: `LLM_MAX_ARTICLE_CHARS=1500`, `LLM_RATE_LIMIT_SECONDS=1.0`.
+
+Optional Claude Haiku LLM extraction knobs (the `:20` task silently skips unless
+`LLM_EXTRACTION_ENABLED=true` and a real `ANTHROPIC_API_KEY` are set):
+```
+ANTHROPIC_WORKSPACE_ID=wrkspc_...   # Required for identity-linked workspace keys
+LLM_MAX_ARTICLE_CHARS=1500
+LLM_RATE_LIMIT_SECONDS=1.0
+```
 
 ### 3. Start Workers
+
+The systemd `celery-worker.service` must consume all five queues: `default`, `scraping`,
+`sentiment`, `signals`, and `maintenance`. Verify the service file's `-Q` flag includes all five:
+
+```
+ExecStart=.venv/bin/celery -A worker.celery_app worker \
+    -Q default,scraping,sentiment,signals,maintenance \
+    --loglevel=info
+```
 
 ```bash
 sudo systemctl start celery-worker celery-beat
@@ -182,7 +220,7 @@ sudo journalctl -u celery-beat -f
 | Ingress | TCP | 22 | your-ip/32 | SSH |
 | Egress | TCP | 5432 | 10.0.0.0/24 | Postgres |
 | Egress | TCP | 6379 | 10.0.0.0/24 | Redis |
-| Egress | TCP | 443 | 0.0.0.0/0 | HTTPS (scraping) |
+| Egress | TCP | 443 | 0.0.0.0/0 | HTTPS (scraping + Anthropic API) |
 
 ## Postgres Configuration
 
@@ -222,6 +260,18 @@ sudo journalctl -u celery-worker -f --no-pager
 sudo journalctl -u celery-beat -f --no-pager
 ```
 
+### Flower (Celery Monitoring)
+
+Flower runs on port 5555 of the Compute VM. It is not exposed to the public internet.
+Access it via an SSH tunnel from your local machine:
+
+```bash
+ssh -L 5555:localhost:5555 ubuntu@<compute-vm-ip>
+```
+
+Then open http://localhost:5555 in your browser. Flower shows live task state, worker
+heartbeats, queue depths, and task history.
+
 ### Disk Usage
 
 ```bash
@@ -233,7 +283,7 @@ docker compose exec postgres psql -U sp_user -d stock_predictor -c "SELECT pg_si
 
 ```bash
 # Docker VM
-cd ~/market-tracker
+cd ~/stock-predictor
 git pull
 docker compose up -d --build frontend backend   # Only rebuild changed services
 docker compose exec backend alembic upgrade head  # If migrations changed
@@ -248,6 +298,21 @@ sudo cp ../deploy/compute-vm/celery-worker.service /etc/systemd/system/  # If se
 sudo systemctl daemon-reload
 sudo systemctl restart celery-worker celery-beat
 ```
+
+### Post-Deploy Learning Reset
+
+When deploying a version that changes the learning loop (Phase 24+), truncate the learning
+tables so stale outcomes and weights do not pollute the new model. Run this after migrations
+and after workers are back up:
+
+```bash
+curl -X POST https://yourdomain.com/api/admin/reset-learning-layer \
+  -H "Authorization: Bearer <admin-jwt>"
+```
+
+This truncates: `daily_signal_view_outcomes`, `signal_outcomes`, `ml_models`,
+`signal_weights`, and `regime_adaptive_weights`. The system will rebuild all learning
+state from scratch as new signals are generated and outcomes are evaluated.
 
 ### Manual Task Triggers (Compute VM)
 
@@ -307,7 +372,7 @@ make lint
 ### Docker VM
 
 ```bash
-cd ~/market-tracker
+cd ~/stock-predictor
 docker compose exec backend python -m pytest tests/ -v -m "not integration"
 docker compose exec backend python -m pytest tests/integration/ -v -m integration
 ```
