@@ -8,8 +8,8 @@ scales, RSI mapping, or sentiment decay anywhere else.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from worker.utils.technical_indicators import compute_macd, compute_rsi, compute_sma
 
@@ -36,7 +36,9 @@ class SentimentPoint:
 
     value: float
     hours_ago: float
-    weight: float = 1.0
+    weight: float = 1.0  # source credibility (live) or article_count (backtest)
+    dilution_weight: float = 1.0  # multi-stock penalty; backtester leaves 1.0
+    category_weight: float = 1.0  # macro/regulatory discount; backtester leaves 1.0
 
 
 def price_momentum(
@@ -140,7 +142,7 @@ def exp_weighted_sentiment(
     weighted_sum = 0.0
     weight_total = 0.0
     for point in points:
-        weight = math.exp(-decay_rate * point.hours_ago) * point.weight
+        weight = math.exp(-decay_rate * point.hours_ago) * point.weight * point.dilution_weight * point.category_weight
         weighted_sum += point.value * weight
         weight_total += weight
 

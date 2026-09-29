@@ -16,7 +16,7 @@ Each function computes one of the signal components:
 import math
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
@@ -29,6 +29,8 @@ from worker.utils.article_quality import (
     QUALITY_THRESHOLD,
     SIGNAL_EXCLUDED_SOURCES,
     SIGNAL_MIN_TICKER_CONFIDENCE,
+    article_dilution_weight,
+    event_category_weight,
 )
 from worker.utils.component_math import (
     BASELINE_DAYS,
@@ -68,16 +70,45 @@ RATING_WEIGHTS = {
 }
 
 
+def _associated_stock_count_subquery():
+    """Count high-confidence ticker associations per article (Phase 25a dilution)."""
+    return (
+        select(
+            ArticleStock.article_id.label("article_id"),
+            func.count().label("stock_count"),
+        )
+        .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
+        .group_by(ArticleStock.article_id)
+        .subquery()
+    )
+
+
+def _associated_count(row) -> int:
+    n = getattr(row, "stock_count", None)
+    if n is None:
+        return 1
+    return max(int(n), 1)
+
+
+def _dilution_and_category(row) -> tuple[float, float]:
+    return (
+        article_dilution_weight(_associated_count(row)),
+        event_category_weight(getattr(row, "event_category", None)),
+    )
+
+
 async def calc_sentiment_momentum(
     session: AsyncSession, stock_id: int, now: datetime
 ) -> float | None:
     """Exponentially weighted average of sentiment scores, half-life 6h.
 
     Sentiment value per score = positive - negative (range: [-1, 1]).
-    Weight = exp(-ln(2) * hours_ago / half_life) * source_credibility.
+    Weight = exp(-ln(2) * hours_ago / half_life) * source_credibility
+             * dilution(associated_stock_count) * event_category_weight.
     Deduplication: for each duplicate group, only the highest-credibility score is kept.
     """
     since = now - timedelta(hours=48)
+    stock_counts = _associated_stock_count_subquery()
     result = await session.execute(
         select(
             SentimentScore.positive_score,
@@ -85,12 +116,15 @@ async def calc_sentiment_momentum(
             SentimentScore.processed_at,
             Article.source,
             Article.duplicate_group_id,
+            Article.event_category,
+            stock_counts.c.stock_count,
         )
         .join(Article, SentimentScore.article_id == Article.id)
         .join(
             ArticleStock,
             (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
         )
+        .outerjoin(stock_counts, stock_counts.c.article_id == Article.id)
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since)
         .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
@@ -123,14 +157,18 @@ async def calc_sentiment_momentum(
     if not deduped_rows:
         return None
 
-    points = [
-        SentimentPoint(
-            value=float(row.positive_score) - float(row.negative_score),
-            hours_ago=(now - row.processed_at).total_seconds() / 3600,
-            weight=credibility,
+    points = []
+    for row, credibility in deduped_rows:
+        dilution, category = _dilution_and_category(row)
+        points.append(
+            SentimentPoint(
+                value=float(row.positive_score) - float(row.negative_score),
+                hours_ago=(now - row.processed_at).total_seconds() / 3600,
+                weight=credibility,
+                dilution_weight=dilution,
+                category_weight=category,
+            )
         )
-        for row, credibility in deduped_rows
-    ]
     return exp_weighted_sentiment(points)
 
 
@@ -141,20 +179,25 @@ async def calc_sentiment_volume(
 
     Deduplicates by duplicate_group_id (NULL groups count individually).
     Magnitude via tanh, signed by net sentiment direction.
+    Unique-event counts and net sentiment are scaled by dilution * category weight.
     """
     since_24h = now - timedelta(hours=24)
+    stock_counts = _associated_stock_count_subquery()
     recent_result = await session.execute(
         select(
             SentimentScore.id,
             SentimentScore.positive_score,
             SentimentScore.negative_score,
             Article.duplicate_group_id,
+            Article.event_category,
+            stock_counts.c.stock_count,
         )
         .join(Article, SentimentScore.article_id == Article.id)
         .join(
             ArticleStock,
             (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
         )
+        .outerjoin(stock_counts, stock_counts.c.article_id == Article.id)
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since_24h)
         .where(ArticleStock.confidence >= SIGNAL_MIN_TICKER_CONFIDENCE)
@@ -170,31 +213,42 @@ async def calc_sentiment_volume(
     if not recent_rows:
         return None
 
-    # Count unique events: distinct duplicate_group_id, NULLs count individually
+    # Count unique events: distinct duplicate_group_id, NULLs count individually.
+    # Diluted articles contribute a fractional unique event.
     seen_groups: set[int] = set()
-    unique_count = 0
+    unique_count = 0.0
     net_sentiment_sum = 0.0
+    net_weight_sum = 0.0
     for row in recent_rows:
-        net_sentiment_sum += float(row.positive_score) - float(row.negative_score)
+        dilution, category = _dilution_and_category(row)
+        article_w = dilution * category
+        net_sentiment_sum += (float(row.positive_score) - float(row.negative_score)) * article_w
+        net_weight_sum += article_w
         if row.duplicate_group_id is not None:
             if row.duplicate_group_id in seen_groups:
                 continue
             seen_groups.add(row.duplicate_group_id)
-        unique_count += 1
+        unique_count += article_w
 
-    recent_net_sentiment = net_sentiment_sum / len(recent_rows) if recent_rows else 0.0
+    recent_net_sentiment = net_sentiment_sum / net_weight_sum if net_weight_sum else 0.0
 
     if unique_count == 0:
         return None
 
     since_20d = now - timedelta(days=BASELINE_DAYS)
     baseline_result = await session.execute(
-        select(SentimentScore.id, Article.duplicate_group_id)
+        select(
+            SentimentScore.id,
+            Article.duplicate_group_id,
+            Article.event_category,
+            stock_counts.c.stock_count,
+        )
         .join(Article, SentimentScore.article_id == Article.id)
         .join(
             ArticleStock,
             (ArticleStock.article_id == Article.id) & (ArticleStock.stock_id == stock_id),
         )
+        .outerjoin(stock_counts, stock_counts.c.article_id == Article.id)
         .where(SentimentScore.stock_id == stock_id)
         .where(SentimentScore.processed_at >= since_20d)
         .where(SentimentScore.processed_at < since_24h)
@@ -208,13 +262,14 @@ async def calc_sentiment_volume(
     )
     baseline_rows = baseline_result.all()
     baseline_groups: set[int] = set()
-    baseline_unique = 0
+    baseline_unique = 0.0
     for row in baseline_rows:
         if row.duplicate_group_id is not None:
             if row.duplicate_group_id in baseline_groups:
                 continue
             baseline_groups.add(row.duplicate_group_id)
-        baseline_unique += 1
+        dilution, category = _dilution_and_category(row)
+        baseline_unique += dilution * category
 
     baseline_daily_avg = baseline_unique / max(BASELINE_DAYS - 1, 1)
     return signed_volume_ratio(unique_count, baseline_daily_avg, recent_net_sentiment)

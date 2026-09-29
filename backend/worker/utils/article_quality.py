@@ -18,6 +18,47 @@ ARTICLE_UI_MIN_TICKER_CONFIDENCE = 0.60
 # "reddit" is included for tests and any legacy rows.
 SIGNAL_EXCLUDED_SOURCES = frozenset({"reddit", "reddit_stocks", "reddit_wallstreetbets"})
 
+# ── Macro / multi-stock dilution (Phase 25a) ──
+DILUTION_SINGLE_STOCK_MAX = 3  # ≤ this many tickers → full weight
+DILUTION_FLOOR = 0.20
+DILUTION_EXPONENT = 0.35
+# Spec names plus live classifier keys (analyst_rating, macro_economic, …).
+EVENT_CATEGORY_WEIGHTS: dict[str, float] = {
+    "earnings": 1.0,
+    "analyst": 1.0,
+    "analyst_rating": 1.0,
+    "insider": 1.0,
+    "insider_trade": 1.0,
+    "product": 1.0,
+    "product_launch": 1.0,
+    "m_a": 1.0,
+    "merger_acquisition": 1.0,
+    "material_event": 1.0,
+    "dividend": 1.0,
+    "legal": 0.80,
+    "regulatory": 0.60,
+    "macro": 0.50,
+    "macro_economic": 0.50,
+    "general": 0.85,
+    "general_news": 0.85,
+}
+
+
+def article_dilution_weight(associated_stock_count: int) -> float:
+    """Full weight for company-specific articles, diminishing for sector-wide ones."""
+    if associated_stock_count <= DILUTION_SINGLE_STOCK_MAX:
+        return 1.0
+    weight = 1.0 / (associated_stock_count**DILUTION_EXPONENT)
+    return max(weight, DILUTION_FLOOR)
+
+
+def event_category_weight(category: str | None) -> float:
+    """Macro/regulatory events contribute less than company-specific ones."""
+    if not category:
+        return 1.0
+    return EVENT_CATEGORY_WEIGHTS.get(category, 1.0)
+
+
 # Regex: presence of quantitative financial content
 _QUANTITATIVE_RE = re.compile(
     r"\d+\.?\d*\s*%"  # percentages: 12.5%

@@ -3,6 +3,15 @@
 import math
 from datetime import date
 
+from worker.utils.backtester.models import SentimentRow
+from worker.utils.backtester.signals import (
+    compute_price_momentum_from_closes,
+    compute_rsi_score_from_closes,
+    compute_sentiment_momentum_from_data,
+    compute_sentiment_volume_from_data,
+    compute_trend_score_from_closes,
+    compute_volume_anomaly_from_data,
+)
 from worker.utils.component_math import (
     SENTIMENT_HALF_LIFE_HOURS,
     SentimentPoint,
@@ -13,15 +22,6 @@ from worker.utils.component_math import (
     trend_score,
     volume_anomaly,
 )
-from worker.utils.backtester.signals import (
-    compute_price_momentum_from_closes,
-    compute_rsi_score_from_closes,
-    compute_sentiment_momentum_from_data,
-    compute_sentiment_volume_from_data,
-    compute_trend_score_from_closes,
-    compute_volume_anomaly_from_data,
-)
-from worker.utils.backtester.models import SentimentRow
 
 
 class TestPriceMomentum:
@@ -94,6 +94,16 @@ class TestSentimentKernel:
         result = exp_weighted_sentiment([low, high])
         assert result < 0
 
+    def test_dilution_and_category_reduce_contribution(self):
+        full = SentimentPoint(value=1.0, hours_ago=0.0, weight=1.0)
+        diluted = SentimentPoint(value=-1.0, hours_ago=0.0, weight=1.0, dilution_weight=0.5, category_weight=0.5)
+        result = exp_weighted_sentiment([full, diluted])
+        assert result > 0
+        defaults = SentimentPoint(value=-1.0, hours_ago=0.0, weight=1.0)
+        undiluted = exp_weighted_sentiment([full, defaults])
+        assert undiluted is not None
+        assert abs(undiluted) < 1e-12
+
     def test_empty_none(self):
         assert exp_weighted_sentiment([]) is None
 
@@ -101,9 +111,7 @@ class TestSentimentKernel:
         today = date(2024, 6, 15)
         rows = [
             SentimentRow(date=today, avg_positive=0.8, avg_negative=0.1, article_count=4),
-            SentimentRow(
-                date=date(2024, 6, 14), avg_positive=0.6, avg_negative=0.2, article_count=2
-            ),
+            SentimentRow(date=date(2024, 6, 14), avg_positive=0.6, avg_negative=0.2, article_count=2),
         ]
         wrapped = compute_sentiment_momentum_from_data(rows, today)
         points = [
