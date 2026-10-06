@@ -16,6 +16,7 @@ const GATED_COMPONENTS = [
   { key: "options_score", label: "Options" },
   { key: "analyst_score", label: "Analyst Ratings" },
   { key: "insider_score", label: "Insider Trading" },
+  { key: "sector_sentiment_score", label: "Sector Sentiment" },
 ] as const;
 
 const REGIME_COMPONENTS = [

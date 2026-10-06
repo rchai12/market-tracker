@@ -32,6 +32,7 @@ class SignalResponse(BaseModel):
     earnings_score: float | None = None
     analyst_score: float | None = None
     insider_score: float | None = None
+    sector_sentiment_score: float | None = None
     retail_sentiment_score: float | None = None
     generated_at: datetime
     window_start: datetime
@@ -85,6 +86,7 @@ class SignalFormulaDefaults(BaseModel):
     analyst: float
     ml: float
     insider: float
+    sector_sentiment: float
     rsi: float
     trend: float
     strong_threshold: float

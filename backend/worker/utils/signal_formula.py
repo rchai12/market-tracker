@@ -41,6 +41,9 @@ WEIGHT_ML = 0.08
 # Insider trading (8% gated; 30-day Form 4 window)
 WEIGHT_INSIDER = 0.08
 
+# Sector sentiment (5% gated; spray-confidence + macro/regulatory articles)
+WEIGHT_SECTOR_SENTIMENT = 0.05
+
 # ── Thresholds ──
 STRONG_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.35
@@ -59,6 +62,7 @@ PREDICTIVE_KEYS = (
     "analyst",
     "ml",
     "insider",
+    "sector_sentiment",
 )
 
 
@@ -143,97 +147,100 @@ def default_weights(
     has_analyst: bool = False,
     has_ml: bool = False,
     has_insider: bool = False,
+    has_sector_sentiment: bool = False,
 ) -> dict:
     """Return default weights for the 4-component base formula.
 
-    RSI and trend are 0.0 — they are used only for regime classification.
-    Earnings (10%), options (8%), analyst (7%), ML (8%), and insider (8%) are
-    gated; when any of them is active the four base weights scale down so the
-    full set still sums to 1.0.
+    RSI and trend are 0.0; they are used only for regime classification.
+    Earnings (10%), options (8%), analyst (7%), ML (8%), insider (8%), and
+    sector sentiment (5%) are gated; when any of them is active the four
+    base weights scale down so the full set still sums to 1.0.
     """
     if has_options is None:
         has_options = settings.options_flow_enabled
 
-    if has_analyst or has_ml or has_insider:
+    extra_gated = has_analyst or has_ml or has_insider or has_sector_sentiment
+    if extra_gated:
         earn_w = WEIGHT_EARNINGS if has_earnings else 0.0
         opt_w = WEIGHT_OPTIONS if has_options else 0.0
         analyst_w = WEIGHT_ANALYST if has_analyst else 0.0
         ml_w = WEIGHT_ML if has_ml else 0.0
         insider_w = WEIGHT_INSIDER if has_insider else 0.0
-        gated = earn_w + opt_w + analyst_w + ml_w + insider_w
+        sector_w = WEIGHT_SECTOR_SENTIMENT if has_sector_sentiment else 0.0
+        gated = earn_w + opt_w + analyst_w + ml_w + insider_w + sector_w
         scale = 1.0 - gated
-        return {
-            "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM * scale,
-            "sentiment_volume": WEIGHT_SENTIMENT_VOLUME * scale,
-            "price_momentum": WEIGHT_PRICE_MOMENTUM * scale,
-            "volume_anomaly": WEIGHT_VOLUME_ANOMALY * scale,
-            "rsi": 0.0,
-            "trend": 0.0,
-            "earnings": earn_w,
-            "options": opt_w,
-            "analyst": analyst_w,
-            "ml": ml_w,
-            "insider": insider_w,
-            "source": "default",
-        }
+        return _pack_weights(
+            WEIGHT_SENTIMENT_MOMENTUM * scale,
+            WEIGHT_SENTIMENT_VOLUME * scale,
+            WEIGHT_PRICE_MOMENTUM * scale,
+            WEIGHT_VOLUME_ANOMALY * scale,
+            earnings=earn_w,
+            options=opt_w,
+            analyst=analyst_w,
+            ml=ml_w,
+            insider=insider_w,
+            sector_sentiment=sector_w,
+        )
 
     if has_options and has_earnings:
-        return {
-            "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM_BOTH,
-            "sentiment_volume": WEIGHT_SENTIMENT_VOLUME_BOTH,
-            "price_momentum": WEIGHT_PRICE_MOMENTUM_BOTH,
-            "volume_anomaly": WEIGHT_VOLUME_ANOMALY_BOTH,
-            "rsi": 0.0,
-            "trend": 0.0,
-            "earnings": WEIGHT_EARNINGS,
-            "options": WEIGHT_OPTIONS,
-            "analyst": 0.0,
-            "ml": 0.0,
-            "insider": 0.0,
-            "source": "default",
-        }
+        return _pack_weights(
+            WEIGHT_SENTIMENT_MOMENTUM_BOTH,
+            WEIGHT_SENTIMENT_VOLUME_BOTH,
+            WEIGHT_PRICE_MOMENTUM_BOTH,
+            WEIGHT_VOLUME_ANOMALY_BOTH,
+            earnings=WEIGHT_EARNINGS,
+            options=WEIGHT_OPTIONS,
+        )
     if has_options:
-        return {
-            "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM_OPT,
-            "sentiment_volume": WEIGHT_SENTIMENT_VOLUME_OPT,
-            "price_momentum": WEIGHT_PRICE_MOMENTUM_OPT,
-            "volume_anomaly": WEIGHT_VOLUME_ANOMALY_OPT,
-            "rsi": 0.0,
-            "trend": 0.0,
-            "earnings": 0.0,
-            "options": WEIGHT_OPTIONS,
-            "analyst": 0.0,
-            "ml": 0.0,
-            "insider": 0.0,
-            "source": "default",
-        }
+        return _pack_weights(
+            WEIGHT_SENTIMENT_MOMENTUM_OPT,
+            WEIGHT_SENTIMENT_VOLUME_OPT,
+            WEIGHT_PRICE_MOMENTUM_OPT,
+            WEIGHT_VOLUME_ANOMALY_OPT,
+            options=WEIGHT_OPTIONS,
+        )
     if has_earnings:
-        return {
-            "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM_EARN,
-            "sentiment_volume": WEIGHT_SENTIMENT_VOLUME_EARN,
-            "price_momentum": WEIGHT_PRICE_MOMENTUM_EARN,
-            "volume_anomaly": WEIGHT_VOLUME_ANOMALY_EARN,
-            "rsi": 0.0,
-            "trend": 0.0,
-            "earnings": WEIGHT_EARNINGS,
-            "options": 0.0,
-            "analyst": 0.0,
-            "ml": 0.0,
-            "insider": 0.0,
-            "source": "default",
-        }
+        return _pack_weights(
+            WEIGHT_SENTIMENT_MOMENTUM_EARN,
+            WEIGHT_SENTIMENT_VOLUME_EARN,
+            WEIGHT_PRICE_MOMENTUM_EARN,
+            WEIGHT_VOLUME_ANOMALY_EARN,
+            earnings=WEIGHT_EARNINGS,
+        )
+    return _pack_weights(
+        WEIGHT_SENTIMENT_MOMENTUM,
+        WEIGHT_SENTIMENT_VOLUME,
+        WEIGHT_PRICE_MOMENTUM,
+        WEIGHT_VOLUME_ANOMALY,
+    )
+
+
+def _pack_weights(
+    sm: float,
+    sv: float,
+    pm: float,
+    va: float,
+    *,
+    earnings: float = 0.0,
+    options: float = 0.0,
+    analyst: float = 0.0,
+    ml: float = 0.0,
+    insider: float = 0.0,
+    sector_sentiment: float = 0.0,
+) -> dict:
     return {
-        "sentiment_momentum": WEIGHT_SENTIMENT_MOMENTUM,
-        "sentiment_volume": WEIGHT_SENTIMENT_VOLUME,
-        "price_momentum": WEIGHT_PRICE_MOMENTUM,
-        "volume_anomaly": WEIGHT_VOLUME_ANOMALY,
+        "sentiment_momentum": sm,
+        "sentiment_volume": sv,
+        "price_momentum": pm,
+        "volume_anomaly": va,
         "rsi": 0.0,
         "trend": 0.0,
-        "earnings": 0.0,
-        "options": 0.0,
-        "analyst": 0.0,
-        "ml": 0.0,
-        "insider": 0.0,
+        "earnings": earnings,
+        "options": options,
+        "analyst": analyst,
+        "ml": ml,
+        "insider": insider,
+        "sector_sentiment": sector_sentiment,
         "source": "default",
     }
 
@@ -245,12 +252,13 @@ def apply_component_gates(
     has_analyst: bool = False,
     has_ml: bool = False,
     has_insider: bool = False,
+    has_sector_sentiment: bool = False,
 ) -> dict:
     """Zero inactive gated components and renormalize predictive weights to 1.0.
 
     Copies the input so cached adaptive-weight maps are never mutated in place.
-    RSI/trend stay 0.0 (regime context only). Analyst/ML/insider use the default
-    gated weights until the optimizer learns those keys.
+    RSI/trend stay 0.0 (regime context only). Analyst/ML/insider/sector sentiment
+    use the default gated weights until the optimizer learns those keys.
     """
     w = dict(weights)
     if not has_earnings:
@@ -269,6 +277,10 @@ def apply_component_gates(
         w["insider"] = 0.0
     elif not w.get("insider"):
         w["insider"] = WEIGHT_INSIDER
+    if not has_sector_sentiment:
+        w["sector_sentiment"] = 0.0
+    elif not w.get("sector_sentiment"):
+        w["sector_sentiment"] = WEIGHT_SECTOR_SENTIMENT
     w["rsi"] = 0.0
     w["trend"] = 0.0
 
@@ -287,6 +299,7 @@ def resolve_weights(
     has_analyst: bool = False,
     has_ml: bool = False,
     has_insider: bool = False,
+    has_sector_sentiment: bool = False,
     market_regime: str | None = None,
     regime_weights_map: dict | None = None,
 ) -> dict:
@@ -297,6 +310,12 @@ def resolve_weights(
     """
     if has_options is None:
         has_options = settings.options_flow_enabled
+    gate_kw = dict(
+        has_analyst=has_analyst,
+        has_ml=has_ml,
+        has_insider=has_insider,
+        has_sector_sentiment=has_sector_sentiment,
+    )
     if regime_weights_map and market_regime:
         sector_regime = (sector_id, market_regime)
         if sector_id is not None and sector_regime in regime_weights_map:
@@ -304,9 +323,7 @@ def resolve_weights(
                 regime_weights_map[sector_regime],
                 has_earnings,
                 has_options,
-                has_analyst=has_analyst,
-                has_ml=has_ml,
-                has_insider=has_insider,
+                **gate_kw,
             )
         global_regime = (None, market_regime)
         if global_regime in regime_weights_map:
@@ -314,9 +331,7 @@ def resolve_weights(
                 regime_weights_map[global_regime],
                 has_earnings,
                 has_options,
-                has_analyst=has_analyst,
-                has_ml=has_ml,
-                has_insider=has_insider,
+                **gate_kw,
             )
     if weights_map:
         if sector_id is not None and sector_id in weights_map:
@@ -324,25 +339,19 @@ def resolve_weights(
                 weights_map[sector_id],
                 has_earnings,
                 has_options,
-                has_analyst=has_analyst,
-                has_ml=has_ml,
-                has_insider=has_insider,
+                **gate_kw,
             )
         if None in weights_map:
             return apply_component_gates(
                 weights_map[None],
                 has_earnings,
                 has_options,
-                has_analyst=has_analyst,
-                has_ml=has_ml,
-                has_insider=has_insider,
+                **gate_kw,
             )
     return default_weights(
         has_options=has_options,
         has_earnings=has_earnings,
-        has_analyst=has_analyst,
-        has_ml=has_ml,
-        has_insider=has_insider,
+        **gate_kw,
     )
 
 
@@ -377,6 +386,7 @@ def combine_component_scores(
     ml_score: float | None = None,
     has_ml: bool = False,
     insider_score: float | None = None,
+    sector_sentiment_score: float | None = None,
     weights: dict | None = None,
     has_options: bool | None = None,
     article_count: int = 0,
@@ -385,8 +395,8 @@ def combine_component_scores(
 
     Missing sentiment/price/volume/RSI/trend values are treated as 0.0 in the
     math (and in the returned dict, matching historical persistence).
-    Earnings, options, analyst, and insider preserve None vs 0.0: None means
-    the gate is inactive, 0.0 means the component was active and scored zero.
+    Earnings, options, analyst, insider, and sector sentiment preserve None vs 0.0:
+    None means the gate is inactive, 0.0 means the component was active and scored zero.
     ``has_ml`` is never inferred from ``ml_score`` — ML is stored on every
     inference run but only enters the composite when the model qualifies.
     """
@@ -400,6 +410,7 @@ def combine_component_scores(
     has_earnings = earnings_score is not None
     has_analyst = analyst_score is not None
     has_insider = insider_score is not None
+    has_sector_sentiment = sector_sentiment_score is not None
     if has_options is None:
         has_options = settings.options_flow_enabled
 
@@ -410,10 +421,17 @@ def combine_component_scores(
             has_analyst=has_analyst,
             has_ml=has_ml,
             has_insider=has_insider,
+            has_sector_sentiment=has_sector_sentiment,
         )
     else:
         w = apply_component_gates(
-            weights, has_earnings, has_options, has_analyst, has_ml, has_insider
+            weights,
+            has_earnings,
+            has_options,
+            has_analyst,
+            has_ml,
+            has_insider,
+            has_sector_sentiment,
         )
 
     sm = sentiment_momentum if sentiment_momentum is not None else 0.0
@@ -427,6 +445,7 @@ def combine_component_scores(
     analyst_val = analyst_score if analyst_score is not None else 0.0
     ml_val = ml_score if ml_score is not None else 0.0
     insider_val = insider_score if insider_score is not None else 0.0
+    sector_val = sector_sentiment_score if sector_sentiment_score is not None else 0.0
 
     raw_composite = (
         w["sentiment_momentum"] * sm
@@ -438,6 +457,7 @@ def combine_component_scores(
         + float(w.get("analyst", 0.0)) * analyst_val
         + float(w.get("ml", 0.0)) * ml_val
         + float(w.get("insider", 0.0)) * insider_val
+        + float(w.get("sector_sentiment", 0.0)) * sector_val
     )
     composite, market_regime = apply_regime_multiplier(raw_composite, rsi_val, trend_val)
 
@@ -454,6 +474,7 @@ def combine_component_scores(
         "analyst_score": analyst_score,
         "ml_score": ml_score,
         "insider_score": insider_score,
+        "sector_sentiment_score": sector_sentiment_score,
         "market_regime": market_regime,
         "article_count": article_count,
         "weights_source": w.get("source", "default"),
@@ -476,6 +497,7 @@ def methodology_defaults() -> dict:
         "analyst": WEIGHT_ANALYST,
         "ml": WEIGHT_ML,
         "insider": WEIGHT_INSIDER,
+        "sector_sentiment": WEIGHT_SECTOR_SENTIMENT,
         "rsi": 0.0,
         "trend": 0.0,
         "strong_threshold": STRONG_THRESHOLD,

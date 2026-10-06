@@ -33,6 +33,7 @@ class Signal(Base):
     earnings_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
     analyst_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
     insider_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    sector_sentiment_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
     trading_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

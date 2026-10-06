@@ -6,12 +6,16 @@ from unittest.mock import patch
 from worker.utils.backtester.engine import _compute_components
 from worker.utils.backtester.models import DEFAULT_WEIGHTS
 from worker.utils.signal_formula import (
+    MODERATE_THRESHOLD,
+    REGIME_ADJUSTMENT,
+    STRONG_THRESHOLD,
     WEIGHT_ANALYST,
     WEIGHT_EARNINGS,
     WEIGHT_INSIDER,
     WEIGHT_ML,
     WEIGHT_OPTIONS,
     WEIGHT_PRICE_MOMENTUM,
+    WEIGHT_SECTOR_SENTIMENT,
     WEIGHT_SENTIMENT_MOMENTUM,
     WEIGHT_SENTIMENT_VOLUME,
     WEIGHT_VOLUME_ANOMALY,
@@ -20,9 +24,6 @@ from worker.utils.signal_formula import (
     default_weights,
     methodology_defaults,
     resolve_weights,
-    REGIME_ADJUSTMENT,
-    STRONG_THRESHOLD,
-    MODERATE_THRESHOLD,
 )
 
 
@@ -44,12 +45,7 @@ class TestApplyComponentGates:
         assert w["options"] == 0.0
         assert w["rsi"] == 0.0
         assert w["trend"] == 0.0
-        predictive = (
-            w["sentiment_momentum"]
-            + w["sentiment_volume"]
-            + w["price_momentum"]
-            + w["volume_anomaly"]
-        )
+        predictive = w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"]
         assert abs(predictive - 1.0) < 1e-9
         assert w["source"] == "sector"
         # Original map must not be mutated (shared across stocks).
@@ -79,7 +75,8 @@ class TestResolveWeights:
         }
         w = resolve_weights(cached, sector_id=1, has_earnings=False, has_options=False)
         assert w["earnings"] == 0.0
-        assert abs(w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"] - 1.0) < 1e-9
+        base = w["sentiment_momentum"] + w["sentiment_volume"] + w["price_momentum"] + w["volume_anomaly"]
+        assert abs(base - 1.0) < 1e-9
         assert cached[1]["earnings"] == 0.10
 
 
@@ -132,13 +129,7 @@ class TestCombineComponentScores:
         assert result is not None
         assert result["analyst_score"] == 0.5
         scale = 0.93
-        raw = (
-            0.40 * scale * 0.5
-            + 0.25 * scale * 0.2
-            + 0.20 * scale * 0.3
-            + 0.15 * scale * 0.1
-            + 0.07 * 0.5
-        )
+        raw = 0.40 * scale * 0.5 + 0.25 * scale * 0.2 + 0.20 * scale * 0.3 + 0.15 * scale * 0.1 + 0.07 * 0.5
         assert abs(result["composite"] - raw) < 1e-9
 
     def test_none_analyst_excluded_and_renormalizes(self):
@@ -243,6 +234,7 @@ class TestMethodologyDefaults:
         assert d["analyst"] == WEIGHT_ANALYST
         assert d["ml"] == WEIGHT_ML
         assert d["insider"] == WEIGHT_INSIDER
+        assert d["sector_sentiment"] == WEIGHT_SECTOR_SENTIMENT
         assert d["rsi"] == 0.0
         assert d["trend"] == 0.0
         assert d["strong_threshold"] == STRONG_THRESHOLD

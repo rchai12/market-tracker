@@ -626,3 +626,13 @@ async def calc_insider_score(session: AsyncSession, stock_id: int, as_of_date: d
     return score_insider_rows(rows)
 
 
+def calc_sector_sentiment_score(
+    sector_sentiment_map: dict[str, float | None],
+    sector_name: str | None,
+) -> float | None:
+    """Look up pre-computed sector sentiment. None = gate inactive."""
+    if not sector_name:
+        return None
+    return sector_sentiment_map.get(sector_name)
+
+

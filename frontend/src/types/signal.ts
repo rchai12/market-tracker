@@ -23,6 +23,7 @@ export interface Signal {
   earnings_score: number | null;
   analyst_score: number | null;
   insider_score: number | null;
+  sector_sentiment_score: number | null;
   retail_sentiment_score: number | null;
   generated_at: string;
   window_start: string;
@@ -69,6 +70,7 @@ export interface SignalFormulaDefaults {
   analyst: number;
   ml: number;
   insider: number;
+  sector_sentiment: number;
   rsi: number;
   trend: number;
   strong_threshold: number;

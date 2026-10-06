@@ -321,6 +321,7 @@ def _to_response(signal: Signal) -> SignalResponse:
         earnings_score=_f(signal.earnings_score),
         analyst_score=_f(signal.analyst_score),
         insider_score=_f(getattr(signal, "insider_score", None)),
+        sector_sentiment_score=_f(getattr(signal, "sector_sentiment_score", None)),
         retail_sentiment_score=_f(signal.retail_sentiment_score),
         generated_at=signal.generated_at,
         window_start=signal.window_start,

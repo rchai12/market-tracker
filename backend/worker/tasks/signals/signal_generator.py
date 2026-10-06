@@ -10,6 +10,7 @@ Computes composite signal scores for all active stocks by combining:
 - Analyst ratings (7%): 30-day LLM-extracted upgrades/downgrades + price-target upside
 - ML ensemble (8%): LightGBM score, gated when the model meets accuracy/sample floors
 - Insider trading (8%): 30-day Form 4 net buying, role-weighted, sells discounted
+- Sector sentiment (5%): spray-confidence + macro/regulatory articles, one score per sector
 
 RSI and trend are not additive components. They classify market regime and apply
 a confidence multiplier to the composite (boost when trend confirms, dampen when
@@ -19,15 +20,19 @@ the stock is technically extended or trend opposes the signal).
 import logging
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.config import settings
+from app.config import DEFAULT_SOURCE_CREDIBILITY, SOURCE_CREDIBILITY, settings
 from app.database import async_session
+from app.models.article import Article, ArticleStock
 from app.models.daily_signal_view import DailySignalView
 from app.models.market_data import MarketDataDaily
 from app.models.regime_adaptive_weight import RegimeAdaptiveWeight
+from app.models.sector import Sector
+from app.models.sentiment import SentimentScore
 from app.models.signal import Signal
 from app.models.signal_weight import SignalWeight
 from app.models.stock import Stock
@@ -40,14 +45,25 @@ from worker.tasks.signals.component_scores import (
     calc_price_momentum,
     calc_retail_sentiment_score,
     calc_rsi_score,
+    calc_sector_sentiment_score,
     calc_sentiment_momentum,
     calc_sentiment_volume,
     calc_trend_score,
     calc_volume_anomaly,
     get_recent_article_count,
 )
+from worker.utils.article_quality import QUALITY_THRESHOLD, SIGNAL_EXCLUDED_SOURCES
 from worker.utils.async_task import run_async
 from worker.utils.daily_aggregation import ET, bucket_signals, compute_net_view, trading_date_lower_bound
+from worker.utils.sector_sentiment import (
+    SECTOR_EVENT_CATEGORIES,
+    SECTOR_SENTIMENT_WINDOW_HOURS,
+    SECTOR_SPRAY_MAX_CONFIDENCE,
+    SECTOR_SPRAY_MIN_CONFIDENCE,
+    SectorArticlePoint,
+    aggregate_sector_sentiment,
+    article_qualifies_for_sector_sentiment,
+)
 from worker.utils.signal_formula import (
     MODERATE_THRESHOLD,
     STRONG_THRESHOLD,
@@ -60,6 +76,7 @@ from worker.utils.signal_formula import (
     WEIGHT_PRICE_MOMENTUM_BOTH,
     WEIGHT_PRICE_MOMENTUM_EARN,
     WEIGHT_PRICE_MOMENTUM_OPT,
+    WEIGHT_SECTOR_SENTIMENT,
     WEIGHT_SENTIMENT_MOMENTUM,
     WEIGHT_SENTIMENT_MOMENTUM_BOTH,
     WEIGHT_SENTIMENT_MOMENTUM_EARN,
@@ -95,6 +112,7 @@ def _default_weights(
     has_analyst: bool = False,
     has_ml: bool = False,
     has_insider: bool = False,
+    has_sector_sentiment: bool = False,
 ) -> dict:
     if has_options is None:
         has_options = settings.options_flow_enabled
@@ -104,6 +122,7 @@ def _default_weights(
         has_analyst=has_analyst,
         has_ml=has_ml,
         has_insider=has_insider,
+        has_sector_sentiment=has_sector_sentiment,
     )
 
 
@@ -115,6 +134,7 @@ def _get_weights(
     has_analyst: bool = False,
     has_ml: bool = False,
     has_insider: bool = False,
+    has_sector_sentiment: bool = False,
     market_regime: str | None = None,
     regime_weights_map: dict | None = None,
 ) -> dict:
@@ -128,6 +148,7 @@ def _get_weights(
         has_analyst=has_analyst,
         has_ml=has_ml,
         has_insider=has_insider,
+        has_sector_sentiment=has_sector_sentiment,
         market_regime=market_regime,
         regime_weights_map=regime_weights_map,
     )
@@ -146,6 +167,7 @@ __all__ = [
     "WEIGHT_PRICE_MOMENTUM_BOTH",
     "WEIGHT_PRICE_MOMENTUM_EARN",
     "WEIGHT_PRICE_MOMENTUM_OPT",
+    "WEIGHT_SECTOR_SENTIMENT",
     "WEIGHT_SENTIMENT_MOMENTUM",
     "WEIGHT_SENTIMENT_MOMENTUM_BOTH",
     "WEIGHT_SENTIMENT_MOMENTUM_EARN",
@@ -199,7 +221,7 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
 
     async with async_session() as session:
         result = await session.execute(
-            select(Stock).where(Stock.is_active == True)  # noqa: E712
+            select(Stock).options(selectinload(Stock.sector)).where(Stock.is_active == True)  # noqa: E712
         )
         stocks = result.scalars().all()
 
@@ -214,12 +236,23 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
         # Pre-load ML models if enabled
         ml_models_map = await _load_ml_models(session) if settings.ml_ensemble_enabled else {}
 
+        sector_names = sorted({s.sector.name for s in stocks if s.sector is not None})
+        sector_sentiment_map = await _compute_sector_sentiment_map(session, sector_names, now)
+
         logger.info(f"Generating signals for {len(stocks)} active stocks")
 
         for stock in stocks:
             try:
+                sector_name = stock.sector.name if stock.sector is not None else None
                 score_data = await _compute_composite_score(
-                    session, stock.id, now, weights_map, stock.sector_id, regime_weights_map
+                    session,
+                    stock.id,
+                    now,
+                    weights_map,
+                    stock.sector_id,
+                    regime_weights_map,
+                    sector_sentiment_map=sector_sentiment_map,
+                    sector_name=sector_name,
                 )
 
                 if score_data is None:
@@ -228,9 +261,7 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
                 # First-pass direction signs ML inference; promotion may recombine.
                 first_direction = classify_direction(score_data["composite"])
                 ml_model = _resolve_ml_model(ml_models_map, stock.sector_id) if ml_models_map else None
-                ml_result = (
-                    _compute_ml_score(score_data, ml_model, first_direction) if ml_model is not None else None
-                )
+                ml_result = _compute_ml_score(score_data, ml_model, first_direction) if ml_model is not None else None
                 has_ml = (
                     ml_result is not None
                     and ml_model is not None
@@ -271,6 +302,7 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
                 earn_raw = score_data["earnings_score"]
                 analyst_raw = score_data["analyst_score"]
                 insider_raw = score_data.get("insider_score")
+                sector_raw = score_data.get("sector_sentiment_score")
                 signal = Signal(
                     stock_id=stock.id,
                     direction=direction,
@@ -294,6 +326,7 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
                     earnings_score=round(earn_raw, 5) if earn_raw is not None else None,
                     analyst_score=round(analyst_raw, 5) if analyst_raw is not None else None,
                     insider_score=round(insider_raw, 5) if insider_raw is not None else None,
+                    sector_sentiment_score=round(sector_raw, 5) if sector_raw is not None else None,
                     generated_at=now,
                     trading_date=await _resolve_trading_date(session, stock.id, now),
                     window_start=window_start,
@@ -350,10 +383,7 @@ async def _resolve_trading_date(session: AsyncSession, stock_id: int, generated_
     if found is not None:
         return found
     fallback = await session.execute(
-        select(MarketDataDaily.date)
-        .where(MarketDataDaily.date >= floor)
-        .order_by(MarketDataDaily.date.asc())
-        .limit(1)
+        select(MarketDataDaily.date).where(MarketDataDaily.date >= floor).order_by(MarketDataDaily.date.asc()).limit(1)
     )
     any_date = fallback.scalar_one_or_none()
     return any_date if any_date is not None else floor
@@ -402,6 +432,66 @@ async def _upsert_daily_view(session: AsyncSession, stock_id: int, trading_date:
     await session.execute(stmt)
 
 
+async def _compute_sector_sentiment_map(
+    session: AsyncSession,
+    sector_names: list[str],
+    now: datetime,
+) -> dict[str, float | None]:
+    """Aggregate low-confidence + macro articles into per-sector scores."""
+    result_map: dict[str, float | None] = {name: None for name in sector_names}
+    since = now - timedelta(hours=SECTOR_SENTIMENT_WINDOW_HOURS)
+    published_or_processed = func.coalesce(Article.published_at, SentimentScore.processed_at)
+    rows_result = await session.execute(
+        select(
+            Article.id,
+            Article.source,
+            Article.event_category,
+            Article.published_at,
+            Article.duplicate_group_id,
+            SentimentScore.positive_score,
+            SentimentScore.negative_score,
+            SentimentScore.processed_at,
+            ArticleStock.confidence,
+            Sector.name,
+        )
+        .join(Article, SentimentScore.article_id == Article.id)
+        .join(ArticleStock, ArticleStock.article_id == Article.id)
+        .join(Stock, Stock.id == ArticleStock.stock_id)
+        .join(Sector, Sector.id == Stock.sector_id)
+        .where(published_or_processed >= since)
+        .where(Article.source.notin_(SIGNAL_EXCLUDED_SOURCES))
+        .where((Article.quality_score >= QUALITY_THRESHOLD) | (Article.quality_score.is_(None)))
+        .where(Article.canonical_article_id.is_(None))
+        .where(
+            or_(
+                (ArticleStock.confidence >= SECTOR_SPRAY_MIN_CONFIDENCE)
+                & (ArticleStock.confidence < SECTOR_SPRAY_MAX_CONFIDENCE),
+                Article.event_category.in_(SECTOR_EVENT_CATEGORIES),
+            )
+        )
+    )
+    points: list[SectorArticlePoint] = []
+    for row in rows_result.all():
+        if not article_qualifies_for_sector_sentiment(row.confidence, row.event_category):
+            continue
+        event_at = row.published_at or row.processed_at
+        hours_ago = max((now - event_at).total_seconds() / 3600, 0.0) if event_at is not None else 0.0
+        points.append(
+            SectorArticlePoint(
+                article_id=int(row.id),
+                sector=row.name,
+                value=float(row.positive_score) - float(row.negative_score),
+                hours_ago=hours_ago,
+                credibility=SOURCE_CREDIBILITY.get(row.source, DEFAULT_SOURCE_CREDIBILITY),
+                duplicate_group_id=row.duplicate_group_id,
+            )
+        )
+    aggregated = aggregate_sector_sentiment(points)
+    for name, score in aggregated.items():
+        result_map[name] = score
+    return result_map
+
+
 async def _compute_composite_score(
     session: AsyncSession,
     stock_id: int,
@@ -409,6 +499,8 @@ async def _compute_composite_score(
     weights_map: dict | None = None,
     sector_id: int | None = None,
     regime_weights_map: dict | None = None,
+    sector_sentiment_map: dict[str, float | None] | None = None,
+    sector_name: str | None = None,
 ) -> dict | None:
     """Compute all components and the weighted composite for a stock.
 
@@ -426,18 +518,21 @@ async def _compute_composite_score(
     earnings = await calc_earnings_surprise_score(session, stock_id, now)
     analyst = await calc_analyst_score(session, stock_id, now)
     insider = await calc_insider_score(session, stock_id, now)
+    sector_sent = calc_sector_sentiment_score(sector_sentiment_map or {}, sector_name)
 
     article_count = await get_recent_article_count(session, stock_id, now)
 
     has_earnings = earnings is not None
     has_analyst = analyst is not None
     has_insider = insider is not None
+    has_sector_sentiment = sector_sent is not None
     w = _get_weights(
         weights_map,
         sector_id,
         has_earnings=has_earnings,
         has_analyst=has_analyst,
         has_insider=has_insider,
+        has_sector_sentiment=has_sector_sentiment,
         market_regime=classify_regime(rsi, trend),
         regime_weights_map=regime_weights_map,
     )
@@ -453,6 +548,7 @@ async def _compute_composite_score(
         earnings_score=earnings,
         analyst_score=analyst,
         insider_score=insider,
+        sector_sentiment_score=sector_sent,
         weights=w,
         has_options=settings.options_flow_enabled,
         article_count=article_count,
@@ -483,6 +579,7 @@ async def _load_all_weights(session: AsyncSession) -> dict:
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
             "ml": 0.0,
             "insider": float(row.insider) if getattr(row, "insider", None) is not None else 0.0,
+            "sector_sentiment": 0.0,
             "source": "sector" if row.sector_id else "global",
         }
         weights_map[row.sector_id] = w
@@ -512,6 +609,7 @@ async def _load_regime_weights(session: AsyncSession) -> dict:
             "analyst": float(row.analyst) if row.analyst is not None else 0.0,
             "ml": 0.0,
             "insider": float(row.insider) if getattr(row, "insider", None) is not None else 0.0,
+            "sector_sentiment": 0.0,
             "source": "regime",
         }
     return regime_map
@@ -559,6 +657,11 @@ def _build_reasoning(ticker: str, score_data: dict, direction: str, strength: st
     if insider_val is not None and abs(insider_val) > 0.2:
         insider_dir = "buying" if insider_val > 0 else "selling"
         parts.append(f"Insider activity is net {insider_dir} ({insider_val:.3f})")
+
+    sector_val = score_data.get("sector_sentiment_score")
+    if sector_val is not None and abs(sector_val) > 0.2:
+        sector_dir = "bullish" if sector_val > 0 else "bearish"
+        parts.append(f"Sector sentiment is {sector_dir} ({sector_val:.3f})")
 
     ml_val = score_data.get("ml_score")
     if has_ml and ml_val is not None and abs(ml_val) > 0.2:
@@ -619,6 +722,7 @@ def _recombine_with_ml(
     has_earnings = score_data["earnings_score"] is not None
     has_analyst = score_data["analyst_score"] is not None
     has_insider = score_data.get("insider_score") is not None
+    has_sector_sentiment = score_data.get("sector_sentiment_score") is not None
     w = _get_weights(
         weights_map,
         sector_id,
@@ -626,6 +730,7 @@ def _recombine_with_ml(
         has_analyst=has_analyst,
         has_ml=True,
         has_insider=has_insider,
+        has_sector_sentiment=has_sector_sentiment,
         market_regime=score_data.get("market_regime"),
         regime_weights_map=regime_weights_map,
     )
@@ -642,6 +747,7 @@ def _recombine_with_ml(
         ml_score=ml_score,
         has_ml=True,
         insider_score=score_data.get("insider_score"),
+        sector_sentiment_score=score_data.get("sector_sentiment_score"),
         weights=w,
         has_options=settings.options_flow_enabled,
         article_count=score_data["article_count"],

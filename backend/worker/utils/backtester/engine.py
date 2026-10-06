@@ -14,22 +14,22 @@ Two modes:
 
 from datetime import date
 
+from worker.utils.signal_formula import classify_direction, classify_strength, combine_component_scores
+
 from .metrics import compute_metrics
 from .models import (
+    DEFAULT_WEIGHTS,
     RSI_LOOKBACK,
     TECHNICAL_WEIGHTS,
     TREND_LOOKBACK,
     WARMUP_DAYS,
     BacktestConfig,
     BacktestResult,
-    DEFAULT_WEIGHTS,
     EquityPoint,
     OHLCVRow,
     SentimentRow,
     TradeRecord,
 )
-from worker.utils.signal_formula import classify_direction, classify_strength, combine_component_scores
-
 from .signals import (
     compute_price_momentum_from_closes,
     compute_rsi_score_from_closes,
@@ -85,9 +85,7 @@ def run_backtest(
         closes = [row.close for row in history]
         volumes = [row.volume for row in history]
 
-        components = _compute_components(
-            closes, volumes, today.date, config.mode, weights, sentiment_data
-        )
+        components = _compute_components(closes, volumes, today.date, config.mode, weights, sentiment_data)
 
         if components is None:
             # Not enough data; record equity and continue
@@ -123,8 +121,11 @@ def run_backtest(
                 commission = gross_proceeds * config.commission_pct
                 net_proceeds = gross_proceeds - commission
                 rtn = (
-                    ((net_proceeds - position["shares"] * position["entry_price"])
-                     / (position["shares"] * position["entry_price"]) * 100)
+                    (
+                        (net_proceeds - position["shares"] * position["entry_price"])
+                        / (position["shares"] * position["entry_price"])
+                        * 100
+                    )
                     if position["entry_price"] > 0
                     else 0.0
                 )
@@ -189,8 +190,11 @@ def run_backtest(
             commission = gross_proceeds * config.commission_pct
             net_proceeds = gross_proceeds - commission
             return_pct = (
-                ((net_proceeds - position["shares"] * position["entry_price"])
-                 / (position["shares"] * position["entry_price"]) * 100)
+                (
+                    (net_proceeds - position["shares"] * position["entry_price"])
+                    / (position["shares"] * position["entry_price"])
+                    * 100
+                )
                 if position["entry_price"] > 0
                 else 0.0
             )
@@ -226,8 +230,11 @@ def run_backtest(
         commission = gross_proceeds * config.commission_pct
         net_proceeds = gross_proceeds - commission
         return_pct = (
-            ((net_proceeds - position["shares"] * position["entry_price"])
-             / (position["shares"] * position["entry_price"]) * 100)
+            (
+                (net_proceeds - position["shares"] * position["entry_price"])
+                / (position["shares"] * position["entry_price"])
+                * 100
+            )
             if position["entry_price"] > 0
             else 0.0
         )
@@ -315,17 +322,9 @@ def _compute_components(
     replayed historically, so those gates stay inactive.
     """
     price_mom = compute_price_momentum_from_closes(closes[-6:]) if len(closes) >= 6 else None
-    vol_anomaly = (
-        compute_volume_anomaly_from_data(closes[-21:], volumes[-21:])
-        if len(closes) >= 21
-        else None
-    )
+    vol_anomaly = compute_volume_anomaly_from_data(closes[-21:], volumes[-21:]) if len(closes) >= 21 else None
     rsi = compute_rsi_score_from_closes(closes[-RSI_LOOKBACK:]) if len(closes) >= RSI_LOOKBACK else None
-    trend = (
-        compute_trend_score_from_closes(closes[-TREND_LOOKBACK:])
-        if len(closes) >= TREND_LOOKBACK
-        else None
-    )
+    trend = compute_trend_score_from_closes(closes[-TREND_LOOKBACK:]) if len(closes) >= TREND_LOOKBACK else None
 
     sent_mom = None
     sent_vol = None
@@ -343,6 +342,7 @@ def _compute_components(
         options_score=None,
         earnings_score=None,
         insider_score=None,
+        sector_sentiment_score=None,
         has_ml=False,
         weights=weights,
         has_options=False,
