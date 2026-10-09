@@ -286,7 +286,10 @@ async def _generate_signals_async(now: datetime | None = None) -> dict:
                 )
                 last_signal = last_result.scalars().first()
 
-                if last_signal is not None and (
+                same_day = last_signal is not None and (
+                    last_signal.generated_at.astimezone(ET).date() == now.astimezone(ET).date()
+                )
+                if same_day and (
                     last_signal.direction == direction
                     and last_signal.strength == strength
                     and abs(float(last_signal.composite_score) - composite) < SIGNAL_DEDUP_THRESHOLD
