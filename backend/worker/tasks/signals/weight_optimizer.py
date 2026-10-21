@@ -2,9 +2,10 @@
 
 Analyzes historical daily-view accuracy per sector (and per market regime) to
 compute optimal weights for the predictive components. Votes are weighted by
-``abs(price_change_pct) * recency-adjusted magnitude share`` so large moves and larger contributors
-count more. Analyst is tracked alongside earnings/options. RSI and trend are
-regime-only and always stored as 0.0. Runs daily at 4 AM after maintenance.
+``abs(excess_return_pct) * recency-adjusted magnitude share`` (absolute return
+for Market ETFs) so large relative moves and larger contributors count more.
+Analyst is tracked alongside earnings/options. RSI and trend are regime-only
+and always stored as 0.0. Runs daily at 4 AM after maintenance.
 """
 
 from __future__ import annotations
@@ -148,7 +149,7 @@ async def _compute_sector_weights(
             continue
         rows = expand_view_credits(
             contribs,
-            float(outcome.price_change_pct),
+            learning_pct_for_outcome(outcome),
             bool(outcome.is_correct),
             trading_date=view.trading_date,
         )
@@ -162,6 +163,19 @@ async def _compute_sector_weights(
     return _weights_from_rows(expanded, sample_count=view_count, correct_count=correct_views)
 
 
+def learning_pct_for_outcome(outcome) -> float:
+    """Return used for optimizer direction and magnitude.
+
+    Prefer excess return vs the sector ETF so component credit matches
+    ``is_correct``. Market ETFs store ``excess_return_pct=None`` and fall
+    back to absolute ``price_change_pct``.
+    """
+    excess = getattr(outcome, "excess_return_pct", None)
+    if excess is not None:
+        return float(excess)
+    return float(outcome.price_change_pct)
+
+
 def _weights_from_rows(
     rows: list,
     sample_count: int | None = None,
@@ -169,9 +183,10 @@ def _weights_from_rows(
 ) -> dict | None:
     """Return-weighted component accuracies → clamped, normalized weights.
 
-    Each signal votes with ``abs(price_change_pct)`` so a correct 5% move
-    outweighs a correct 0.1% move. Returns None below ``feedback_min_samples``.
-    ``sample_count`` is the number of daily views (not exploded signals).
+    Each signal votes with ``abs(price_change_pct)`` on the credit row, which
+    is excess return when available so a 5% sector beat outweighs a 0.1%
+    beat. Returns None below ``feedback_min_samples``. ``sample_count`` is
+    the number of daily views (not exploded signals).
     """
     n = sample_count if sample_count is not None else len(rows)
     if n < settings.feedback_min_samples:
@@ -225,8 +240,14 @@ def _weights_from_rows(
                 min_abs=0.01,
             )
 
-        component_correct["sentiment_volume"] += magnitude if row.is_correct else 0.0
-        component_total["sentiment_volume"] += magnitude
+        _credit(
+            component_correct,
+            component_total,
+            "sentiment_volume",
+            getattr(row, "sentiment_volume_score", None),
+            actual_dir,
+            magnitude,
+        )
 
         if row.is_correct:
             total_correct += 1

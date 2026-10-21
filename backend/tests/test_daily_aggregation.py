@@ -159,6 +159,15 @@ class TestExpandCredits:
         by_sent = {r.sentiment_score: r.share for r in rows}
         assert by_sent[0.9] > by_sent[0.1]
 
+    def test_includes_sentiment_volume_score(self):
+        rows = expand_view_credits(
+            [_sig(0.5, "bullish", sentiment_volume_score=0.5)],
+            price_change_pct=0.03,
+            is_correct=True,
+        )
+        assert len(rows) == 1
+        assert rows[0].sentiment_volume_score == 0.5
+
 
 class TestBucketAndRecency:
     def test_compute_net_view_with_trading_date_applies_recency(self):

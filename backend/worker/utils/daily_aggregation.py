@@ -244,6 +244,7 @@ def expand_view_credits(
                 earnings_score=getattr(signal, "earnings_score", None),
                 analyst_score=getattr(signal, "analyst_score", None),
                 insider_score=getattr(signal, "insider_score", None),
+                sentiment_volume_score=getattr(signal, "sentiment_volume_score", None),
                 direction=getattr(signal, "direction", None),
                 is_correct=is_correct,
                 price_change_pct=scale_outcome_pct(price_change_pct, share),
