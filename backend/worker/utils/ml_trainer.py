@@ -12,7 +12,7 @@ from pathlib import Path
 try:
     import lightgbm as lgb
     import numpy as np
-except ImportError:
+except (ImportError, OSError):
     lgb = None  # type: ignore[assignment]
     np = None   # type: ignore[assignment]
 
