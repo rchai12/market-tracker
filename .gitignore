@@ -53,3 +53,11 @@ coverage/
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Local notes (not for repo)
+INTERVIEW_PREP.md
+INTERVIEW_NOTES.md
+PHASE_*_SPEC.md
+PHASE_*_VERIFY.md
+PHASE_*_IMPL.md
+PHASE_*_RESULT.md

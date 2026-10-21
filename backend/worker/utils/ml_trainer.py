@@ -9,8 +9,12 @@ import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import lightgbm as lgb
-import numpy as np
+try:
+    import lightgbm as lgb
+    import numpy as np
+except ImportError:
+    lgb = None  # type: ignore[assignment]
+    np = None   # type: ignore[assignment]
 
 from worker.utils.daily_aggregation import aggregate_feature_vector
 
@@ -61,7 +65,7 @@ DEFAULT_NUM_BOOST_ROUND = 200
 DEFAULT_EARLY_STOPPING_ROUNDS = 20
 
 # Module-level model cache: model_path -> Booster
-_model_cache: dict[str, lgb.Booster] = {}
+_model_cache: dict[str, object] = {}
 
 
 @dataclass
@@ -119,6 +123,8 @@ def train_model(
     Returns:
         TrainingResult on success, None if insufficient data after split.
     """
+    if lgb is None or np is None:
+        raise RuntimeError("lightgbm/numpy not installed in this environment")
     n = len(features)
     if n < 20:
         return None
@@ -182,8 +188,10 @@ def train_model(
     )
 
 
-def load_model(model_path: str) -> lgb.Booster | None:
+def load_model(model_path: str):  # -> lgb.Booster | None
     """Load a LightGBM model from disk, with caching."""
+    if lgb is None:
+        return None
     if model_path in _model_cache:
         return _model_cache[model_path]
 
